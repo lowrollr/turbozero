@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from env import _2048Env
 from mcts import MCTS_Evaluator
 import time
+import bottleneck
 
 class ReplayMemory:
     def __init__(self, max_size=10000) -> None:
@@ -64,7 +65,11 @@ class MetricsHistory:
             return True
         return False
     
-    def plot_history(self, plots = None):
+    def plot_history(self, plots = None, offset=0, window_size=50):
+        offset = min(offset, len(self.rewards))
+        offset = -offset
+
+        plt.close()
         if plots is None:
             plots = ['rewards', 'game_moves', 'prob_losses', 'value_losses', 'total_losses', 'high_squares']
         display.clear_output(wait=True)
@@ -73,23 +78,30 @@ class MetricsHistory:
             fig = plt.figure()
             ax = fig.add_subplot(111)
             if pl == 'rewards':
-                ax.plot(self.rewards)
+                ax.plot(self.rewards[offset:])
+                ax.plot(bottleneck.move_mean(self.rewards[offset:], window=window_size, min_count=1))
                 ax.set_title('Rewards (log2)')
+                
             elif pl == 'game_moves':
-                ax.plot(self.game_moves)
+                ax.plot(self.game_moves[offset:])
                 ax.set_title('Game Moves')
+                ax.plot(bottleneck.move_mean(self.game_moves[offset:], window=window_size, min_count=1))
             elif pl == 'prob_losses':
-                ax.plot(self.prob_losses)
+                ax.plot(self.prob_losses[offset:])
                 ax.set_title('Prob. Loss')
+                ax.plot(bottleneck.move_mean(self.prob_losses[offset:], window=window_size, min_count=1))
             elif pl == 'value_losses':
-                ax.plot(self.value_losses)
+                ax.plot(self.value_losses[offset:])
                 ax.set_title('Value Loss')
+                ax.plot(bottleneck.move_mean(self.value_losses[offset:], window=window_size, min_count=1))
             elif pl == 'total_losses':
-                ax.plot(self.total_losses)
+                ax.plot(self.total_losses[offset:])
                 ax.set_title('Total Loss')
+                ax.plot(bottleneck.move_mean(self.total_losses[offset:], window=window_size, min_count=1))
             elif pl == 'high_squares':
-                ax.plot(self.high_squares)
+                ax.plot(self.high_squares[offset:])
                 ax.set_title('High Square (log2)')
+                ax.plot(bottleneck.move_mean(self.high_squares[offset:], window=window_size, min_count=1))
             else:
                 print(f'Unknown metric: {pl}')
             display.display(fig)
@@ -102,11 +114,11 @@ def load_from_checkpoint(filename, model_class, load_replay_memory=True):
     episode = checkpoint['episode']
     model = model_class()
     model.load_state_dict(checkpoint['model_state_dict'])
+    model.share_memory()
     model.train()
+    
     optimizer = torch.optim.AdamW(model.parameters(), lr=hyperparameters.lr, weight_decay=hyperparameters.weight_decay)
     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-    env = _2048Env(keep_history=True)
-    mcts = MCTS_Evaluator(model, env, training=True)
     metrics_history = checkpoint['metrics_history']
     memory = None
     if load_replay_memory:
@@ -114,7 +126,7 @@ def load_from_checkpoint(filename, model_class, load_replay_memory=True):
     elif memory is None:
         memory = ReplayMemory(hyperparameters.replay_memory_size)
     
-    return env, mcts, episode, model, optimizer, hyperparameters, metrics_history, memory, run_tag
+    return episode, model, optimizer, hyperparameters, metrics_history, memory, run_tag
     
 
 def save_checkpoint(episodes, model, optimizer, hyperparameters, metrics_history, replay_memory, run_tag='', save_replay_memory=True):
@@ -224,8 +236,6 @@ def test_network(model, hyperparameters, tensor_conversion_fn, debug_print=False
                 print(f'MCTS Probs: {mcts_probs}')
                 print(f'Network value: {value.item()}')
                 print(f'Q Value: {mcts.puct_node.w / mcts.puct_node.n}')
-            
-            
             if terminated:
                 print(f'Terminated, final reward = {reward}')
                 break
