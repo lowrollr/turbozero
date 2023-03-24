@@ -40,8 +40,8 @@ class MCTS_Evaluator:
         placements, move_ids, boards, legal_moves = self.env.get_progressions()
         puct_node.legal_actions = legal_moves
         probs, values = self.model(self.tensor_conversion_fn(boards))
-        probs = probs.detach().numpy()
-        values = values.detach().numpy()
+        probs = probs.detach().cpu().numpy()
+        values = values.detach().cpu().numpy()
         for i,p in enumerate(placements):
             puct_node.children[p][move_ids[i]] = PuctNode(
                 move_id=move_ids[i], 
@@ -57,13 +57,13 @@ class MCTS_Evaluator:
                 for i in puct_node.legal_actions:
                     puct_node.children[placement][i] = PuctNode(i, puct_node.child_probs[i])
             puct_node = puct_node.children[placement][move_id]
-
+            
         if not terminated:
             if puct_node.n == 0:
                 puct_node.legal_actions = np.argwhere(self.env.get_legal_actions() == 1).flatten()
                 if puct_node.child_probs is None:
                     probs, value = self.model(self.tensor_conversion_fn([obs]))
-                    probs = probs.detach().numpy()[0]
+                    probs = probs.detach().cpu().numpy()[0]
                     reward = value.item()
                     puct_node.child_probs = probs   
                     
@@ -88,11 +88,8 @@ class MCTS_Evaluator:
                 best_move = legal_actions[np.argmax(legal_move_scores)]
                 reward = self.iterate(best_move, puct_node)
             
-        
         puct_node.update_value(reward)
-        if move_id is not None:
-            self.env.pop_move()
-        
+
         return reward
     
     def choose_progression(self, num_iterations=500):
@@ -100,7 +97,7 @@ class MCTS_Evaluator:
         
         if self.puct_node is None: # this is the 'root' state, we need to initialize progressions
             init_probs, init_value = self.model(self.tensor_conversion_fn([obs]))
-            init_probs = init_probs.detach().numpy()[0]
+            init_probs = init_probs.detach().cpu().numpy()[0]
             init_value = init_value.item()
             self.puct_node = PuctNode(
                 move_id=None,
@@ -108,9 +105,10 @@ class MCTS_Evaluator:
                 child_probs=init_probs,
                 w=init_value)
             self.initialize_continuations(self.puct_node)
-
+        original_board = np.copy(self.env.board)
         for i in range(num_iterations):
             self.iterate(None, self.puct_node)
+            self.env.board = np.copy(original_board)
 
 
         # pick best (legal) move
@@ -135,10 +133,9 @@ class MCTS_Evaluator:
             self.puct_node.children[placement][selection] = PuctNode(selection, self.puct_node.child_probs[selection])
         
         self.puct_node = self.puct_node.children[placement][selection]
-
         if self.puct_node.child_probs is None:
             probs, value = self.model(self.tensor_conversion_fn([obs]))
-            probs = probs.detach().numpy()[0]
+            probs = probs.detach().cpu().numpy()[0]
             value = value.item()
             self.puct_node.child_probs = probs   
             self.puct_node.update_value(value)

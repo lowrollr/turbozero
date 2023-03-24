@@ -30,7 +30,7 @@ def merge(values, reverse=False):
                     seen_first = True
                 
         index += direction
-    return np.array(merged)
+    return merged
 
 class _2048Env(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
