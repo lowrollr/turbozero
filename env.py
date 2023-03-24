@@ -35,7 +35,7 @@ def merge(values, reverse=False):
 class _2048Env(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
 
-    def __init__(self, render_mode=None, size=4, keep_history=True):
+    def __init__(self, render_mode=None, size=4):
         self.size = size
         self.window_size = 512
         
@@ -46,11 +46,6 @@ class _2048Env(gym.Env):
         # We can slide in any of the four directions: right, up, left, down.
         self.action_space = spaces.Discrete(4) # 0 == right, 1 == up, 2 == left, 3 == down
         self.board = np.zeros((self.size, self.size), dtype=np.int32)
-        self.keep_history = keep_history
-        if keep_history:
-            self.board_history = []
-        else:
-            self.board_history = None
     
     def _get_obs(self):
         return tuple(tuple(row) for row in self.board)
@@ -67,7 +62,6 @@ class _2048Env(gym.Env):
         indices = np.random.choice(self.size ** 2, num_starting_tiles, replace=False)
         for index in indices:
             self.board[index//self.size, index%self.size] = 1
-        self.board_history = [np.copy(self.board)]
         return self._get_obs(), self._get_info()
     
     def get_legal_actions(self):
@@ -99,7 +93,7 @@ class _2048Env(gym.Env):
                     legal_actions[3] = 1
                 
         return legal_actions
-
+        
     def apply_move(self, board, action):
         # execute action
         reverse = True
@@ -139,9 +133,6 @@ class _2048Env(gym.Env):
             terminated = True
             reward = np.log2(np.sum(2 ** self.board))
             
-        if self.keep_history:
-            self.board_history.append(np.copy(self.board))
-
         return self._get_obs(), reward, terminated, False, self._get_info(), placement
     
     def get_progressions(self):
@@ -171,12 +162,6 @@ class _2048Env(gym.Env):
             return obs, terminated, reward, placement
         else:
             return self._get_obs(), False, 0, None
-        
-    def pop_move(self):
-        if len(self.board_history):
-            top = self.board_history.pop()
-            self.board = np.copy(self.board_history[-1])
-            return top
     
     def get_highest_square(self):
         return np.max(self.board)
