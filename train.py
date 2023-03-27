@@ -54,6 +54,7 @@ class MetricsHistory:
         self.high_squares = []
         self.episodes = 0
         self.best_result = float('-inf')
+        self.figs = [plt.figure() for _ in range(6)]
     
     def add_history(self, info):
         self.rewards.append(info['reward'])
@@ -74,13 +75,14 @@ class MetricsHistory:
 
         window_size = min(window_size, len(self.rewards))
 
-        plt.close()
         if plots is None:
             plots = ['rewards', 'game_moves', 'prob_losses', 'value_losses', 'total_losses', 'high_squares']
-        display.clear_output(wait=True)
+
+        display.clear_output(wait=False)
         # this could probably be implemented a tad more elegantly
-        for pl in plots:
-            fig = plt.figure()
+        for i, pl in enumerate(plots):
+            fig = self.figs[i]
+            fig.clear()
             ax = fig.add_subplot(111)
             if pl == 'rewards':
                 ax.plot(self.rewards[offset:])
