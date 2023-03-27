@@ -2,7 +2,9 @@ import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
 import random
+from numba import njit
 
+@njit(nogil=True, fastmath=True)
 def merge(values, reverse=False):
     index = 0
     direction = 1
@@ -31,6 +33,56 @@ def merge(values, reverse=False):
                 
         index += direction
     return merged
+
+@njit(nogil=True, fastmath=True)
+def get_legal_actions(board):
+    legal_actions = np.zeros(4)
+    for p0 in range(3):
+        if np.any(np.logical_and(board[p0] == board[p0+1], board[p0] != 0)):
+            legal_actions[1] = 1
+            legal_actions[3] = 1
+            break
+        if np.any(np.logical_and(board[p0] == 0, board[p0+1] != 0)):
+            legal_actions[1] = 1
+            if legal_actions[3]:
+                break
+        if np.any(np.logical_and(board[p0+1] == 0, board[p0] != 0)):
+            legal_actions[3] = 1
+            if legal_actions[1]:
+                break
+
+    for p0 in range(3):
+        if np.any(np.logical_and(board[:, p0] == board[:, p0+1], board[:, p0] != 0)):
+            legal_actions[0] = 1
+            legal_actions[2] = 1
+            break
+        if np.any(np.logical_and(board[:, p0] == 0, board[:, p0+1] != 0)):
+            legal_actions[2] = 1
+            if legal_actions[0]:
+                break
+        if np.any(np.logical_and(board[:, p0+1] == 0, board[:, p0] != 0)):
+            legal_actions[0] = 1
+            if legal_actions[2]:
+                break
+    return legal_actions
+
+@njit(nogil=True, fastmath=True)
+def post_move(board):
+    terminated = False
+    reward = 0
+    placement = None
+    # choose a random empty spot
+    empty = np.argwhere(board == 0)
+    index = np.random.choice(empty.shape[0], 1)[0]
+    value = 2 if random.random() >= 0.9 else 1
+    board[empty[index, 0], empty[index, 1]] = value
+    placement = ((empty[index, 0] * 4) + empty[index, 1], value)
+
+    if np.max(get_legal_actions(board)) == 0:
+        terminated = True
+        reward = np.log2(np.sum(2 ** board))
+    
+    return placement, terminated, reward
 
 class _2048Env(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
@@ -63,36 +115,6 @@ class _2048Env(gym.Env):
         for index in indices:
             self.board[index//self.size, index%self.size] = 1
         return self._get_obs(), self._get_info()
-    
-    def get_legal_actions(self):
-        legal_actions = np.zeros(4)
-        # segment is un-collapsible if it's strictly decreasing or zero
-    
-        for pairs in np.lib.stride_tricks.sliding_window_view(self.board, (1, 2)):
-            for pair in pairs:
-                pair = pair[0]
-                if pair[0] == pair[1] and pair[0] != 0:
-                    legal_actions[0] = 1
-                    legal_actions[2] = 1
-                    break
-                if pair[0] == 0 and pair[1] != 0:
-                    legal_actions[2] = 1
-                if pair[1] == 0 and pair[0] != 0:
-                    legal_actions[0] = 1
-        
-        for pairs in np.lib.stride_tricks.sliding_window_view(self.board, (2,1)):
-            for pair in pairs:
-                pair = [pair[0][0], pair[1][0]]
-                if pair[0] == pair[1] and pair[0] != 0:
-                    legal_actions[1] = 1
-                    legal_actions[3] = 1
-                    break
-                if pair[0] == 0 and pair[1] != 0:
-                    legal_actions[1] = 1
-                if pair[1] == 0 and pair[0] != 0:
-                    legal_actions[3] = 1
-                
-        return legal_actions
         
     def apply_move(self, board, action):
         # execute action
@@ -118,25 +140,12 @@ class _2048Env(gym.Env):
     def step(self, action):
         self.apply_move(self.board, action)
     
-        terminated = False
-        reward = 0
-        placement = None
-
-        # choose a random empty spot
-        empty = np.argwhere(self.board == 0)
-        index = np.random.choice(empty.shape[0], 1)[0]
-        value = 2 if random.random() >= 0.9 else 1
-        self.board[empty[index, 0], empty[index, 1]] = value
-        placement = ((empty[index, 0] * 4) + empty[index, 1], value)
-
-        if np.max(self.get_legal_actions()) == 0:
-            terminated = True
-            reward = np.log2(np.sum(2 ** self.board))
+        placement, terminated, reward = post_move(self.board)
             
         return self._get_obs(), reward, terminated, False, self._get_info(), placement
     
     def get_progressions(self):
-        legal_moves = np.argwhere(self.get_legal_actions() == 1).flatten()
+        legal_moves = np.argwhere(get_legal_actions(self.board) == 1).flatten()
         boards = []
         move_ids = []
         placements = []

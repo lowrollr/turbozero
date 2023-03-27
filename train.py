@@ -7,6 +7,7 @@ from env import _2048Env
 from mcts import MCTS_Evaluator
 import time
 import bottleneck
+import os 
 
 class ReplayMemory:
     def __init__(self, max_size=10000) -> None:
@@ -30,13 +31,15 @@ class ReplayMemory:
 @dataclass()
 class MCTS_HYPERPARAMETERS:
     lr: float = 5e-4
-    weight_decay: float = 1e-2
+    weight_decay: float = 1e-3
     minibatch_size: int = 1000
     replay_memory_size: int = 30000 
     num_mcts_train_evals: int = 500
     num_mcts_test_evals: int = 1000
     num_episodes: int = 1000
     checkpoint_every: int = 100
+    mcts_c_puct: int = 12
+    mcts_tau: float = 1.0
 
 import matplotlib.pyplot as plt
 import IPython.display as display
@@ -68,6 +71,8 @@ class MetricsHistory:
     def plot_history(self, plots = None, offset=0, window_size=50):
         offset = min(offset, len(self.rewards))
         offset = -offset
+
+        window_size = min(window_size, len(self.rewards))
 
         plt.close()
         if plots is None:
@@ -141,7 +146,6 @@ def save_checkpoint(episodes, model, optimizer, hyperparameters, metrics_history
     }, f'{run_tag}_ep{episodes}.pt')
 
 
-
 def train(samples, model, optimizer, tensor_conversion_fn, c_prob=5):
     model.train()
     obs, mcts_probs, rewards = zip(*samples)
@@ -160,58 +164,6 @@ def train(samples, model, optimizer, tensor_conversion_fn, c_prob=5):
     optimizer.step()
 
     return value_loss.item(), prob_loss.item(), loss.item()
-
-
-def train_from_episode(cur_episode, model, optimizer, env, mcts, replay_memory, metrics_history: MetricsHistory, hyperparameters: MCTS_HYPERPARAMETERS, run_tag='', save_replay_memory=True):
-    best_result = max(metrics_history.rewards)
-    while cur_episode < hyperparameters.num_episodes:
-        directional_moves = {0:0, 1:0, 2:0, 3:0}
-        with torch.no_grad():
-            env.reset()
-            mcts.reset()
-            mcts.clear_cache()
-            training_examples = []
-            moves = 0
-            while True:
-                # get inputs, reward, mcts probs, run n_iterations of MCTS
-                terminated, inputs, reward, mcts_probs, move = mcts.choose_progression(hyperparameters.num_mcts_train_evals)
-                directional_moves[move] += 1
-                moves += 1
-                training_examples.append([inputs, mcts_probs])
-                if terminated:
-                    break
-                
-            for example in training_examples:
-                example.append(reward)
-                rotated_examples = rotate_examples(example)
-                for r_example in rotated_examples:
-                    replay_memory.insert(r_example)
-
-        right_percent, up_percent, left_percent, down_percent = directional_moves[0]/moves, directional_moves[1]/moves, directional_moves[2]/moves, directional_moves[3]/moves
-
-        if len(replay_memory.memory) > hyperparameters.minibatch_size:
-            value_loss, prob_loss, total_loss = train(replay_memory.sample(hyperparameters.minibatch_size), model, optimizer)
-            metrics_history.add_history({
-                'reward': reward,
-                'game_moves': moves,
-                'prob_loss': prob_loss,
-                'value_loss': value_loss,
-                'total_loss': total_loss,
-                'high_square': env.get_highest_square()
-            })
-            metrics_history.plot_history()
-
-        print(f'[EPISODE {cur_episode}] Total Loss: {total_loss}, Prob Loss {prob_loss}, Value Loss {value_loss}, Reward {reward}, Moves: {moves}, Highest Square: {env.get_highest_square()} \
-                                        Left% {left_percent}, Right% {right_percent}, Up% {up_percent}, Down% {down_percent}')
-        if reward > best_result:
-            print('*** NEW BEST REWARD ***')
-            print(f'prev: {best_result}, new: {reward}')
-            best_result = reward
-
-        if cur_episode % hyperparameters.checkpoint_every == 0:
-            save_checkpoint(cur_episode + 1, model, optimizer, hyperparameters, metrics_history, replay_memory, run_tag, save_replay_memory)
-        
-        cur_episode += 1
 
 MOVE_MAP = {0: 'right', 1: 'up', 2: 'left', 3: 'down'}
 def test_network(model, hyperparameters, tensor_conversion_fn, debug_print=False):
@@ -242,14 +194,14 @@ def test_network(model, hyperparameters, tensor_conversion_fn, debug_print=False
 
 def collect_episode(model, hyperparameters, tensor_conversion_fn):
     training_examples = []
-    env = _2048Env(keep_history=True)
+    env = _2048Env()
     env.reset()
-    mcts = MCTS_Evaluator(model, env, tensor_conversion_fn=tensor_conversion_fn, training=True)
+    mcts = MCTS_Evaluator(model, env, tensor_conversion_fn=tensor_conversion_fn, cpuct=hyperparameters.mcts_c_puct, tau=hyperparameters.mcts_tau, training=True)
     moves = 0
     with torch.no_grad():
         while True:
             # get inputs, reward, mcts probs, run n_iterations of MCTS
-            terminated, inputs, reward, mcts_probs, move = mcts.choose_progression(hyperparameters.num_mcts_train_evals)
+            terminated, inputs, reward, mcts_probs, _ = mcts.choose_progression(hyperparameters.num_mcts_train_evals)
             moves += 1
             training_examples.append([inputs, mcts_probs])
             if terminated:
@@ -259,7 +211,7 @@ def collect_episode(model, hyperparameters, tensor_conversion_fn):
             example.append(reward)
 
 
-    return training_examples, reward, moves, env.get_highest_square()
+    return training_examples, reward, moves, env.get_highest_square(), os.getpid()
 
 def rotate_training_examples(training_examples):
     inputs, probs, rewards = zip(*training_examples)
