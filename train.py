@@ -40,6 +40,7 @@ class MCTS_HYPERPARAMETERS:
     checkpoint_every: int = 100
     mcts_c_puct: int = 12
     mcts_tau: float = 1.0
+    minibatches_per_episode: int = 5
 
 import matplotlib.pyplot as plt
 import IPython.display as display
@@ -56,14 +57,15 @@ class MetricsHistory:
         self.best_result = float('-inf')
         self.figs = [plt.figure() for _ in range(6)]
     
-    def add_history(self, info):
+    def add_history(self, info, inc_episode=True):
         self.rewards.append(info['reward'])
         self.game_moves.append(info['game_moves'])
         self.prob_losses.append(info['prob_loss'])
         self.value_losses.append(info['value_loss'])
         self.total_losses.append(info['total_loss'])
         self.high_squares.append(info['high_square'])
-        self.episodes += 1
+        if inc_episode:
+            self.episodes += 1
         if info['reward'] > self.best_result:
             self.best_result = info['reward']
             return True
@@ -154,7 +156,6 @@ def train(samples, model, optimizer, tensor_conversion_fn, c_prob=5):
     obs = tensor_conversion_fn(obs)
     mcts_probs = torch.from_numpy(np.array(mcts_probs))
     rewards = torch.from_numpy(np.array(rewards)).unsqueeze(1).float()
-
     optimizer.zero_grad()
 
     exp_probs, exp_rewards = model(obs)
@@ -164,7 +165,6 @@ def train(samples, model, optimizer, tensor_conversion_fn, c_prob=5):
     loss = value_loss + prob_loss
     loss.backward()
     optimizer.step()
-
     return value_loss.item(), prob_loss.item(), loss.item()
 
 MOVE_MAP = {0: 'right', 1: 'up', 2: 'left', 3: 'down'}
@@ -195,6 +195,7 @@ def test_network(model, hyperparameters, tensor_conversion_fn, debug_print=False
                 break
 
 def collect_episode(model, hyperparameters, tensor_conversion_fn):
+    torch.set_num_threads(1)
     training_examples = []
     env = _2048Env()
     env.reset()
@@ -211,7 +212,6 @@ def collect_episode(model, hyperparameters, tensor_conversion_fn):
 
         for example in training_examples:
             example.append(reward)
-
 
     return training_examples, reward, moves, env.get_highest_square(), os.getpid()
 
