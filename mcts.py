@@ -31,7 +31,7 @@ class MCTS_Evaluator:
         self.env: _2048Env = env
         self.training = training
         self.cpuct = cpuct
-        self.tau = tau
+        self.tau = max(np.random.normal(tau, 0.333), 0.1)
         self.tensor_conversion_fn = tensor_conversion_fn
         self.puct_node = PuctNode(None)
 
