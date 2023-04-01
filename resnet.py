@@ -30,30 +30,34 @@ class ResNet2Heads(nn.Module):
     def __init__(self) -> None:
         super().__init__()
         self.conv_block = nn.Sequential(
-            nn.Conv2d(18, 64, kernel_size=(2,2), stride=1, padding='same'), # 1 x 19 x 4 x 4 -> 16 x 18 x 3 x 3
-            nn.BatchNorm2d(64),
+            nn.Conv2d(18, 128, kernel_size=(2,2), stride=1, padding='same'), # 1 x 19 x 4 x 4 -> 16 x 18 x 3 x 3
+            nn.BatchNorm2d(128),
             nn.ReLU(),
         )
         self.res_blocks = nn.Sequential(
-            ResidualBlock(64, 64),
-            ResidualBlock(64, 64),
-            ResidualBlock(64, 64),
-            ResidualBlock(64, 64)
+            ResidualBlock(128, 128),
+            ResidualBlock(128, 128),
+            ResidualBlock(128, 128),
+            ResidualBlock(128, 128)
         )
 
         self.connector = nn.Sequential(
             nn.Flatten(start_dim=1),
-            nn.Linear(64 * 4 * 4, 64),
+            nn.Linear(128 * 4 * 4, 64),
             nn.ReLU()
         )
 
         self.policy_head = nn.Sequential(
-            nn.Linear(64, 4),
+            nn.Linear(64, 32),
+            nn.ReLU(),
+            nn.Linear(32, 4),
             nn.Softmax(dim=1)
         )
 
         self.value_head = nn.Sequential(
-            nn.Linear(64, 1),
+            nn.Linear(64, 32),
+            nn.ReLU(),
+            nn.Linear(32, 1)
         )
             
 

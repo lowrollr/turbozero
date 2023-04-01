@@ -66,7 +66,8 @@ class MCTS_Evaluator:
             
                 puct_node.cum_child_w[best_move] += reward
                 puct_node.cum_child_n[best_move] += 1
-
+        if move_id is not None:
+            self.env.moves -=1
         puct_node.n += 1
         return reward
     
@@ -80,14 +81,17 @@ class MCTS_Evaluator:
 
         # pick best (legal) move
         legal_actions = self.puct_node.legal_actions
-        n_probs = np.copy(self.puct_node.cum_child_n) ** (1/self.tau)
         
+        n_probs = np.copy(self.puct_node.cum_child_n)
         n_probs /= np.sum(n_probs)
         
+        n_probs_tau = np.copy(n_probs) ** (1/self.tau)
+        n_probs_tau /= np.sum(n_probs_tau)
+        
         if self.training:
-            selection = legal_actions[np.argmax(np.random.multinomial(1, n_probs.take(legal_actions)))]
+            selection = legal_actions[np.argmax(np.random.multinomial(1, n_probs_tau.take(legal_actions)))]
         else:
-            selection = legal_actions[np.argmax(n_probs.take(legal_actions))]
+            selection = legal_actions[np.argmax(n_probs_tau.take(legal_actions))]
 
         _, terminated, reward, placement = self.env.push_move(selection)
 

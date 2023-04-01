@@ -4,7 +4,7 @@ import numpy as np
 def input_to_tensor(board_states):
     # convert board state values to one-hot encodings
     board_state = np.stack(board_states)
-    one_hotified = np.eye(18)[board_state]
+    one_hotified = np.eye(18)[board_state].transpose(0, 3, 1,2)
     tensor = torch.from_numpy(one_hotified).float()
     return tensor
 

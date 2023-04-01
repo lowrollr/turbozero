@@ -69,7 +69,6 @@ def get_legal_actions(board):
 @njit(nogil=True, fastmath=True)
 def post_move(board):
     terminated = False
-    reward = 0
     placement = None
     # choose a random empty spot
     empty = np.argwhere(board == 0)
@@ -80,9 +79,8 @@ def post_move(board):
 
     if np.max(get_legal_actions(board)) == 0:
         terminated = True
-        reward = np.log2(np.sum(2 ** board))
     
-    return placement, terminated, reward
+    return placement, terminated
 
 class _2048Env(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
@@ -98,6 +96,7 @@ class _2048Env(gym.Env):
         # We can slide in any of the four directions: right, up, left, down.
         self.action_space = spaces.Discrete(4) # 0 == right, 1 == up, 2 == left, 3 == down
         self.board = np.zeros((self.size, self.size), dtype=np.int32)
+        self.moves = 0
     
     def _get_obs(self):
         return tuple(tuple(row) for row in self.board)
@@ -107,7 +106,7 @@ class _2048Env(gym.Env):
 
     def reset(self, seed=None, options={}):
         super().reset(seed=seed)
-
+        self.moves = 0
         num_starting_tiles = options.get('starting_tiles', 2)
         self.board = np.zeros((self.size, self.size), dtype=np.int32)
         # choose 2 random indices for the first 2 tiles
@@ -140,7 +139,11 @@ class _2048Env(gym.Env):
     def step(self, action):
         self.apply_move(self.board, action)
     
-        placement, terminated, reward = post_move(self.board)
+        placement, terminated = post_move(self.board)
+        if terminated:
+            reward = self.moves
+        else:
+            reward = 0
             
         return self._get_obs(), reward, terminated, False, self._get_info(), placement
     
@@ -167,6 +170,7 @@ class _2048Env(gym.Env):
     
     def push_move(self, move_id):
         if move_id is not None:
+            self.moves += 1
             obs, reward, terminated, _, _, placement = self.step(move_id)
             return obs, terminated, reward, placement
         else:

@@ -41,6 +41,7 @@ class MCTS_HYPERPARAMETERS:
     mcts_c_puct: int = 12
     mcts_tau: float = 1.0
     minibatches_per_episode: int = 5
+    c_prob: int = 3
 
 import matplotlib.pyplot as plt
 import IPython.display as display
@@ -159,7 +160,7 @@ def train(samples, model, optimizer, tensor_conversion_fn, c_prob=5):
     optimizer.zero_grad()
 
     exp_probs, exp_rewards = model(obs)
-    value_loss = torch.mean((rewards - exp_rewards) ** 2)
+    value_loss = torch.mean(torch.abs(rewards - exp_rewards))
     prob_loss = -1 * c_prob * torch.mean(torch.sum(mcts_probs*torch.log(exp_probs), dim=1))
 
     loss = value_loss + prob_loss
@@ -169,8 +170,8 @@ def train(samples, model, optimizer, tensor_conversion_fn, c_prob=5):
 
 MOVE_MAP = {0: 'right', 1: 'up', 2: 'left', 3: 'down'}
 def test_network(model, hyperparameters, tensor_conversion_fn, debug_print=False):
-    env = _2048Env(keep_history=True)
-    mcts = MCTS_Evaluator(model, env, tensor_conversion_fn, training=False)
+    env = _2048Env()
+    mcts = MCTS_Evaluator(model, env, tensor_conversion_fn, cpuct=hyperparameters.mcts_c_puct, tau=hyperparameters.mcts_tau)
     env.reset()
     model.eval()
     with torch.no_grad():
@@ -189,13 +190,12 @@ def test_network(model, hyperparameters, tensor_conversion_fn, debug_print=False
                 print(f'Network Probs: {probs.detach().numpy()}')
                 print(f'MCTS Probs: {mcts_probs}')
                 print(f'Network value: {value.item()}')
-                print(f'Q Value: {mcts.puct_node.w / mcts.puct_node.n}')
+                print(f'Q Value: {np.sum(mcts.puct_node.cum_child_w) / mcts.puct_node.n}')
             if terminated:
                 print(f'Terminated, final reward = {reward}')
                 break
 
 def collect_episode(model, hyperparameters, tensor_conversion_fn):
-    torch.set_num_threads(1)
     training_examples = []
     env = _2048Env()
     env.reset()
