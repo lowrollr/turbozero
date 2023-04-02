@@ -8,9 +8,10 @@ import numba
 def get_best_move_w_puct(legal_actions, child_n, child_w, child_probs, cpuct):
     n_sum = np.sum(child_n)
     q_values = np.where(child_n != 0, np.divide(child_w, child_n), 0)
-    puct_scores = q_values + (cpuct * child_probs * ((np.sqrt(n_sum))/(1 + child_n)))
+    puct_scores = q_values + (cpuct * child_probs * ((np.sqrt(1 + n_sum))/(1 + child_n)))
     legal_move_scores = puct_scores.take(legal_actions)
-    best_move = legal_actions[np.argmax(legal_move_scores)]
+    # randomly break ties
+    best_move = legal_actions[np.random.choice(np.where(legal_move_scores == legal_move_scores.max())[0])]
     return best_move
 
 class PuctNode:
