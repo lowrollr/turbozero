@@ -82,6 +82,29 @@ def post_move(board):
     
     return placement, terminated
 
+@njit(nogil=True, fastmath=True)
+def get_progressions_for_board(board):
+        boards = []
+        progressions = []
+        probs = []
+        # returns board, probability tuples for each possible progression
+        empty_squares = np.argwhere(board == 0)
+        num_empty_squares = len(empty_squares)
+        fraction = 1 / num_empty_squares
+        for (i0, i1) in empty_squares:
+            new_board1 = np.copy(board)
+            new_board1[i0,i1] = 1
+            boards.append(new_board1)
+            probs.append(fraction * 0.9)
+            new_board2 = np.copy(board)
+            new_board2[i0,i1] = 2
+            boards.append(new_board2)
+            probs.append(fraction * 0.1)
+            p_id = (i0 * 4) + i1
+            progressions.append((p_id, 1))
+            progressions.append((p_id, 2))
+        return boards, progressions, probs
+
 class _2048Env(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
 
@@ -147,26 +170,10 @@ class _2048Env(gym.Env):
             
         return self._get_obs(), reward, terminated, False, self._get_info(), placement
     
-    def get_progressions(self):
-        legal_moves = np.argwhere(get_legal_actions(self.board) == 1).flatten()
-        boards = []
-        move_ids = []
-        placements = []
-
-        for move in legal_moves:
-            new_board = np.copy(self.board)
-            self.apply_move(new_board, move)
-            empty_squares = np.argwhere(new_board == 0)
-            for a in range(1, 3):
-                for (i0, i1) in empty_squares:
-                    newer_board = np.copy(new_board)
-                    newer_board[i0,i1] = a
-                    boards.append(newer_board)
-                    move_ids.append(move)
-                    placements.append(((i0 * 4) + i1, a))
-
-
-        return placements, move_ids, boards, legal_moves
+    def get_progressions_for_move(self, move_id):
+        new_board = np.copy(self.board)
+        self.apply_move(new_board, move_id)
+        return get_progressions_for_board(new_board)
     
     def push_move(self, move_id):
         if move_id is not None:

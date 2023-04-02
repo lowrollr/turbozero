@@ -4,7 +4,7 @@ import numpy as np
 from env import _2048Env, get_legal_actions
 import numba
 
-@numba.njit(nogil=True, fastmath=True)
+# @numba.njit(nogil=True, fastmath=True)
 def get_best_move_w_puct(legal_actions, child_n, child_w, child_probs, cpuct):
     n_sum = np.sum(child_n)
     q_values = np.where(child_n != 0, np.divide(child_w, child_n), 0)
@@ -18,7 +18,7 @@ class PuctNode:
         self.move_id = move_id
         self.n = 0
         self.child_probs = child_probs
-        self.children = defaultdict(lambda: [None, None, None, None])
+        self.children = defaultdict(lambda: dict())
         self.legal_actions = []
         self.cum_child_w = np.zeros(4)
         self.cum_child_n = np.zeros(4)
@@ -43,6 +43,44 @@ class MCTS_Evaluator:
     
     def clear_cache(self):
         self.get_board.cache_clear()
+
+    def iterate_v2(self, puct_node: PuctNode):
+        if puct_node.n == 0:
+            # get legal actions
+            puct_node.legal_actions = np.argwhere(get_legal_actions(self.env.board) == 1).flatten()
+
+        # choose which edge to traverse
+        best_move = get_best_move_w_puct(puct_node.legal_actions, puct_node.cum_child_n, puct_node.cum_child_w, puct_node.child_probs, self.cpuct)
+        if not puct_node.children[best_move]:
+            # get all progressions from this move
+            boards, progressions, stochastic_probs = self.env.get_progressions_for_move(best_move)
+            # convert to tensor
+            boards = self.tensor_conversion_fn(boards)
+            # get value and probs for each progression
+            probs, values = self.model(boards)
+            probs = probs.detach().cpu().numpy()
+            values = values.detach().cpu().numpy()
+
+            # create a new node for each progression
+            reward = 0
+            for i, p_id in enumerate(progressions):
+                puct_node.children[best_move][p_id] = PuctNode(best_move, probs[i])
+                reward += stochastic_probs[i] * values[i]
+            puct_node.cum_child_n[best_move] = 1
+            puct_node.cum_child_w[best_move] = reward
+        else:
+            # recurse
+            _, terminated, reward, placement = self.env.push_move(best_move)
+            if not terminated:    
+                reward = self.iterate_v2(puct_node.children[best_move][placement])
+            puct_node.cum_child_w[best_move] += reward
+            puct_node.cum_child_n[best_move] += 1
+
+        if puct_node.move_id is not None:
+            self.env.moves -= 1
+        puct_node.n += 1
+        return reward
+
 
     def iterate(self, move_id: int, puct_node: PuctNode):
         obs, terminated, reward, placement = self.env.push_move(move_id)
@@ -75,8 +113,14 @@ class MCTS_Evaluator:
         obs = self.env._get_obs()
             
         original_board = np.copy(self.env.board)
+
+        probs, value = self.model(self.tensor_conversion_fn([obs]))
+        probs = probs.detach().cpu().numpy()[0]
+        self.puct_node.child_probs = probs
+
+
         for _ in range(num_iterations):
-            self.iterate(None, self.puct_node)
+            self.iterate_v2(self.puct_node)
             self.env.board = np.copy(original_board)
 
         # pick best (legal) move
@@ -95,11 +139,13 @@ class MCTS_Evaluator:
 
         _, terminated, reward, placement = self.env.push_move(selection)
 
-        if self.puct_node.children[placement][selection] is None:
-            self.puct_node.children[placement][selection] = PuctNode(selection, self.puct_node.child_probs[selection])
+        if self.puct_node.children[selection][placement] is None:
+            self.puct_node.children[selection][placement] = PuctNode(selection, self.puct_node.child_probs[selection])
         
-        self.puct_node = self.puct_node.children[placement][selection]
+        self.puct_node = self.puct_node.children[selection][placement]
+
         if self.puct_node.child_probs is None:
+            # initialize empty node
             probs, value = self.model(self.tensor_conversion_fn([obs]))
             probs = probs.detach().cpu().numpy()[0]
             value = value.item()
