@@ -73,11 +73,10 @@ class MCTS_Evaluator:
             _, terminated, reward, placement = self.env.push_move(best_move)
             if not terminated:    
                 reward = self.iterate_v2(puct_node.children[best_move][placement])
+            self.env.moves -=1
             puct_node.cum_child_w[best_move] += reward
             puct_node.cum_child_n[best_move] += 1
 
-        if puct_node.move_id is not None:
-            self.env.moves -= 1
         puct_node.n += 1
         return reward
 
@@ -101,11 +100,10 @@ class MCTS_Evaluator:
             else:
                 best_move = get_best_move_w_puct(puct_node.legal_actions, puct_node.cum_child_n, puct_node.cum_child_w, puct_node.child_probs, self.cpuct)
                 reward = self.iterate(best_move, puct_node)
-            
+                self.env.moves -=1
                 puct_node.cum_child_w[best_move] += reward
                 puct_node.cum_child_n[best_move] += 1
-        if move_id is not None:
-            self.env.moves -=1
+            
         puct_node.n += 1
         return reward
     
