@@ -4,7 +4,7 @@ import numpy as np
 from env import _2048Env, get_legal_actions
 import numba
 
-# @numba.njit(nogil=True, fastmath=True)
+@numba.njit(nogil=True, fastmath=True)
 def get_best_move_w_puct(legal_actions, child_n, child_w, child_probs, cpuct):
     n_sum = np.sum(child_n)
     q_values = np.where(child_n != 0, np.divide(child_w, child_n), 0)
