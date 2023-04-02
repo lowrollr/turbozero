@@ -4,10 +4,10 @@ import numpy as np
 from env import _2048Env, get_legal_actions
 import numba
 
-@numba.njit(nogil=True, fastmath=True)
-def get_best_move_w_puct(legal_actions, child_n, child_w, child_probs, cpuct):
+# @numba.njit(nogil=True, fastmath=True)
+def get_best_move_w_puct(legal_actions, child_n, child_w, child_probs, cpuct, cpuct_divisor):
     n_sum = np.sum(child_n)
-    q_values = np.where(child_n != 0, np.divide(child_w, child_n), 0)
+    q_values = np.divide(np.where(child_n != 0, np.divide(child_w, child_n), 0), cpuct_divisor)
     puct_scores = q_values + (cpuct * child_probs * ((np.sqrt(1 + n_sum))/(1 + child_n)))
     legal_move_scores = puct_scores.take(legal_actions)
     # randomly break ties
@@ -32,6 +32,7 @@ class MCTS_Evaluator:
         self.env: _2048Env = env
         self.training = training
         self.cpuct = cpuct
+        self.cpuct_divisor = 1
         self.tau = max(np.random.normal(tau, 0.333), 0.1)
         self.tensor_conversion_fn = tensor_conversion_fn
         self.puct_node = PuctNode(None)
@@ -51,7 +52,7 @@ class MCTS_Evaluator:
             puct_node.legal_actions = np.argwhere(get_legal_actions(self.env.board) == 1).flatten()
 
         # choose which edge to traverse
-        best_move = get_best_move_w_puct(puct_node.legal_actions, puct_node.cum_child_n, puct_node.cum_child_w, puct_node.child_probs, self.cpuct)
+        best_move = get_best_move_w_puct(puct_node.legal_actions, puct_node.cum_child_n, puct_node.cum_child_w, puct_node.child_probs, self.cpuct, self.cpuct_divisor)
         if not puct_node.children[best_move]:
             # get all progressions from this move
             boards, progressions, stochastic_probs = self.env.get_progressions_for_move(best_move)
@@ -61,6 +62,7 @@ class MCTS_Evaluator:
             probs, values = self.model(boards)
             probs = probs.detach().cpu().numpy()
             values = values.detach().cpu().numpy()
+            self.cpuct_divisor = max(self.cpuct_divisor, np.max(values))
 
             # create a new node for each progression
             reward = 0
@@ -115,6 +117,7 @@ class MCTS_Evaluator:
 
         probs, value = self.model(self.tensor_conversion_fn([obs]))
         probs = probs.detach().cpu().numpy()[0]
+        self.cpuct_divisor = value.item()
         self.puct_node.child_probs = probs
 
 
