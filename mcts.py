@@ -4,7 +4,7 @@ import numpy as np
 from env import _2048Env, get_legal_actions
 import numba
 
-# @numba.njit(nogil=True, fastmath=True)
+@numba.njit(nogil=True, fastmath=True)
 def get_best_move_w_puct(legal_actions, child_n, child_w, child_probs, cpuct, lmax, lmin):
     n_sum = np.sum(child_n)
     q_values = np.divide(np.subtract(np.where(child_n != 0, np.divide(child_w, child_n), 0), lmax), lmin / lmax)
@@ -34,7 +34,7 @@ class MCTS_Evaluator:
         self.cpuct = cpuct
         self.lmax = 2
         self.lmin = 1
-        self.tau = max(np.random.normal(tau, 0.333), 0.1)
+        self.tau = tau
         self.tensor_conversion_fn = tensor_conversion_fn
         self.puct_node = PuctNode(None)
 
