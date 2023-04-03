@@ -21,11 +21,19 @@ class ReplayMemory:
     def insert(self, sample):
         self.memory.append(sample)
 
-    def extend(self, samples):
-        self.memory.extend(samples)
-
     def size(self):
         return len(self.memory)
+    
+class GameReplayMemory(ReplayMemory):
+    def __init__(self, max_size=10000) -> None:
+        super().__init__(max_size)
+    
+    def sample(self, num_samples):
+        games = random.choices(self.memory, k=num_samples)
+        samples = []
+        for game in games:
+            samples.append(random.sample(game, 1)[0])
+        return samples
 
 
 @dataclass()
