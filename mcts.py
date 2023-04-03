@@ -145,7 +145,7 @@ class MCTS_Evaluator:
         _, terminated, reward, placement = self.env.push_move(selection)
 
         if self.puct_node.children[selection][placement] is None:
-            self.puct_node.children[selection][placement] = PuctNode(selection, self.puct_node.child_probs[selection])
+            self.puct_node.children[selection][placement] = PuctNode(selection)
         
         self.puct_node = self.puct_node.children[selection][placement]
 
