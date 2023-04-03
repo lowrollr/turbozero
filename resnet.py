@@ -30,32 +30,40 @@ class ResNet2Heads(nn.Module):
     def __init__(self) -> None:
         super().__init__()
         self.conv_block = nn.Sequential(
-            nn.Conv2d(18, 128, kernel_size=(2,2), stride=1, padding='same'), # 1 x 19 x 4 x 4 -> 16 x 18 x 3 x 3
-            nn.BatchNorm2d(128),
+            nn.Conv2d(18, 256, kernel_size=(2,2), stride=1, padding='same'), # 1 x 19 x 4 x 4 -> 16 x 18 x 3 x 3
+            nn.BatchNorm2d(256),
             nn.ReLU(),
         )
         self.res_blocks = nn.Sequential(
-            ResidualBlock(128, 128),
-            ResidualBlock(128, 128),
-            ResidualBlock(128, 128),
-            ResidualBlock(128, 128)
+            ResidualBlock(256, 256),
+            ResidualBlock(256, 256),
+            ResidualBlock(256, 256),
+            ResidualBlock(256, 256)
         )
 
-        self.connector = nn.Sequential(
-            nn.Flatten(start_dim=1),
-            nn.Linear(128 * 4 * 4, 64),
-            nn.ReLU()
-        )
+       
 
         self.policy_head = nn.Sequential(
-            nn.Linear(64, 32),
+            nn.Conv2d(256, 128, kernel_size=(2,2), stride=1),
+            nn.BatchNorm2d(128),
+            nn.ReLU(),
+            nn.Flatten(start_dim=1),
+            nn.Linear(128 * 3 * 3, 32),
+            nn.ReLU(),
+            nn.Linear(32, 32),
             nn.ReLU(),
             nn.Linear(32, 4),
             nn.Softmax(dim=1)
         )
 
         self.value_head = nn.Sequential(
-            nn.Linear(64, 32),
+            nn.Conv2d(256, 128, kernel_size=(2,2), stride=1),
+            nn.BatchNorm2d(128),
+            nn.ReLU(),
+            nn.Flatten(start_dim=1),
+            nn.Linear(128 * 3 * 3, 32),
+            nn.ReLU(),
+            nn.Linear(32, 32),
             nn.ReLU(),
             nn.Linear(32, 1)
         )
@@ -64,7 +72,6 @@ class ResNet2Heads(nn.Module):
     def forward(self, x):
         x = self.conv_block(x)
         x = self.res_blocks(x)
-        x = self.connector(x)
         policy = self.policy_head(x)
         value = self.value_head(x)
         return policy, value
