@@ -37,13 +37,13 @@ def input_to_tensor_scalar(board_states):
 def compare_tiles(arr): # thanks GPT-4!
     # Compare with the tile below
     shifted_down = np.roll(arr, -1, axis=0)
-    vertical_comparison = np.equal(arr, shifted_down).astype(float)
+    vertical_comparison = np.logical_and(np.not_equal(arr, 0), np.equal(arr, shifted_down)).astype(float)
     vertical_comparison[:-1, :] = vertical_comparison[1:, :]
     vertical_comparison[-1, :] = 0
 
     # Compare with the tile to the right
     shifted_right = np.roll(arr, -1, axis=1)
-    horizontal_comparison = np.equal(arr, shifted_right).astype(float)
+    horizontal_comparison = np.logical_and(np.not_equal(arr, 0), np.equal(arr, shifted_right)).astype(float)
     horizontal_comparison[:, :-1] = horizontal_comparison[:, 1:]
     horizontal_comparison[:, -1] = 0
 
