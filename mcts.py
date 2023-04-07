@@ -29,10 +29,11 @@ class PuctNode:
         
 
 class MCTS_Evaluator:
-    def __init__(self, model, env, tensor_conversion_fn, cpuct, tau, training=False) -> None:
+    def __init__(self, model, env, tensor_conversion_fn, cpuct, tau, epsilon, training=False) -> None:
         self.model = model
         self.env: _2048Env = env
         self.training = training
+        self.epsilon = epsilon
         self.cpuct = cpuct
         self.lmax = 2
         self.lmin = 1
@@ -141,7 +142,7 @@ class MCTS_Evaluator:
         n_probs_tau = np.copy(n_probs) ** (1/self.tau)
         n_probs_tau /= np.sum(n_probs_tau)
         
-        if self.training:
+        if self.training and np.random.rand() < self.epsilon:
             selection = legal_actions[np.argmax(np.random.multinomial(1, n_probs_tau.take(legal_actions)))]
         else:
             selection = legal_actions[np.argmax(n_probs_tau.take(legal_actions))]

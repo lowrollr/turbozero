@@ -52,6 +52,9 @@ class MCTS_HYPERPARAMETERS:
     checkpoint_every: int = 100
     mcts_c_puct: int = 12
     mcts_tau: float = 1.0
+    mcts_epsilon_start: float = 1.0
+    mcts_epsilon_end: float = 0.01
+    mcts_epsilon_decay_rate: float = 0.0001
     minibatches_per_episode: int = 5
     c_prob: int = 3
 
@@ -258,11 +261,11 @@ def test_network(model, hyperparameters, tensor_conversion_fn, debug_print=False
                 break
     return reward, moves, env.get_highest_square(), env.get_score()
 
-def collect_episode(model, hyperparameters, tensor_conversion_fn):
+def collect_episode(model, hyperparameters, tensor_conversion_fn, epsilon):
     training_examples = []
     env = _2048Env()
     env.reset()
-    mcts = MCTS_Evaluator(model, env, tensor_conversion_fn=tensor_conversion_fn, cpuct=hyperparameters.mcts_c_puct, tau=hyperparameters.mcts_tau, training=True)
+    mcts = MCTS_Evaluator(model, env, tensor_conversion_fn=tensor_conversion_fn, cpuct=hyperparameters.mcts_c_puct, tau=hyperparameters.mcts_tau, epsilon=epsilon, training=True)
     moves = 0
     with torch.no_grad():
         while True:
