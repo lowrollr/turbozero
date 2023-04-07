@@ -16,10 +16,13 @@ def merge(values, reverse=False):
     seen_first = False
     can_combine = False
     m_index = index
+    score = 0
+
     while index >= 0 and index < size:
         if values[index] != 0:
             if can_combine and merged[m_index] == values[index]:
                 merged[m_index] += 1
+                score += 2 ** merged[m_index]
                 can_combine = False
             elif values[index] != 0:
                 if seen_first:
@@ -32,7 +35,7 @@ def merge(values, reverse=False):
                     seen_first = True
                 
         index += direction
-    return merged
+    return merged, score
 
 @njit(nogil=True, fastmath=True)
 def get_legal_actions(board):
@@ -120,6 +123,7 @@ class _2048Env(gym.Env):
         self.action_space = spaces.Discrete(4) # 0 == right, 1 == up, 2 == left, 3 == down
         self.board = np.zeros((self.size, self.size), dtype=np.int32)
         self.moves = 0
+        self.score = 0
     
     def _get_obs(self):
         return tuple(tuple(row) for row in self.board)
@@ -130,6 +134,7 @@ class _2048Env(gym.Env):
     def reset(self, seed=None, options={}):
         super().reset(seed=seed)
         self.moves = 0
+        self.score = 0
         num_starting_tiles = options.get('starting_tiles', 2)
         self.board = np.zeros((self.size, self.size), dtype=np.int32)
         # choose 2 random indices for the first 2 tiles
@@ -151,16 +156,20 @@ class _2048Env(gym.Env):
         elif action == 3:
             reverse = True
             is_rows = False
+        score = 0
 
         if is_rows:
             for i in range(self.size):
-                board[i] = merge(board[i], reverse=reverse)
+                board[i], s = merge(board[i], reverse=reverse)
+                score += s
         else:
             for i in range(self.size):
-                board[:, i] = merge(board[:, i], reverse=reverse)
+                board[:, i], s = merge(board[:, i], reverse=reverse)
+                score += s
+        return score
 
     def step(self, action):
-        self.apply_move(self.board, action)
+        score = self.apply_move(self.board, action)
     
         placement, terminated = post_move(self.board)
         if terminated:
@@ -168,23 +177,29 @@ class _2048Env(gym.Env):
         else:
             reward = 0
             
-        return self._get_obs(), reward, terminated, False, self._get_info(), placement
+        return self._get_obs(), reward, terminated, False, self._get_info(), placement, score
     
     def get_progressions_for_move(self, move_id):
         new_board = np.copy(self.board)
         self.apply_move(new_board, move_id)
         return get_progressions_for_board(new_board)
     
-    def push_move(self, move_id):
+    def push_move(self, move_id, is_simul=True):
         if move_id is not None:
             self.moves += 1
-            obs, reward, terminated, _, _, placement = self.step(move_id)
+            
+            obs, reward, terminated, _, _, placement, score = self.step(move_id)
+            if not is_simul:
+                self.score += score
             return obs, terminated, reward, placement
         else:
             return self._get_obs(), False, 0, None
     
     def get_highest_square(self):
         return np.max(self.board)
+    
+    def get_score(self):
+        return self.score
 
     def render(self):
         return None

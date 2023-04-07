@@ -1,5 +1,5 @@
 import random
-from collections import deque
+from collections import deque, OrderedDict
 import numpy as np
 import torch
 from dataclasses import dataclass
@@ -45,6 +45,9 @@ class MCTS_HYPERPARAMETERS:
     replay_memory_size: int = 30000 
     num_mcts_train_evals: int = 500
     num_mcts_test_evals: int = 1000
+    num_epochs: int = 1000
+    num_eval_games: int = 100
+    episodes_per_epoch: int = 1000
     num_episodes: int = 1000
     checkpoint_every: int = 100
     mcts_c_puct: int = 12
@@ -57,73 +60,121 @@ import IPython.display as display
 
 class MetricsHistory:
     def __init__(self) -> None:
-        self.rewards = []
-        self.game_moves = []
-        self.prob_losses = []
-        self.value_losses = []
-        self.total_losses = []
-        self.high_squares = []
+        self.cur_epoch = 0
+        self.training_history = OrderedDict()
+        self.training_history['game_score'] = []
+        self.training_history['game_moves'] = []
+        self.training_history['high_square'] = []
+        self.training_history['prob_loss'] = []
+        self.training_history['value_loss'] = []
+        self.training_history['total_loss'] = []
+        
+        
+        self.eval_history = []
+
+        self.eval_history_overall = OrderedDict()
+        self.eval_history_overall['game_score'] = []
+        self.eval_history_overall['game_moves'] = []
+        self.eval_history_overall['high_square'] = []
+
+
         self.episodes = 0
-        self.best_result = float('-inf')
-        self.figs = [plt.figure() for _ in range(6)]
+        self.best_training_result = float('-inf')
+        self.best_eval_result = float('-inf')
+        self.training_figs = [plt.figure() for _ in range(6)]
+        self.eval_figs = [plt.figure() for _ in range(3)]
+        self.high_score_metric = 'game_moves'
+        self.plot_titles = ['Game Score', 'Game Moves', 'High Square (log2)', 'Prob Loss', 'Value Loss', 'Total Loss']
+
+        self.last_eval_histograms = []
     
-    def add_history(self, info, inc_episode=True):
-        self.rewards.append(info['reward'])
-        self.game_moves.append(info['game_moves'])
-        self.prob_losses.append(info['prob_loss'])
-        self.value_losses.append(info['value_loss'])
-        self.total_losses.append(info['total_loss'])
-        self.high_squares.append(info['high_square'])
-        if inc_episode:
-            self.episodes += 1
-        if info['reward'] > self.best_result:
-            self.best_result = info['reward']
+    def add_training_history(self, info):
+        
+        self.training_history['game_score'].append(info['game_score'])
+        self.training_history['game_moves'].append(info['game_moves'])
+        self.training_history['prob_loss'].append(info['prob_loss'])
+        self.training_history['value_loss'].append(info['value_loss'])
+        self.training_history['total_loss'].append(info['total_loss'])
+        self.training_history['high_square'].append(info['high_square'])
+        self.episodes += 1
+        if info[self.high_score_metric] > self.best_training_result:
+            self.best_training_result = info[self.high_score_metric]
             return True
         return False
     
-    def plot_history(self, plots = None, offset=0, window_size=50):
-        offset = min(offset, len(self.rewards))
-        offset = -offset
+    def add_eval_history(self, info):
+        if len(self.eval_history) < self.cur_epoch + 1:
+            self.eval_history.append(OrderedDict())
+            self.eval_history[self.cur_epoch]['game_score'] = []
+            self.eval_history[self.cur_epoch]['game_moves'] = []
+            self.eval_history[self.cur_epoch]['high_square'] = []
 
-        window_size = min(window_size, len(self.rewards))
+        epoch_history = self.eval_history[self.cur_epoch]
+        epoch_history['game_score'].append(info['game_score'])
+        epoch_history['game_moves'].append(info['game_moves'])
+        epoch_history['high_square'].append(info['high_square'])
 
-        if plots is None:
-            plots = ['rewards', 'game_moves', 'prob_losses', 'value_losses', 'total_losses', 'high_squares']
-
-        display.clear_output(wait=False)
-        # this could probably be implemented a tad more elegantly
-        for i, pl in enumerate(plots):
-            fig = self.figs[i]
+        if info[self.high_score_metric] > self.best_eval_result:
+            self.best_eval_result = info[self.high_score_metric]
+            return True
+        return False
+    
+    def update_overall_eval_history(self):
+        for i, (k, data) in enumerate(self.eval_history[self.cur_epoch].items()):
+            self.eval_history_overall[k].append(np.mean(data))
+            fig = self.eval_figs[i]
             fig.clear()
             ax = fig.add_subplot(111)
-            if pl == 'rewards':
-                ax.plot(self.rewards[offset:])
-                ax.plot(bottleneck.move_mean(self.rewards[offset:], window=window_size, min_count=1))
-                ax.set_title('Rewards (log2)')
-                
-            elif pl == 'game_moves':
-                ax.plot(self.game_moves[offset:])
-                ax.set_title('Game Moves')
-                ax.plot(bottleneck.move_mean(self.game_moves[offset:], window=window_size, min_count=1))
-            elif pl == 'prob_losses':
-                ax.plot(self.prob_losses[offset:])
-                ax.set_title('Prob. Loss')
-                ax.plot(bottleneck.move_mean(self.prob_losses[offset:], window=window_size, min_count=1))
-            elif pl == 'value_losses':
-                ax.plot(self.value_losses[offset:])
-                ax.set_title('Value Loss')
-                ax.plot(bottleneck.move_mean(self.value_losses[offset:], window=window_size, min_count=1))
-            elif pl == 'total_losses':
-                ax.plot(self.total_losses[offset:])
-                ax.set_title('Total Loss')
-                ax.plot(bottleneck.move_mean(self.total_losses[offset:], window=window_size, min_count=1))
-            elif pl == 'high_squares':
-                ax.plot(self.high_squares[offset:])
-                ax.set_title('High Square (log2)')
-                ax.plot(bottleneck.move_mean(self.high_squares[offset:], window=window_size, min_count=1))
-            else:
-                print(f'Unknown metric: {pl}')
-            display.display(fig)
+            ax.plot(self.eval_history_overall[k])
+            ax.set_title(f'Mean Eval {self.plot_titles[i]}')
+            ax.annotate('%0.3f' % data[-1], xy=(1, data[-1]), xytext=(8, 0), 
+                                    xycoords=('axes fraction', 'data'), textcoords='offset points')
+
+    def set_last_eval_plots(self):
+        figs = []
+        for i, data in enumerate(self.eval_history[self.cur_epoch].values()):
+            fig = plt.figure()
+            ax = fig.add_subplot(111)
+            ax.hist(data, bins='auto')
+            ax.set_title(f'Epoch {self.cur_epoch} {self.plot_titles[i]}')
+            figs.append(fig)
+        self.last_eval_histograms = figs
+
+    def increment_epoch(self):
+        self.cur_epoch += 1
+
+    def plot_history(self, offset=0, window_size=50, plot_training = True, plot_eval = True):
+        # plot training history
+        qty = len(self.training_history['game_score'])
+        offset = min(offset, qty)
+        offset = -offset
+        
+        window_size = min(window_size, qty)
+        display.clear_output(wait=False)
+        if plot_training:
+            for i, data in enumerate(self.training_history.values()):
+                fig = self.training_figs[i]
+                fig.clear()
+                ax = fig.add_subplot(111)
+                ts = np.arange(self.episodes+offset+1, self.episodes+1)
+                running_mean = bottleneck.move_mean(data[offset:], window=window_size, min_count=1)
+                ax.plot(ts, data[offset:])
+                ax.plot(ts, running_mean)
+                ax.set_title(self.plot_titles[i])
+                ax.annotate('%0.3f' % running_mean[-1], xy=(1, running_mean[-1]), xytext=(8, 0), 
+                                    xycoords=('axes fraction', 'data'), textcoords='offset points')
+                display.display(fig)
+        if plot_eval:
+            for fig in self.last_eval_histograms:
+                display.display(fig)
+
+            # plot last eval results
+            for fig in self.eval_figs:
+                display.display(fig)
+
+        
+
+        
         
 
 def load_from_checkpoint(filename, model_class, load_replay_memory=True):
@@ -180,7 +231,6 @@ def train(samples, model, optimizer, tensor_conversion_fn, c_prob=5):
 MOVE_MAP = {0: 'right', 1: 'up', 2: 'left', 3: 'down'}
 def test_network(model, hyperparameters, tensor_conversion_fn, debug_print=False):
     env = _2048Env()
-    
     mcts = MCTS_Evaluator(model, env, tensor_conversion_fn, cpuct=hyperparameters.mcts_c_puct, tau=hyperparameters.mcts_tau)
     env.reset()
     model.eval()
@@ -202,8 +252,10 @@ def test_network(model, hyperparameters, tensor_conversion_fn, debug_print=False
                 print(f'Network value: {value.item()}')
                 print(f'Q Value: {np.sum(mcts.puct_node.cum_child_w) / mcts.puct_node.n}')
             if terminated:
-                print(f'Terminated, final reward = {reward}')
+                if debug_print:
+                    print(f'Terminated, final reward = {reward}')
                 break
+    return reward, moves, env.get_highest_square(), env.get_score()
 
 def collect_episode(model, hyperparameters, tensor_conversion_fn):
     training_examples = []
@@ -224,7 +276,7 @@ def collect_episode(model, hyperparameters, tensor_conversion_fn):
             example.append(rem_reward)
             rem_reward -= 1
 
-    return training_examples, reward, moves, env.get_highest_square(), os.getpid()
+    return training_examples, reward, moves, env.get_highest_square(), os.getpid(), env.get_score()
 
 
 def rotate_training_examples(training_examples):

@@ -144,7 +144,7 @@ class MCTS_Evaluator:
         else:
             selection = legal_actions[np.argmax(n_probs_tau.take(legal_actions))]
 
-        _, terminated, reward, placement = self.env.push_move(selection)
+        _, terminated, reward, placement = self.env.push_move(selection, is_simul=False)
 
         if self.puct_node.children[selection][placement] is None:
             self.puct_node.children[selection][placement] = PuctNode(selection)
