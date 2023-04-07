@@ -121,13 +121,14 @@ class MetricsHistory:
     
     def update_overall_eval_history(self):
         for i, (k, data) in enumerate(self.eval_history[self.cur_epoch].items()):
-            self.eval_history_overall[k].append(np.mean(data))
+            mean = np.mean(data)
+            self.eval_history_overall[k].append(mean)
             fig = self.eval_figs[i]
             fig.clear()
             ax = fig.add_subplot(111)
             ax.plot(self.eval_history_overall[k])
             ax.set_title(f'Mean Eval {self.plot_titles[i]}')
-            ax.annotate('%0.3f' % data[-1], xy=(1, data[-1]), xytext=(8, 0), 
+            ax.annotate('%0.3f' % mean, xy=(1, mean), xytext=(8, 0), 
                                     xycoords=('axes fraction', 'data'), textcoords='offset points')
 
     def set_last_eval_plots(self):
