@@ -77,9 +77,11 @@ class MCTS_Evaluator:
             puct_node.cum_child_w[best_move] = reward
         else:
             # recurse
-            _, terminated, reward, placement = self.env.push_move(best_move)
+            _, terminated, _, placement = self.env.push_move(best_move)
             if not terminated:    
                 reward = self.iterate_v2(puct_node.children[best_move][placement])
+            else:
+                reward = 0
             self.env.moves -=1
             puct_node.cum_child_w[best_move] += reward
             puct_node.cum_child_n[best_move] += 1
