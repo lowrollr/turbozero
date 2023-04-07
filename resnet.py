@@ -30,25 +30,25 @@ class ResNet2Heads(nn.Module):
     def __init__(self) -> None:
         super().__init__()
         self.conv_block = nn.Sequential(
-            nn.Conv2d(18, 256, kernel_size=(2,2), stride=1, padding='same'), # 1 x 19 x 4 x 4 -> 16 x 18 x 3 x 3
-            nn.BatchNorm2d(256),
+            nn.Conv2d(4, 64, kernel_size=(2,2), stride=1, padding='same'), # 1 x 19 x 4 x 4 -> 16 x 18 x 3 x 3
+            nn.BatchNorm2d(64),
             nn.ReLU(),
         )
         self.res_blocks = nn.Sequential(
-            ResidualBlock(256, 256),
-            ResidualBlock(256, 256),
-            ResidualBlock(256, 256),
-            ResidualBlock(256, 256)
+            ResidualBlock(64, 64),
+            ResidualBlock(64, 64),
+            ResidualBlock(64, 64),
+            ResidualBlock(64, 64)
         )
 
        
 
         self.policy_head = nn.Sequential(
-            nn.Conv2d(256, 128, kernel_size=(2,2), stride=1),
-            nn.BatchNorm2d(128),
+            nn.Conv2d(64, 64, kernel_size=(2,2), stride=1),
+            nn.BatchNorm2d(64),
             nn.ReLU(),
             nn.Flatten(start_dim=1),
-            nn.Linear(128 * 3 * 3, 32),
+            nn.Linear(64 * 3 * 3, 32),
             nn.ReLU(),
             nn.Linear(32, 32),
             nn.ReLU(),
@@ -57,11 +57,11 @@ class ResNet2Heads(nn.Module):
         )
 
         self.value_head = nn.Sequential(
-            nn.Conv2d(256, 128, kernel_size=(2,2), stride=1),
-            nn.BatchNorm2d(128),
+            nn.Conv2d(64, 64, kernel_size=(2,2), stride=1),
+            nn.BatchNorm2d(64),
             nn.ReLU(),
             nn.Flatten(start_dim=1),
-            nn.Linear(128 * 3 * 3, 32),
+            nn.Linear(64 * 3 * 3, 32),
             nn.ReLU(),
             nn.Linear(32, 32),
             nn.ReLU(),

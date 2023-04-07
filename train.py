@@ -8,6 +8,7 @@ from mcts import MCTS_Evaluator
 import time
 import bottleneck
 import os 
+import numba
 
 class ReplayMemory:
     def __init__(self, max_size=10000) -> None:
@@ -179,6 +180,7 @@ def train(samples, model, optimizer, tensor_conversion_fn, c_prob=5):
 MOVE_MAP = {0: 'right', 1: 'up', 2: 'left', 3: 'down'}
 def test_network(model, hyperparameters, tensor_conversion_fn, debug_print=False):
     env = _2048Env()
+    
     mcts = MCTS_Evaluator(model, env, tensor_conversion_fn, cpuct=hyperparameters.mcts_c_puct, tau=hyperparameters.mcts_tau)
     env.reset()
     model.eval()
@@ -217,11 +219,13 @@ def collect_episode(model, hyperparameters, tensor_conversion_fn):
             training_examples.append([inputs, mcts_probs])
             if terminated:
                 break
-
+        rem_reward = reward
         for example in training_examples:
-            example.append(reward)
+            example.append(rem_reward)
+            rem_reward -= 1
 
     return training_examples, reward, moves, env.get_highest_square(), os.getpid()
+
 
 def rotate_training_examples(training_examples):
     inputs, probs, rewards = zip(*training_examples)

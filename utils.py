@@ -33,7 +33,6 @@ def input_to_tensor_scalar(board_states):
 
     
 
-# @numba.njit(nogil=True, fastmath=True)
 def compare_tiles(arr): # thanks GPT-4!
     # Compare with the tile below
     shifted_down = np.roll(arr, -1, axis=0)
