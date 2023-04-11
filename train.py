@@ -133,6 +133,15 @@ class MetricsHistory:
             ax.set_title(f'Mean Eval {self.plot_titles[i]}')
             ax.annotate('%0.3f' % mean, xy=(1, mean), xytext=(8, 0), 
                                     xycoords=('axes fraction', 'data'), textcoords='offset points')
+    def clear_eval_history(self):
+        self.eval_history = []
+        self.eval_history_overall = OrderedDict()
+        self.eval_history_overall['game_score'] = []
+        self.eval_history_overall['game_moves'] = []
+        self.eval_history_overall['high_square'] = []
+        self.cur_epoch = 0
+        self.best_eval_result = float('-inf')
+        self.eval_figs = [plt.figure() for _ in range(3)]
 
     def set_last_eval_plots(self):
         figs = []
@@ -235,7 +244,7 @@ def train(samples, model, optimizer, tensor_conversion_fn, c_prob=5):
 MOVE_MAP = {0: 'right', 1: 'up', 2: 'left', 3: 'down'}
 def test_network(model, hyperparameters, tensor_conversion_fn, debug_print=False):
     env = _2048Env()
-    mcts = MCTS_Evaluator(model, env, tensor_conversion_fn, cpuct=hyperparameters.mcts_c_puct, tau=hyperparameters.mcts_tau)
+    mcts = MCTS_Evaluator(model, env, tensor_conversion_fn, cpuct=hyperparameters.mcts_c_puct, tau=hyperparameters.mcts_tau, epsilon=0)
     env.reset()
     model.eval()
     with torch.no_grad():
