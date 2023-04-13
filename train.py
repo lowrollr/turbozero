@@ -224,22 +224,6 @@ def save_checkpoint(episodes, model, optimizer, hyperparameters, metrics_history
     }, f'{run_tag}_ep{episodes}.pt')
 
 
-def train(samples, model, optimizer, tensor_conversion_fn, c_prob=5):
-    model.train()
-    obs, mcts_probs, rewards = zip(*samples)
-    obs = tensor_conversion_fn(obs)
-    mcts_probs = torch.from_numpy(np.array(mcts_probs))
-    rewards = torch.from_numpy(np.array(rewards)).unsqueeze(1).float()
-    optimizer.zero_grad()
-
-    exp_probs, exp_rewards = model(obs)
-    value_loss = torch.mean(torch.abs(rewards - exp_rewards))
-    prob_loss = -1 * c_prob * torch.mean(torch.sum(mcts_probs*torch.log(exp_probs), dim=1))
-
-    loss = value_loss + prob_loss
-    loss.backward()
-    optimizer.step()
-    return value_loss.item(), prob_loss.item(), loss.item()
 
 MOVE_MAP = {0: 'right', 1: 'up', 2: 'left', 3: 'down'}
 def test_network(model, hyperparameters, tensor_conversion_fn, debug_print=False):
@@ -270,7 +254,26 @@ def test_network(model, hyperparameters, tensor_conversion_fn, debug_print=False
                 break
     return reward, moves, env.get_highest_square(), env.get_score()
 
+def train(samples, model, optimizer, tensor_conversion_fn, c_prob=5):
+    model.train()
+    obs, mcts_probs, rewards = zip(*samples)
+    obs = tensor_conversion_fn(obs)
+    mcts_probs = torch.from_numpy(np.array(mcts_probs))
+    rewards = torch.from_numpy(np.array(rewards)).unsqueeze(1).float()
+    optimizer.zero_grad()
+
+    exp_probs, exp_rewards = model(obs)
+    value_loss = torch.mean(torch.abs(rewards - exp_rewards))
+    prob_loss = c_prob * torch.nn.functional.cross_entropy(exp_probs, mcts_probs)
+    # prob_loss = -1 * c_prob * torch.mean(torch.sum(mcts_probs*torch.log(exp_probs), dim=1))
+
+    loss = value_loss + prob_loss
+    loss.backward()
+    optimizer.step()
+    return value_loss.item(), prob_loss.item(), loss.item()
+
 def collect_episode(model, hyperparameters, tensor_conversion_fn, epsilon):
+    model.eval()
     training_examples = []
     env = _2048Env()
     env.reset()
