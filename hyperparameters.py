@@ -14,7 +14,7 @@ class AZ_HYPERPARAMETERS:
     policy_factor: int = 50
     episodes_per_epoch: int = 500
     num_epochs: int = 100
-    eval_games: int = 200
+    eval_games: int = 100
     tau_s: float = 1.5
     tau_m: float = 0.49
     tau_b: float = 0.50
