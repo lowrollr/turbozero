@@ -39,6 +39,9 @@ class Metric:
                 if self.alert_on_best:
                     print(f'**** NEW BEST {self.proper_name}: {self.best} ****')
 
+    def reset_fig(self):
+        self.plot = plt.figure()
+
     def clear_data(self):
         self.ts = []
         self.data = []
@@ -105,7 +108,13 @@ class TrainingMetrics:
                 self.eval_metrics[k].append(Metric(k, self.eval_metrics[k][-1].xlabel, self.eval_metrics[k][-1].ylabel, pl_type=self.eval_metrics[k][-1].pl_type, \
                                                    addons=self.eval_metrics[k][-1].addons, maximize=self.eval_metrics[k][-1].maximize, alert_on_best=self.eval_metrics[k][-1].alert_on_best, \
                                                     proper_name=self.eval_metrics[k][-1].proper_name, best=self.eval_metrics[k][-1].best))
-            
+    
+    def reset_all_figs(self): # for matplotlib compatibility
+        for metric in self.metrics.values():
+            metric.reset_fig()
+        for metric_list in self.eval_metrics.values():
+            for metric in metric_list:
+                metric.reset_fig()  
 
     def add_eval_data(self, eval_data):
         for metric_name, metric_data in eval_data.items():

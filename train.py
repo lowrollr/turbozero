@@ -40,32 +40,31 @@ def load_from_checkpoint(filename, model_class, load_replay_memory=True):
     run_tag = filename.split('_')[0]
     checkpoint = torch.load(filename)
     hypers = checkpoint['hypers']
-    episode = checkpoint['episode']
     model = model_class()
     model.load_state_dict(checkpoint['model_state_dict'])
     model.share_memory()
     model.train()
     
-    optimizer = torch.optim.AdamW(model.parameters(), lr=hypers.lr, weight_decay=hypers.weight_decay)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=hypers.learning_rate, weight_decay=hypers.weight_decay, amsgrad=True)
     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-    metrics_history = checkpoint['metrics_history']
+    history = checkpoint['history']
     memory = None
     if load_replay_memory:
-        memory = checkpoint.get('replay_memory')
+        memory = checkpoint.get('memory')
     elif memory is None:
         memory = ReplayMemory(hypers.replay_memory_size)
     
-    return episode, model, optimizer, hypers, metrics_history, memory, run_tag
+    return model, optimizer, hypers, history, memory, run_tag
     
 
-def save_checkpoint(epoch, model, optimizer, hypers, metrics_history, replay_memory, run_tag='', save_replay_memory=True):
+def save_checkpoint(model, optimizer, hypers, history, memory, run_tag='', save_replay_memory=True):
+    epoch = history.cur_epoch
     torch.save({
         'model_state_dict': model.state_dict(),
         'optimizer_state_dict': optimizer.state_dict(),
         'hypers': hypers,
-        'metrics_history': metrics_history,
-        'replay_memory': replay_memory if save_replay_memory else None,
-        'epoch': epoch,
+        'history': history,
+        'memory': memory if save_replay_memory else None,
         'model_type': str(type(model))
     }, f'{run_tag}_ep{epoch}.pt')
 
