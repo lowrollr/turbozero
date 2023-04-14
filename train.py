@@ -51,7 +51,6 @@ class MCTS_HYPERPARAMETERS:
     num_episodes: int = 1000
     checkpoint_every: int = 100
     mcts_c_puct: int = 12
-    mcts_tau: float = 1.0
     mcts_epsilon_start: float = 1.0
     mcts_epsilon_end: float = 0.01
     mcts_epsilon_decay_rate: float = 0.0001
@@ -156,6 +155,9 @@ class MetricsHistory:
     def increment_epoch(self):
         self.cur_epoch += 1
 
+    def get_move_mean_and_stddev(self, num_samples=100):
+        return np.mean(self.training_history['game_moves'][-num_samples:]), np.std(self.training_history['game_moves'][-num_samples:])
+
     def plot_history(self, offset=0, window_size=50, plot_training = True, plot_eval = True):
         # plot training history
         qty = len(self.training_history['game_score'])
@@ -165,7 +167,7 @@ class MetricsHistory:
         window_size = min(window_size, qty)
         display.clear_output(wait=False)
         if plot_training:
-            for i, data in enumerate(self.training_history.values()):
+            for i, k in enumerate(self.training_history.keys()):
                 fig = self.training_figs[i]
                 fig.clear()
                 ax = fig.add_subplot(111)
@@ -228,7 +230,7 @@ def save_checkpoint(episodes, model, optimizer, hyperparameters, metrics_history
 MOVE_MAP = {0: 'right', 1: 'up', 2: 'left', 3: 'down'}
 def test_network(model, hyperparameters, tensor_conversion_fn, debug_print=False):
     env = _2048Env()
-    mcts = MCTS_Evaluator(model, env, tensor_conversion_fn, cpuct=hyperparameters.mcts_c_puct, tau=hyperparameters.mcts_tau, epsilon=0)
+    mcts = MCTS_Evaluator(model, env, tensor_conversion_fn, cpuct=hyperparameters.mcts_c_puct, training=False)
     env.reset()
     model.eval()
     with torch.no_grad():
@@ -272,12 +274,12 @@ def train(samples, model, optimizer, tensor_conversion_fn, c_prob=5):
     optimizer.step()
     return value_loss.item(), prob_loss.item(), loss.item()
 
-def collect_episode(model, hyperparameters, tensor_conversion_fn, epsilon):
+def collect_episode(model, hyperparameters, tensor_conversion_fn, tau_shift, tau_divisor):
     model.eval()
     training_examples = []
     env = _2048Env()
     env.reset()
-    mcts = MCTS_Evaluator(model, env, tensor_conversion_fn=tensor_conversion_fn, cpuct=hyperparameters.mcts_c_puct, tau=hyperparameters.mcts_tau, epsilon=epsilon, training=True)
+    mcts = MCTS_Evaluator(model, env, tensor_conversion_fn=tensor_conversion_fn, cpuct=hyperparameters.mcts_c_puct, tau_shift=tau_shift, tau_divisor=tau_divisor, training=True)
     moves = 0
     with torch.no_grad():
         while True:
