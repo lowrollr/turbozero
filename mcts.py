@@ -46,11 +46,8 @@ class MCTS_Evaluator:
     
     def puct(self, q, n, prior, prev_vists) -> float:
         return q + (self.cpuct * prior * ((np.sqrt(prev_vists))/(1 + n)))
-    
-    def clear_cache(self):
-        self.get_board.cache_clear()
 
-    def iterate_v2(self, puct_node: PuctNode):
+    def iterate(self, puct_node: PuctNode):
         if puct_node.n == 0:
             # get legal actions
             puct_node.legal_actions = np.argwhere(get_legal_actions(self.env.board) == 1).flatten()
@@ -80,7 +77,7 @@ class MCTS_Evaluator:
             # recurse
             _, terminated, _, placement = self.env.push_move(best_move)
             if not terminated:    
-                reward = self.iterate_v2(puct_node.children[best_move][placement])
+                reward = self.iterate(puct_node.children[best_move][placement])
             else:
                 reward = 0
             self.env.moves -=1
@@ -91,33 +88,8 @@ class MCTS_Evaluator:
         return reward
 
 
-    def iterate(self, move_id: int, puct_node: PuctNode):
-        obs, terminated, reward, placement = self.env.push_move(move_id)
-
-        if move_id is not None:
-            if placement not in puct_node.children:
-                for i in puct_node.legal_actions:
-                    puct_node.children[placement][i] = PuctNode(i)
-            puct_node = puct_node.children[placement][move_id]
-            
-        if not terminated:
-            if puct_node.n == 0:
-                puct_node.legal_actions = np.argwhere(get_legal_actions(self.env.board) == 1).flatten()
-                probs, value = self.model(self.tensor_conversion_fn([obs]))
-                probs = probs.detach().cpu().numpy()[0]
-                reward = value.item()
-                puct_node.child_probs = probs
-            else:
-                best_move = get_best_move_w_puct(puct_node.legal_actions, puct_node.cum_child_n, puct_node.cum_child_w, puct_node.child_probs, self.cpuct)
-                reward = self.iterate(best_move, puct_node)
-                self.env.moves -=1
-                puct_node.cum_child_w[best_move] += reward
-                puct_node.cum_child_n[best_move] += 1
-            
-        puct_node.n += 1
-        return reward
     
-    def choose_progression(self, num_iterations=500):
+    def choose_progression(self, tau_m, tau_b, num_iterations=500):
         obs = self.env._get_obs()
             
         original_board = np.copy(self.env.board)
@@ -130,7 +102,7 @@ class MCTS_Evaluator:
 
 
         for _ in range(num_iterations):
-            self.iterate_v2(self.puct_node)
+            self.iterate(self.puct_node)
             self.env.board = np.copy(original_board)
 
         # pick best (legal) move
@@ -139,7 +111,7 @@ class MCTS_Evaluator:
         n_probs = np.copy(self.puct_node.cum_child_n)
         n_probs /= np.sum(n_probs)
         
-        tau = 0.49 * np.tanh((self.env.moves - self.tau_shift)/self.tau_divisor) + 0.5
+        tau = tau_m * np.tanh((self.env.moves - self.tau_shift)/self.tau_divisor) + tau_b
         n_probs_tau = np.copy(n_probs) ** (1/tau)
         n_probs_tau /= np.sum(n_probs_tau)
         
@@ -147,6 +119,8 @@ class MCTS_Evaluator:
             selection = legal_actions[np.argmax(np.random.multinomial(1, n_probs_tau.take(legal_actions)))]
         else:
             selection = legal_actions[np.argmax(n_probs_tau.take(legal_actions))]
+
+        deviated = np.argmax(n_probs.take(legal_actions)) != selection
 
         _, terminated, reward, placement = self.env.push_move(selection, is_simul=False)
 
@@ -164,5 +138,5 @@ class MCTS_Evaluator:
             self.puct_node.n = 1
             self.puct_node.legal_actions = np.argwhere(get_legal_actions(self.env.board)== 1).flatten()
 
-        return terminated, obs, reward, n_probs, selection
+        return terminated, obs, reward, n_probs, selection, deviated
     
