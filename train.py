@@ -167,7 +167,7 @@ class MetricsHistory:
         window_size = min(window_size, qty)
         display.clear_output(wait=False)
         if plot_training:
-            for i, k in enumerate(self.training_history.keys()):
+            for i, data in enumerate(self.training_history.values()):
                 fig = self.training_figs[i]
                 fig.clear()
                 ax = fig.add_subplot(111)
