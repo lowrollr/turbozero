@@ -155,8 +155,8 @@ class MetricsHistory:
     def increment_epoch(self):
         self.cur_epoch += 1
 
-    def get_move_mean_and_stddev(self, num_samples=100):
-        return np.mean(self.training_history['game_moves'][-num_samples:]), np.std(self.training_history['game_moves'][-num_samples:])
+    def get_move_mean_and_stddev(self):
+        return np.mean(self.eval_history[-1]['game_moves']), np.std(self.eval_history[-1]['game_moves'])
 
     def plot_history(self, offset=0, window_size=50, plot_training = True, plot_eval = True):
         # plot training history
