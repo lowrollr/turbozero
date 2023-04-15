@@ -124,4 +124,5 @@ class TrainingMetrics:
         display.clear_output(wait=False)
         for metric in self.metrics.values():
             metric.generate_plot()
-
+        for metrics in self.eval_metrics.values():
+            metrics[-1].generate_plot()
