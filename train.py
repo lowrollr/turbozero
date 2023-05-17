@@ -105,7 +105,7 @@ def train(samples, model, optimizer, tensor_conversion_fn, c_prob=5):
     obs = tensor_conversion_fn(obs)
     mcts_probs = torch.from_numpy(np.array(mcts_probs))
     rewards = torch.from_numpy(np.array(rewards)).unsqueeze(1).float()
-    optimizer.zero_grad()
+    optimizer.zero_grad(set_to_none=True)
 
     exp_probs, exp_rewards = model(obs)
     value_loss = torch.mean(torch.abs(rewards - exp_rewards))
