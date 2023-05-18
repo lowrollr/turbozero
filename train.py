@@ -89,7 +89,7 @@ def test_network(model, hypers, tensor_conversion_fn, debug_print=False):
                 print(f'Time elapsed: {time.time() - start_time}s')
                 print(f'Move #: {moves}')
                 print(f'Move: {MOVE_MAP[move]}')
-                print(f'Network Probs: {probs.detach().numpy()}')
+                print(f'Network Probs: {torch.nn.functional.softmax(probs, dim=-1).detach().cpu().numpy()}')
                 print(f'MCTS Probs: {mcts_probs}')
                 print(f'Network value: {value.item()}')
                 print(f'Q Value: {np.sum(mcts.puct_node.cum_child_w) / mcts.puct_node.n}')
@@ -108,6 +108,7 @@ def train(samples, model, optimizer, tensor_conversion_fn, c_prob=5):
     optimizer.zero_grad(set_to_none=True)
 
     exp_probs, exp_rewards = model(obs)
+    exp_probs = torch.nn.functional.softmax(exp_probs, dim=-1)
     value_loss = torch.nn.functional.mse_loss(exp_rewards, rewards)
     prob_loss = c_prob * torch.nn.functional.cross_entropy(exp_probs, mcts_probs)
     

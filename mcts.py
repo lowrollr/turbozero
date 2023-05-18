@@ -3,6 +3,7 @@ from collections import defaultdict
 import numpy as np
 from env import _2048Env, get_legal_actions
 import numba
+import torch
 
 @numba.njit(nogil=True, fastmath=True)
 def get_best_move_w_puct(legal_actions, child_n, child_w, child_probs, cpuct, lmax, lmin):
@@ -59,7 +60,7 @@ class MCTS_Evaluator:
             boards = self.tensor_conversion_fn(boards)
             # get value and probs for each progression
             probs, values = self.model(boards)
-            probs = probs.detach().cpu().numpy()
+            softmax_probs = torch.nn.functional.softmax(probs, dim=-1).detach().cpu().numpy()
             values = values.detach().cpu().numpy()
             self.lmax = max(self.lmax, np.max(values))
             self.lmin = min(self.lmin, np.min(values))
@@ -67,7 +68,7 @@ class MCTS_Evaluator:
             # create a new node for each progression
             reward = 0
             for i, p_id in enumerate(progressions):
-                puct_node.children[best_move][p_id] = PuctNode(best_move, probs[i])
+                puct_node.children[best_move][p_id] = PuctNode(best_move, softmax_probs[i])
                 reward += stochastic_probs[i] * values[i]
             puct_node.cum_child_n[best_move] = 1
             puct_node.cum_child_w[best_move] = reward
@@ -93,7 +94,7 @@ class MCTS_Evaluator:
         original_board = np.copy(self.env.board)
 
         probs, value = self.model(self.tensor_conversion_fn([obs]))
-        probs = probs.detach().cpu().numpy()[0]
+        probs = torch.nn.functional.softmax(probs, dim=-1).detach().cpu().numpy()[0]
         self.lmax = value.item()
         self.lmin = self.lmax - 1
         self.puct_node.child_probs = probs
@@ -126,7 +127,7 @@ class MCTS_Evaluator:
         if self.puct_node.child_probs is None:
             # initialize empty node
             probs, value = self.model(self.tensor_conversion_fn([obs]))
-            probs = probs.detach().cpu().numpy()[0]
+            probs = torch.nn.functional.softmax(probs, dim=-1).detach().cpu().numpy()[0]
             value = value.item()
             self.puct_node.child_probs = probs   
             self.puct_node.n = 1
