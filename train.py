@@ -104,11 +104,11 @@ def train(samples, model, optimizer, tensor_conversion_fn, c_prob=5):
     obs, mcts_probs, rewards = zip(*samples)
     obs = tensor_conversion_fn(obs)
     mcts_probs = torch.from_numpy(np.array(mcts_probs))
-    rewards = torch.from_numpy(np.array(rewards)).unsqueeze(1).float()
+    rewards = torch.from_numpy(np.array(rewards)).unsqueeze(1).float().log()
     optimizer.zero_grad(set_to_none=True)
 
     exp_probs, exp_rewards = model(obs)
-    value_loss = torch.mean(torch.abs(rewards - exp_rewards))
+    value_loss = torch.nn.functional.mse_loss(exp_rewards, rewards)
     prob_loss = c_prob * torch.nn.functional.cross_entropy(exp_probs, mcts_probs)
     
     acc = torch.eq(torch.argmax(exp_probs, dim=1), torch.argmax(mcts_probs, dim=1)).float().mean()
