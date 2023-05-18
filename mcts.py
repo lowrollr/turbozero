@@ -29,15 +29,13 @@ class PuctNode:
         
 
 class MCTS_Evaluator:
-    def __init__(self, model, env, tensor_conversion_fn, cpuct, tau_shift=0, tau_divisor=1, training=False) -> None:
+    def __init__(self, model, env, tensor_conversion_fn, cpuct, training=False) -> None:
         self.model = model
         self.env: _2048Env = env
         self.training = training
         self.cpuct = cpuct
         self.lmax = 2
         self.lmin = 1
-        self.tau_shift = tau_shift
-        self.tau_divisor = tau_divisor
         self.tensor_conversion_fn = tensor_conversion_fn
         self.puct_node = PuctNode(None)
 
@@ -89,7 +87,7 @@ class MCTS_Evaluator:
 
 
     
-    def choose_progression(self, tau_m, tau_b, num_iterations=500):
+    def choose_progression(self,num_iterations=500):
         obs = self.env._get_obs()
             
         original_board = np.copy(self.env.board)
@@ -111,14 +109,10 @@ class MCTS_Evaluator:
         n_probs = np.copy(self.puct_node.cum_child_n)
         n_probs /= np.sum(n_probs)
         
-        tau = tau_m * np.tanh((self.env.moves - self.tau_shift)/self.tau_divisor) + tau_b
-        n_probs_tau = np.copy(n_probs) ** (1/tau)
-        n_probs_tau /= np.sum(n_probs_tau)
-        
         if self.training:
-            selection = legal_actions[np.argmax(np.random.multinomial(1, n_probs_tau.take(legal_actions)))]
+            selection = legal_actions[np.argmax(np.random.multinomial(1, n_probs.take(legal_actions)))]
         else:
-            selection = legal_actions[np.argmax(n_probs_tau.take(legal_actions))]
+            selection = legal_actions[np.argmax(n_probs.take(legal_actions))]
 
         deviated = np.argmax(n_probs.take(legal_actions)) != selection
 

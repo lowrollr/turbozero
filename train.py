@@ -83,7 +83,7 @@ def test_network(model, hypers, tensor_conversion_fn, debug_print=False):
             probs, value = model(tensor_conversion_fn([env.board]))
             if debug_print:
                 print(env.board)
-            terminated, _, reward, mcts_probs, move, _ = mcts.choose_progression(hypers.tau_m, hypers.tau_b, hypers.mcts_iters_eval)
+            terminated, _, reward, mcts_probs, move, _ = mcts.choose_progression(hypers.mcts_iters_eval)
             moves += 1
             if debug_print:
                 print(f'Time elapsed: {time.time() - start_time}s')
@@ -118,18 +118,18 @@ def train(samples, model, optimizer, tensor_conversion_fn, c_prob=5):
     optimizer.step()
     return value_loss.item(), prob_loss.item(), loss.item(), acc.item()
 
-def collect_episode(model, hypers, tensor_conversion_fn, tau_shift, tau_divisor):
+def collect_episode(model, hypers, tensor_conversion_fn):
     model.eval()
     training_examples = []
     env = _2048Env()
     env.reset()
-    mcts = MCTS_Evaluator(model, env, tensor_conversion_fn=tensor_conversion_fn, cpuct=hypers.mcts_c_puct, tau_shift=tau_shift, tau_divisor=tau_divisor, training=True)
+    mcts = MCTS_Evaluator(model, env, tensor_conversion_fn=tensor_conversion_fn, cpuct=hypers.mcts_c_puct, training=True)
     moves = 0
     deviations = []
     with torch.no_grad():
         while True:
             # get inputs, reward, mcts probs, run n_iterations of MCTS
-            terminated, inputs, reward, mcts_probs, _, deviated = mcts.choose_progression(hypers.tau_m, hypers.tau_b, hypers.mcts_iters_train)
+            terminated, inputs, reward, mcts_probs, _, deviated = mcts.choose_progression(hypers.mcts_iters_train)
             
             moves += 1
             if deviated:
