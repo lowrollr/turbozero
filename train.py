@@ -161,7 +161,7 @@ def rotate_training_examples(training_examples):
         for k in range(4):
             rotated_probs.append(np.roll(p, k))
     rotated_rewards = []
-    for _ in range(4):
-        rotated_rewards.extend(rewards)
+    for r in rewards:
+        rotated_rewards.extend([r] * 4)
     
     return zip(rotated_inputs, rotated_probs, rotated_rewards)
