@@ -5,11 +5,16 @@ from env import _2048Env, get_legal_actions
 import numba
 import torch
 
+
+# We use a modified version of the PUCT algorithm from the AlphaZero paper to choose which move to explore next.
+# The first term of PUCT (q-value) represents a bias towards exploitation of moves with a higher predicted score
+# The second term (UCB) represents a bias towards exploration of moves with a higher prior probability, and introduces additional bias towards exploration of moves that have been explored less.
+# I've made an adjustment where q-values are normalized to the range [0, 1] before being used in the PUCT calculation.
 @numba.njit(nogil=True, fastmath=True)
-def get_best_move_w_puct(legal_actions, child_n, child_w, child_probs, cpuct, lmax, lmin):
+def get_best_move_w_puct(legal_actions, child_n, child_w, child_probs, cpuct):
     n_sum = np.sum(child_n)
 
-    q_values = np.where(child_n != 0, ((child_w/child_n)-lmin)/(lmax-lmin), np.Inf)
+    q_values = np.where(child_n != 0, (child_w/child_n), np.Inf)
     
     puct_scores = q_values + (cpuct * child_probs * ((np.sqrt(1 + n_sum))/(1 + child_n)))
     legal_move_scores = puct_scores.take(legal_actions)
@@ -17,16 +22,17 @@ def get_best_move_w_puct(legal_actions, child_n, child_w, child_probs, cpuct, lm
     best_move = legal_actions[np.random.choice(np.where(legal_move_scores == legal_move_scores.max())[0])]
     return best_move
 
-class PuctNode:
+
+# a single MCTS node
+class GameStateNode:
     def __init__(self, move_id, child_probs = None) -> None:
-        self.move_id = move_id
-        self.n = 0
-        self.child_probs = child_probs
-        self.children = defaultdict(lambda: dict())
-        self.legal_actions = []
-        self.cum_child_w = np.zeros(4)
-        self.cum_child_n = np.zeros(4)
-    
+        self.move_id = move_id # digit from 0-3 representing the move that led to this node
+        self.n = 0 # number of times this node has been visited
+        self.child_probs = child_probs # prior probabilities for each child node
+        self.children = defaultdict(lambda: dict()) # map from move_id to child node
+        self.legal_actions = [] # list of legal actions from this node
+        self.pior_w = np.zeros(4) # accumulated scores for each child node
+        self.pior_n = np.zeros(4) # number of times each child node has been visited
         
 
 class MCTS_Evaluator:
@@ -35,24 +41,22 @@ class MCTS_Evaluator:
         self.env: _2048Env = env
         self.training = training
         self.cpuct = cpuct
-        self.lmax = 2
-        self.lmin = 1
         self.tensor_conversion_fn = tensor_conversion_fn
-        self.puct_node = PuctNode(None)
-
+        self.puct_node = GameStateNode(None)
+    
     def reset(self):
-        self.puct_node = PuctNode(None)
+        self.puct_node = GameStateNode(None)
     
     def puct(self, q, n, prior, prev_vists) -> float:
         return q + (self.cpuct * prior * ((np.sqrt(prev_vists))/(1 + n)))
 
-    def iterate(self, puct_node: PuctNode):
+    def iterate(self, puct_node: GameStateNode):
         if puct_node.n == 0:
             # get legal actions
             puct_node.legal_actions = np.argwhere(get_legal_actions(self.env.board) == 1).flatten()
 
         # choose which edge to traverse
-        best_move = get_best_move_w_puct(puct_node.legal_actions, puct_node.cum_child_n, puct_node.cum_child_w, puct_node.child_probs, self.cpuct, self.lmax, self.lmin)
+        best_move = get_best_move_w_puct(puct_node.legal_actions, puct_node.pior_n, puct_node.pior_w, puct_node.child_probs, self.cpuct)
         if not puct_node.children[best_move]:
             # get all progressions from this move
             boards, progressions, stochastic_probs = self.env.get_progressions_for_move(best_move)
@@ -62,16 +66,15 @@ class MCTS_Evaluator:
             probs, values = self.model(boards)
             softmax_probs = torch.nn.functional.softmax(probs, dim=-1).detach().cpu().numpy()
             values = values.detach().cpu().numpy()
-            self.lmax = max(self.lmax, np.max(values))
-            self.lmin = min(self.lmin, np.min(values))
 
             # create a new node for each progression
             reward = 0
-            for i, p_id in enumerate(progressions):
-                puct_node.children[best_move][p_id] = PuctNode(best_move, softmax_probs[i])
-                reward += stochastic_probs[i] * values[i]
-            puct_node.cum_child_n[best_move] = 1
-            puct_node.cum_child_w[best_move] = reward
+            for i, (p_id, term) in enumerate(progressions):
+                puct_node.children[best_move][p_id] = GameStateNode(best_move, softmax_probs[i])
+                if not term:
+                    reward += stochastic_probs[i] * values[i]
+            puct_node.pior_n[best_move] = 1
+            puct_node.pior_w[best_move] = reward
         else:
             # recurse
             _, terminated, _, placement = self.env.push_move(best_move)
@@ -80,8 +83,8 @@ class MCTS_Evaluator:
             else:
                 reward = 0
             self.env.moves -=1
-            puct_node.cum_child_w[best_move] += reward
-            puct_node.cum_child_n[best_move] += 1
+            puct_node.pior_w[best_move] += reward
+            puct_node.pior_n[best_move] += 1
 
         puct_node.n += 1
         return reward
@@ -107,7 +110,7 @@ class MCTS_Evaluator:
         # pick best (legal) move
         legal_actions = self.puct_node.legal_actions
         
-        n_probs = np.copy(self.puct_node.cum_child_n)
+        n_probs = np.copy(self.puct_node.pior_n)
         n_probs /= np.sum(n_probs)
         
         if self.training:
@@ -120,7 +123,7 @@ class MCTS_Evaluator:
         _, terminated, reward, placement = self.env.push_move(selection, is_simul=False)
 
         if self.puct_node.children[selection][placement] is None:
-            self.puct_node.children[selection][placement] = PuctNode(selection)
+            self.puct_node.children[selection][placement] = GameStateNode(selection)
         
         self.puct_node = self.puct_node.children[selection][placement]
 

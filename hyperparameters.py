@@ -8,7 +8,7 @@ class AZ_HYPERPARAMETERS:
     minibatches_per_update: int = 16
     mcts_iters_train: int = 50
     mcts_iters_eval: int = 50
-    mcts_c_puct: float = 1.0
+    mcts_c_puct: float = 3.0
     replay_memory_size: int = 1000
     replay_memory_min_size: int = 1000
     policy_factor: int = 1

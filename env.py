@@ -104,8 +104,8 @@ def get_progressions_for_board(board):
             boards.append(new_board2)
             probs.append(fraction * 0.1)
             p_id = (i0 * 4) + i1
-            progressions.append((p_id, 1))
-            progressions.append((p_id, 2))
+            progressions.append(((p_id, 1), get_legal_actions(new_board1).sum() == 0))
+            progressions.append(((p_id, 2), get_legal_actions(new_board1).sum() == 0))
         return boards, progressions, probs
 
 class _2048Env(gym.Env):
