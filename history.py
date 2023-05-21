@@ -5,7 +5,7 @@ from collections import OrderedDict
 from matplotlib import pyplot as plt
 import IPython.display as display
 import numpy as np
-
+import logging
 
 class Metric:
     def __init__(self, name, xlabel, ylabel, pl_type: str ='plot', addons={}, maximize=True, alert_on_best=False, proper_name=None, best=None) -> None:
@@ -32,12 +32,12 @@ class Metric:
             if data > self.best:
                 self.best = data
                 if self.alert_on_best:
-                    print(f'**** NEW BEST {self.proper_name}: {self.best} ****')
+                    logging.info(f'**** NEW BEST {self.proper_name}: {self.best} ****')
         else:
             if data < self.best:
                 self.best = data
                 if self.alert_on_best:
-                    print(f'**** NEW BEST {self.proper_name}: {self.best} ****')
+                    logging.info(f'**** NEW BEST {self.proper_name}: {self.best} ****')
 
     def reset_fig(self):
         self.plot = plt.figure()
@@ -90,9 +90,9 @@ class TrainingMetrics:
     
     def add_episode_data(self, episode_data, print_data = True):
         if print_data:
-            print(f'Episode {self.cur_episode}')
+            logging.info(f'Episode {self.cur_episode}')
             for metric_name, metric_data in episode_data.items():
-                print(f'\t{self.metrics[metric_name].proper_name}: {metric_data}')
+                logging.info(f'\t{self.metrics[metric_name].proper_name}: {metric_data}')
 
         for metric_name, metric_data in episode_data.items():
             self.metrics[metric_name].add_data(self.cur_episode, metric_data)
