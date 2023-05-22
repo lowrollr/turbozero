@@ -116,7 +116,12 @@ class TrainingMetrics:
             for metric in metric_list:
                 metric.reset_fig()  
 
-    def add_eval_data(self, eval_data):
+    def add_eval_data(self, eval_data, print_data = True):
+        if print_data:
+            eval_episode_num = self.eval_metrics[list(self.eval_metrics.keys())[0]][-1].ts[-1]
+            logging.info(f'Episode {self.cur_episode}')
+            for metric_name, metric_data in eval_data.items():
+                logging.info(f'\t{self.metrics[metric_name].proper_name}: {metric_data}')
         for metric_name, metric_data in eval_data.items():
             self.eval_metrics[metric_name][self.cur_epoch].add_data(self.cur_epoch, metric_data)
     
@@ -125,4 +130,4 @@ class TrainingMetrics:
         for metric in self.metrics.values():
             metric.generate_plot()
         for metrics in self.eval_metrics.values():
-            metrics[-1].generate_plot()
+            metrics[-2].generate_plot()

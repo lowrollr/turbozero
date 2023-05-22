@@ -36,13 +36,15 @@ class GameStateNode:
         
 
 class MCTS_Evaluator:
-    def __init__(self, model, env, tensor_conversion_fn, cpuct, training=False) -> None:
+    def __init__(self, model, env, tensor_conversion_fn, cpuct, exploration_cutoff=None, epsilon=None, training=False) -> None:
         self.model = model
         self.env: _2048Env = env
         self.training = training
         self.cpuct = cpuct
         self.tensor_conversion_fn = tensor_conversion_fn
         self.puct_node = GameStateNode(None)
+        self.epsilon = epsilon
+        self.exploration_cutoff = exploration_cutoff
     
     def reset(self):
         self.puct_node = GameStateNode(None)
@@ -113,7 +115,10 @@ class MCTS_Evaluator:
         n_probs = np.copy(self.puct_node.pior_n)
         n_probs /= np.sum(n_probs)
         
-        if self.training:
+        if self.training and \
+            (self.exploration_cutoff is None or self.env.moves < self.exploration_cutoff) and \
+            (self.epsilon is None or np.random.random() < self.epsilon):
+            
             selection = legal_actions[np.argmax(np.random.multinomial(1, n_probs.take(legal_actions)))]
         else:
             selection = legal_actions[np.argmax(n_probs.take(legal_actions))]

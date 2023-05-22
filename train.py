@@ -118,12 +118,12 @@ def train(samples, model, optimizer, tensor_conversion_fn, c_prob=5):
     optimizer.step()
     return value_loss.item(), prob_loss.item(), loss.item(), acc.item()
 
-def collect_episode(model, hypers, tensor_conversion_fn):
+def collect_episode(model, hypers, tensor_conversion_fn, epsilon=None):
     model.eval()
     training_examples = []
     env = _2048Env()
     env.reset()
-    mcts = MCTS_Evaluator(model, env, tensor_conversion_fn=tensor_conversion_fn, cpuct=hypers.mcts_c_puct, training=True)
+    mcts = MCTS_Evaluator(model, env, tensor_conversion_fn=tensor_conversion_fn, cpuct=hypers.mcts_c_puct, exploration_cutoff=hypers.exploration_cutoff, epsilon=epsilon, training=True)
     moves = 0
     deviations = []
     with torch.no_grad():
