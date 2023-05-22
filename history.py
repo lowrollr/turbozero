@@ -130,4 +130,5 @@ class TrainingMetrics:
         for metric in self.metrics.values():
             metric.generate_plot()
         for metrics in self.eval_metrics.values():
-            metrics[-2].generate_plot()
+            if metrics and len(metrics) > 1:
+                metrics[-2].generate_plot()
