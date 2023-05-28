@@ -16,7 +16,8 @@ import torch.multiprocessing as mp
 from utils import apply_async_dill
 
 class AlphaZeroTrainer:
-    def __init__(self, model, optimizer, hypers, history=None, memory=None, run_tag='', log_results=True):
+    def __init__(self, model, optimizer, device, hypers, history=None, memory=None, run_tag='', log_results=True):
+        self.device = device
         self.model: AZResnet = model
         self.model.share_memory()
         self.optimizer: torch.optim.Optimizer = optimizer
@@ -38,6 +39,7 @@ class AlphaZeroTrainer:
         else:
             self.memory: GameReplayMemory = memory
         
+        
 
     def set_interactive(self, interactive: bool):
         self.interactive = interactive
@@ -45,9 +47,8 @@ class AlphaZeroTrainer:
     def set_plot_every(self, plot_every: int):
         self.plot_every = plot_every
 
-    @staticmethod
-    def convert_obs_batch_to_tensor(obs_batch: Iterable[np.ndarray]) -> torch.Tensor:
-        return torch.from_numpy(np.array(obs_batch)).float()
+    def convert_obs_batch_to_tensor(self, obs_batch: Iterable[np.ndarray]) -> torch.Tensor:
+        return torch.from_numpy(np.array(obs_batch)).to(self.device).float()
     
     def init_memory(self, size):
         self.memory = GameReplayMemory(size)
