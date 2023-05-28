@@ -5,3 +5,4 @@ matplotlib==3.5.0
 numba==0.56.4
 numpy==1.23.5
 torch==1.12.1
+dill==0.3.6

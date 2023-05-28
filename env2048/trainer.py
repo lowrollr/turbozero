@@ -16,15 +16,14 @@ from trainer import AlphaZeroTrainer
 
 
 class _2048Trainer(AlphaZeroTrainer):
-    @staticmethod
-    def convert_obs_batch_to_tensor(obs_batch: Iterable[np.ndarray]) -> torch.Tensor:
+    def convert_obs_batch_to_tensor(self, obs_batch: Iterable[np.ndarray]) -> torch.Tensor:
         tensors = []
         for board in obs_batch:
             board = np.array(board)
             tensor = torch.stack([
-                torch.from_numpy(np.equal(board, 0)).float(),
-                *torch.from_numpy(np.stack(compare_tiles(board), axis=0)).float(),
-                torch.from_numpy(board).float()
+                torch.from_numpy(np.equal(board, 0)).to(self.device).float(),
+                *torch.from_numpy(np.stack(compare_tiles(board), axis=0)).to(self.device).float(),
+                torch.from_numpy(board).to(self.device).float()
             ], dim=0)
             tensors.append(tensor)
         return torch.stack(tensors, dim=0)

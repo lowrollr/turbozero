@@ -94,8 +94,8 @@ class AlphaZeroTrainer:
         self.model.train()
         
         obs = self.convert_obs_batch_to_tensor(observations)
-        probs = torch.from_numpy(np.array(mcts_probs)).float()
-        rew = torch.from_numpy(np.array(rewards)).float()
+        probs = torch.from_numpy(np.array(mcts_probs)).to(self.device).float()
+        rew = torch.from_numpy(np.array(rewards)).to(self.device).float()
 
         self.optimizer.zero_grad(set_to_none=True)
 
