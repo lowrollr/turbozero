@@ -1,3 +1,4 @@
+from copy import deepcopy
 from typing import Dict, List, Optional, Tuple
 from collections import defaultdict
 import numpy as np
@@ -5,22 +6,27 @@ from env import _2048Env, get_legal_actions
 import numba
 import torch
 
+from stochastic_sp_env import SpStochasticMCTSEnv
+
+
 
 # We use a modified version of the PUCT algorithm from the AlphaZero paper to choose which move to explore next.
 # The first term of PUCT (q-value) represents a bias towards exploitation of moves with a higher predicted score
 # The second term (UCB) represents a bias towards exploration of moves with a higher prior probability, and introduces additional bias towards exploration of moves that have been explored less.
 # I've made an adjustment where q-values are normalized to the range [0, 1] before being used in the PUCT calculation.
 @numba.njit(nogil=True, fastmath=True)
-def get_best_move_w_puct(legal_actions, child_n, child_w, child_probs, cpuct):
+def get_best_action(legal_actions, child_n, child_w, child_probs, cpuct):
     n_sum = np.sum(child_n)
+    w_sum = np.sum(child_w)
 
-    q_values = np.where(child_n != 0, (child_w/child_n), np.Inf)
+    # we want unvisited nodes to have a very high, non-infinite values (so that relative order according to probabilities is preserved)
+    q_values = np.where(child_n != 0, (child_w/child_n), w_sum * 100000000000000)
     
     puct_scores = q_values + (cpuct * child_probs * ((np.sqrt(1 + n_sum))/(1 + child_n)))
-    legal_move_scores = puct_scores.take(legal_actions)
+    legal_action_scores = puct_scores * legal_actions
     # randomly break ties
-    best_move = legal_actions[np.random.choice(np.where(legal_move_scores == legal_move_scores.max())[0])]
-    return best_move
+    best_action = legal_actions[np.random.choice(np.argwhere(legal_action_scores == legal_action_scores.max())[0])]
+    return best_action
 
 
 # a single MCTS node
@@ -30,21 +36,20 @@ class GameStateNode:
         self.n = 0 # number of times this node has been visited
         self.child_probs = child_probs # prior probabilities for each child node
         self.children = defaultdict(lambda: dict()) # map from move_id to child node
-        self.legal_actions = [] # list of legal actions from this node
+        self.legal_actions = np.ndarray([]) # list of legal actions from this node
         self.pior_w = np.zeros(4) # accumulated scores for each child node
         self.pior_n = np.zeros(4) # number of times each child node has been visited
         
 
 class MCTS_Evaluator:
-    def __init__(self, model, env, tensor_conversion_fn, cpuct, exploration_cutoff=None, epsilon=None, training=False) -> None:
+    def __init__(self, model, env, tensor_conversion_fn, cpuct, epsilon=None, training=False) -> None:
         self.model = model
-        self.env: _2048Env = env
+        self.env: SpStochasticMCTSEnv = env
         self.training = training
         self.cpuct = cpuct
         self.tensor_conversion_fn = tensor_conversion_fn
         self.puct_node = GameStateNode(None)
         self.epsilon = epsilon
-        self.exploration_cutoff = exploration_cutoff
     
     def reset(self):
         self.puct_node = GameStateNode(None)
@@ -55,13 +60,13 @@ class MCTS_Evaluator:
     def iterate(self, puct_node: GameStateNode):
         if puct_node.n == 0:
             # get legal actions
-            puct_node.legal_actions = np.argwhere(get_legal_actions(self.env.board) == 1).flatten()
+            puct_node.legal_actions = self.env.get_legal_actions()
 
         # choose which edge to traverse
         best_move = get_best_move_w_puct(puct_node.legal_actions, puct_node.pior_n, puct_node.pior_w, puct_node.child_probs, self.cpuct)
         if not puct_node.children[best_move]:
             # get all progressions from this move
-            boards, progressions, stochastic_probs = self.env.get_progressions_for_move(best_move)
+            boards, progressions, stochastic_probs = self.env.get_progressions(best_move)
             # convert to tensor
             boards = self.tensor_conversion_fn(boards)
             # get value and probs for each progression
@@ -79,12 +84,12 @@ class MCTS_Evaluator:
             puct_node.pior_w[best_move] = reward
         else:
             # recurse
-            _, terminated, _, placement = self.env.push_move(best_move)
-            if not terminated:    
+            _, _, terminated, _, info = self.env.step(best_move)
+            if not terminated: 
+                placement = info['progression_id']   
                 reward = self.iterate(puct_node.children[best_move][placement])
             else:
                 reward = 0
-            self.env.moves -=1
             puct_node.pior_w[best_move] += reward
             puct_node.pior_n[best_move] += 1
 
@@ -94,52 +99,48 @@ class MCTS_Evaluator:
 
     
     def choose_progression(self,num_iterations=500):
-        obs = self.env._get_obs()
-            
-        original_board = np.copy(self.env.board)
+        # if this node is not already visited, get the child probabilities from the model
+        initial_observation = self.env._get_obs()
+        if self.puct_node.child_probs is None:
+            probs, _ = self.model(self.tensor_conversion_fn([initial_observation]))
+            probs = torch.nn.functional.softmax(probs, dim=-1).detach().cpu().numpy()[0]
+            self.puct_node.child_probs = probs
 
-        probs, value = self.model(self.tensor_conversion_fn([obs]))
-        probs = torch.nn.functional.softmax(probs, dim=-1).detach().cpu().numpy()[0]
-        self.lmax = value.item()
-        self.lmin = self.lmax - 1
-        self.puct_node.child_probs = probs
-
+    
+        original_env = deepcopy(self.env)
 
         for _ in range(num_iterations):
             self.iterate(self.puct_node)
-            self.env.board = np.copy(original_board)
+            self.env = deepcopy(original_env)
 
-        # pick best (legal) move
+        # pick best (legal) action
         legal_actions = self.puct_node.legal_actions
         
         n_probs = np.copy(self.puct_node.pior_n)
         n_probs /= np.sum(n_probs)
         
-        if self.training and \
-            (self.exploration_cutoff is None or self.env.moves < self.exploration_cutoff) and \
-            (self.epsilon is None or np.random.random() < self.epsilon):
+        if self.training and (self.epsilon is None or np.random.random() < self.epsilon):
             
-            selection = legal_actions[np.argmax(np.random.multinomial(1, n_probs.take(legal_actions)))]
+            best_action = legal_actions[np.argmax(np.random.multinomial(1, n_probs * legal_actions))]
         else:
-            selection = legal_actions[np.argmax(n_probs.take(legal_actions))]
+            best_action = legal_actions[np.argmax(n_probs * legal_actions)]
 
-        deviated = np.argmax(n_probs.take(legal_actions)) != selection
+        _, reward, terminated, _, info = self.env.step(best_action)
+        placement = info['progression_id']
 
-        _, terminated, reward, placement = self.env.push_move(selection, is_simul=False)
-
-        if self.puct_node.children[selection][placement] is None:
-            self.puct_node.children[selection][placement] = GameStateNode(selection)
+        if self.puct_node.children[best_action][placement] is None:
+            self.puct_node.children[best_action][placement] = GameStateNode(best_action)
         
-        self.puct_node = self.puct_node.children[selection][placement]
+        self.puct_node = self.puct_node.children[best_action][placement]
 
-        if self.puct_node.child_probs is None:
-            # initialize empty node
-            probs, value = self.model(self.tensor_conversion_fn([obs]))
-            probs = torch.nn.functional.softmax(probs, dim=-1).detach().cpu().numpy()[0]
-            value = value.item()
-            self.puct_node.child_probs = probs   
-            self.puct_node.n = 1
-            self.puct_node.legal_actions = np.argwhere(get_legal_actions(self.env.board)== 1).flatten()
+        # if self.puct_node.child_probs is None:
+        #     # initialize empty node
+        #     probs, value = self.model(self.tensor_conversion_fn([obs]))
+        #     probs = torch.nn.functional.softmax(probs, dim=-1).detach().cpu().numpy()[0]
+        #     value = value.item()
+        #     self.puct_node.child_probs = probs   
+        #     self.puct_node.n = 1
+        #     self.puct_node.legal_actions = self.env.get_legal_actions()
 
-        return terminated, obs, reward, n_probs, selection, deviated
+        return terminated, initial_observation, reward, n_probs, best_action
     

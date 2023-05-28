@@ -47,7 +47,6 @@ class Metric:
         self.data = []
 
     def generate_plot(self):
-        
         data = self.data
         ts = self.ts
         if data:
@@ -78,57 +77,76 @@ class Metric:
         display.display(self.plot)
 
 class TrainingMetrics:
-    def __init__(self, metrics: List[Metric], eval_metrics: List[Metric]) -> None:
-        self.metrics = {
-            metric.name: metric for metric in metrics
+    def __init__(self, train_metrics: List[Metric], eval_metrics: List[Metric], epoch_metrics: List[Metric]) -> None:
+        self.train_metrics = {
+            metric.name: metric for metric in train_metrics
+        }
+        self.epoch_metrics = {
+            metric.name: metric for metric in epoch_metrics
         }
         self.eval_metrics = {
             metric.name: [metric] for metric in eval_metrics
         }
+        
         self.cur_epoch = 0
-        self.cur_episode = 0
-    
-    def add_episode_data(self, episode_data, print_data = True):
-        if print_data:
-            logging.info(f'Episode {self.cur_episode}')
-            for metric_name, metric_data in episode_data.items():
-                logging.info(f'\t{self.metrics[metric_name].proper_name}: {metric_data}')
+        self.cur_train_episode = 0
 
-        for metric_name, metric_data in episode_data.items():
-            self.metrics[metric_name].add_data(self.cur_episode, metric_data)
+    def add_training_data(self, data, log=True):
+        if log:
+            logging.info(f'Episode {self.cur_train_episode}')
+        for metric_name, metric_data in data.items():
+            if log:
+                logging.info(f'\t{self.train_metrics[metric_name].proper_name}: {metric_data}')
+            self.train_metrics[metric_name].add_data(self.cur_train_episode, metric_data)
+        self.cur_train_episode += 1
 
-        self.cur_episode += 1
+    def add_evaluation_data(self, data, log=True):
+        if log:
+            eval_episode_num = self.eval_metrics[list(self.eval_metrics.keys())[0]][-1].ts[-1]
+            logging.info(f'Eval episode {eval_episode_num}')
+        
+        for metric_name, metric_data in data.items():
+            if log:
+                logging.info(f'\t{self.eval_metrics[metric_name][0].proper_name}: {metric_data}')
+            self.eval_metrics[metric_name][self.cur_epoch].add_data(self.cur_epoch, metric_data)
 
-    def add_epoch_data(self, epoch_data):
-        for metric_name, metric_data in epoch_data.items():
-            self.metrics[metric_name].add_data(self.cur_epoch, metric_data)
+
+    def add_epoch_data(self, data, log=True):
+        if log:
+            logging.info(f'Epoch {self.cur_epoch}')
+        for metric_name, metric_data in data.items():
+            if log:
+                logging.info(f'\t{self.epoch_metrics[metric_name].proper_name}: {metric_data}')
+            self.epoch_metrics[metric_name].add_data(self.cur_epoch, metric_data)
+
         self.cur_epoch += 1
+
+    def start_new_epoch(self):
         for k in self.eval_metrics.keys():
             if self.eval_metrics[k]:
                 self.eval_metrics[k].append(Metric(k, self.eval_metrics[k][-1].xlabel, self.eval_metrics[k][-1].ylabel, pl_type=self.eval_metrics[k][-1].pl_type, \
                                                    addons=self.eval_metrics[k][-1].addons, maximize=self.eval_metrics[k][-1].maximize, alert_on_best=self.eval_metrics[k][-1].alert_on_best, \
                                                     proper_name=self.eval_metrics[k][-1].proper_name, best=self.eval_metrics[k][-1].best))
-    
+        self.cur_epoch += 1
+        
     def reset_all_figs(self): # for matplotlib compatibility
-        for metric in self.metrics.values():
+        for metric in self.train_metrics.values():
             metric.reset_fig()
         for metric_list in self.eval_metrics.values():
             for metric in metric_list:
                 metric.reset_fig()  
-
-    def add_eval_data(self, eval_data, print_data = True):
-        if print_data:
-            eval_episode_num = self.eval_metrics[list(self.eval_metrics.keys())[0]][-1].ts[-1]
-            logging.info(f'Episode {self.cur_episode}')
-            for metric_name, metric_data in eval_data.items():
-                logging.info(f'\t{self.metrics[metric_name].proper_name}: {metric_data}')
-        for metric_name, metric_data in eval_data.items():
-            self.eval_metrics[metric_name][self.cur_epoch].add_data(self.cur_epoch, metric_data)
+        for metric in self.epoch_metrics.values():
+            metric.reset_fig()
+        
     
     def generate_plots(self):
         display.clear_output(wait=False)
-        for metric in self.metrics.values():
+        for metric in self.train_metrics.values():
             metric.generate_plot()
-        for metrics in self.eval_metrics.values():
-            if metrics and len(metrics) > 1:
-                metrics[-2].generate_plot()
+        for metrics_list in self.eval_metrics.values():
+            if metrics_list:
+                metrics_list[-1].generate_plot()
+
+        for metric in self.epoch_metrics.values():
+            metric.generate_plot()
+        
