@@ -4,7 +4,7 @@ import numpy as np
 from gymnasium import spaces
 
 from stochastic_sp_env import SpStochasticMCTSEnv
-from utils import apply_move, post_move, get_legal_actions, merge, get_progressions
+from .utils import apply_move, post_move, get_legal_actions, get_progressions_for_board
 
 from copy import deepcopy
 
@@ -58,14 +58,16 @@ class Env2048(SpStochasticMCTSEnv):
         info = {
             'score': self.score,
             'moves': self.moves,
-            'high_square': self.get_high_square(),
+            'max_tile': self.get_high_square(),
             'progression_id': placement
         }
 
         return self._get_obs(), 0, terminated, False, info
     
     def get_progressions(self, action) -> np.ndarray:
-        return get_progressions(deepcopy(self.board), action)
+        board = deepcopy(self.board)
+        apply_move(board, action)
+        return get_progressions_for_board(board)
     
     def get_legal_actions(self):
         return get_legal_actions(self.board)

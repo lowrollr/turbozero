@@ -48,10 +48,10 @@ class AZResnet(nn.Module):
         assert len(arch_params.input_size) == 3  # (channels, height, width)
         self.input_channels, self.input_height, self.input_width = arch_params.input_size
 
-        self.input_block = ResidualBlock(
-            self.input_channels,
-            arch_params.res_channels,
-            arch_params.kernel_size
+        self.input_block = nn.Sequential(
+            nn.Conv2d(self.input_channels, arch_params.res_channels, kernel_size = arch_params.kernel_size, stride = 1, padding = 'same', bias=False),
+            nn.BatchNorm2d(arch_params.res_channels),
+            nn.ReLU()
         )
 
         self.res_blocks = nn.Sequential(

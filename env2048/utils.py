@@ -1,3 +1,4 @@
+from typing import List, Tuple
 from numba import njit
 import numpy as np
 import random
@@ -95,7 +96,7 @@ def get_legal_actions(board):
     return legal_actions
 
 @njit(nogil=True, fastmath=True)
-def get_progressions_for_board(board):
+def get_progressions_for_board(board) -> Tuple[List[np.ndarray], List[Tuple[Tuple[int, int], bool]], List[float]]:
         boards = []
         progressions = []
         probs = []
@@ -133,3 +134,38 @@ def post_move(board):
         terminated = True
     
     return placement, terminated
+
+def compare_tiles(arr): # thanks GPT-4!
+    # Compare with the tile below
+    shifted_down = np.roll(arr, -1, axis=0)
+    vertical_comparison = np.logical_and(np.not_equal(arr, 0), np.equal(arr, shifted_down)).astype(float)
+    vertical_comparison[:-1, :] = vertical_comparison[1:, :]
+    vertical_comparison[-1, :] = 0
+
+    # Compare with the tile to the right
+    shifted_right = np.roll(arr, -1, axis=1)
+    horizontal_comparison = np.logical_and(np.not_equal(arr, 0), np.equal(arr, shifted_right)).astype(float)
+    horizontal_comparison[:, :-1] = horizontal_comparison[:, 1:]
+    horizontal_comparison[:, -1] = 0
+
+    return vertical_comparison, horizontal_comparison
+
+def rotate_training_examples(training_examples):
+    inputs, probs, rewards = zip(*training_examples)
+    rotated_inputs = []
+    for i in inputs:
+        for k in range(4):
+            rotated_inputs.append(np.rot90(i, k=k))
+    rotated_probs = []
+    for p in probs:
+        # left -> down
+        # down -> right
+        # right -> up
+        # up -> left
+        for k in range(4):
+            rotated_probs.append(np.roll(p, k))
+    rotated_rewards = []
+    for r in rewards:
+        rotated_rewards.extend([r] * 4)
+    
+    return zip(rotated_inputs, rotated_probs, rotated_rewards)

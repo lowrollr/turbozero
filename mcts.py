@@ -25,7 +25,7 @@ def get_best_action(legal_actions, child_n, child_w, child_probs, cpuct):
     puct_scores = q_values + (cpuct * child_probs * ((np.sqrt(1 + n_sum))/(1 + child_n)))
     legal_action_scores = puct_scores * legal_actions
     # randomly break ties
-    best_action = legal_actions[np.random.choice(np.argwhere(legal_action_scores == legal_action_scores.max())[0])]
+    best_action = np.random.choice(np.argwhere(legal_action_scores == legal_action_scores.max())[0])
     return best_action
 
 
@@ -42,7 +42,7 @@ class GameStateNode:
         
 
 class MCTS_Evaluator:
-    def __init__(self, model, env, tensor_conversion_fn, cpuct, epsilon=None, training=False) -> None:
+    def __init__(self, model, env, tensor_conversion_fn, cpuct, epsilon=1.0, training=False) -> None:
         self.model = model
         self.env: SpStochasticMCTSEnv = env
         self.training = training
@@ -52,10 +52,8 @@ class MCTS_Evaluator:
         self.epsilon = epsilon
     
     def reset(self):
+        self.env.reset()
         self.puct_node = GameStateNode(None)
-    
-    def puct(self, q, n, prior, prev_vists) -> float:
-        return q + (self.cpuct * prior * ((np.sqrt(prev_vists))/(1 + n)))
 
     def iterate(self, puct_node: GameStateNode):
         if puct_node.n == 0:
@@ -95,10 +93,8 @@ class MCTS_Evaluator:
 
         puct_node.n += 1
         return reward
-
-
     
-    def choose_progression(self, epsilon, num_iterations):
+    def choose_progression(self, num_iterations):
         # if this node is not already visited, get the child probabilities from the model
         initial_observation = self.env._get_obs()
         if self.puct_node.child_probs is None:
@@ -113,17 +109,14 @@ class MCTS_Evaluator:
             self.iterate(self.puct_node)
             self.env = deepcopy(original_env)
 
-        # pick best (legal) action
-        legal_actions = self.puct_node.legal_actions
-        
         mcts_probs = np.copy(self.puct_node.pior_n)
         mcts_probs /= np.sum(mcts_probs)
         
-        if self.training and (self.epsilon is None or np.random.random() < epsilon):
+        if self.training and np.random.random() < self.epsilon:
             
-            best_action = legal_actions[np.argmax(np.random.multinomial(1, mcts_probs))]
+            best_action = np.argmax(np.random.multinomial(1, mcts_probs))
         else:
-            best_action = legal_actions[np.argmax(mcts_probs)]
+            best_action = np.argmax(mcts_probs)
 
         _, reward, terminated, _, info = self.env.step(best_action)
         placement = info['progression_id']

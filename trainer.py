@@ -1,4 +1,5 @@
 
+from types import FunctionType
 from typing import Callable, Iterable, List, Optional, Tuple
 import torch
 torch.set_num_threads(1)
@@ -6,14 +7,13 @@ import numpy as np
 from history import TrainingMetrics
 from hyperparameters import AZ_HYPERPARAMETERS
 from mcts import MCTS_Evaluator
-from memory import ReplayMemory
+from memory import GameReplayMemory
 from pathlib import Path
 from az_resnet import AZResnet
 from history import TrainingMetrics, Metric
 import logging
 import torch.multiprocessing as mp
-
-
+from utils import apply_async_dill
 
 class AlphaZeroTrainer:
     def __init__(self, model, optimizer, hypers, history=None, memory=None, run_tag='', log_results=True):
@@ -21,21 +21,23 @@ class AlphaZeroTrainer:
         self.model.share_memory()
         self.optimizer: torch.optim.Optimizer = optimizer
         self.hypers: AZ_HYPERPARAMETERS = hypers
-        
-        if history is None:
-            history = self.init_history()
-        self.history: TrainingMetrics = history
-        
-        if memory is None:
-            memory = ReplayMemory(hypers.replay_memory_size)
-        self.memory: ReplayMemory = memory
-        
         self.run_tag: str = run_tag
         self.log_results: bool = log_results
         self.interactive = False
         self.plot_every = 25
         self.num_processes = mp.cpu_count()
         self.epsilon = 1.0
+       
+        if history is None:
+            self.init_history()
+        else:
+            self.history: TrainingMetrics = history
+
+        if memory is None:
+            self.init_memory(hypers.replay_memory_size)
+        else:
+            self.memory: GameReplayMemory = memory
+        
 
     def set_interactive(self, interactive: bool):
         self.interactive = interactive
@@ -47,21 +49,23 @@ class AlphaZeroTrainer:
     def convert_obs_batch_to_tensor(obs_batch: Iterable[np.ndarray]) -> torch.Tensor:
         return torch.from_numpy(np.array(obs_batch)).float()
     
-    def init_history(self) -> TrainingMetrics:
-        true_if_logging = True if self.log_results else False
-        return TrainingMetrics(
+    def init_memory(self, size):
+        self.memory = GameReplayMemory(size)
+
+    def init_history(self) -> None:
+        self.history = TrainingMetrics(
             train_metrics = [
-                Metric(name='loss', xlabel='Episode', ylabel='Loss', addons={'running_mean': 100}, maximize=False, alert_on_best=true_if_logging),
-                Metric(name='value_loss', xlabel='Episode', ylabel='Loss', addons={'running_mean': 100}, maximize=False, alert_on_best=true_if_logging, proper_name='Value Loss'),
-                Metric(name='policy_loss', xlabel='Episode', ylabel='Loss', addons={'running_mean': 100}, maximize=False, alert_on_best=true_if_logging, proper_name='Policy Loss'),
-                Metric(name='policy_accuracy', xlabel='Episode', ylabel='Accuracy (%)', addons={'running_mean': 100}, maximize=True, alert_on_best=true_if_logging, proper_name='Policy Accuracy'),
-                Metric(name='reward', xlabel='Episode', ylabel='Reward', addons={'running_mean': 100}, maximize=True, alert_on_best=true_if_logging),
+                Metric(name='loss', xlabel='Episode', ylabel='Loss', addons={'running_mean': 100}, maximize=False, alert_on_best=self.log_results),
+                Metric(name='value_loss', xlabel='Episode', ylabel='Loss', addons={'running_mean': 100}, maximize=False, alert_on_best=self.log_results, proper_name='Value Loss'),
+                Metric(name='policy_loss', xlabel='Episode', ylabel='Loss', addons={'running_mean': 100}, maximize=False, alert_on_best=self.log_results, proper_name='Policy Loss'),
+                Metric(name='policy_accuracy', xlabel='Episode', ylabel='Accuracy (%)', addons={'running_mean': 100}, maximize=True, alert_on_best=self.log_results, proper_name='Policy Accuracy'),
+                Metric(name='reward', xlabel='Episode', ylabel='Reward', addons={'running_mean': 100}, maximize=True, alert_on_best=self.log_results),
             ],
             eval_metrics = [
                 Metric(name='reward', xlabel='Reward', ylabel='Frequency', pl_type='hist', maximize=True, alert_on_best=False),
             ],
             epoch_metrics = [
-                Metric(name='avg_reward', xlabel='Epoch', ylabel='Average Reward', maximize=True, alert_on_best=true_if_logging),
+                Metric(name='avg_reward', xlabel='Epoch', ylabel='Average Reward', maximize=True, alert_on_best=self.log_results),
             ]
         )
     
@@ -108,29 +112,35 @@ class AlphaZeroTrainer:
 
         return value_loss.item(), policy_loss.item(), loss.item(), policy_accuracy.item()
     
-    def test(self) -> Tuple[float, dict]:
-        self.model.eval()
-        evaluator = self.initialize_evaluator(self.model, self.hypers, self.memory)
+    @staticmethod
+    def collect_test_episode(model: AZResnet, evaluator: MCTS_Evaluator, iters: int) -> Tuple[float, dict]:
+        model.eval()
+        evaluator.reset()
         with torch.no_grad():
             while True:
-                terminated, _, reward, _, info = evaluator.choose_progression(0, self.hypers.mcts_iters_eval)
+                terminated, _, reward, _, info = evaluator.choose_progression(iters)
                 if terminated:
                     break
         return reward, info
     
-    def collect_training_episode(self) -> Tuple[List[Tuple[np.ndarray, np.ndarray, float]], float, dict]:
-        self.model.eval()
-
-        evaluator = self.initialize_evaluator(self.model, self.hypers, self.memory)
-
+    @staticmethod
+    def collect_training_episode(model: AZResnet, evaluator: MCTS_Evaluator, iters: int) -> Tuple[List[Tuple[np.ndarray, np.ndarray, float]], float, dict]:
+        model.eval()
+        evaluator.reset()
         training_examples = []
         while True:
-            terminated, obs, reward, probs, info = evaluator.choose_progression(self.epsilon, self.hypers.mcts_iters_train)
+            terminated, obs, reward, probs, info = evaluator.choose_progression(iters)
             training_examples.append((obs, probs, reward))
             if terminated:
                 break
 
         return training_examples, reward, info
+    
+    @staticmethod
+    def initialize_evaluator(model: AZResnet, tensor_conversion_fn, cpuct: float, epsilon: float, training: bool) -> MCTS_Evaluator:
+        # env = TODO
+        # return MCTS_Evaluator(model, env, tensor_conversion_fn, cpuct, epsilon, training)
+        raise NotImplementedError('initialize_evaluator must be implemented by subclass') 
     
     def save_checkpoint(self, save_replay_memory=True) -> None:
         checkpoint = {
@@ -145,15 +155,9 @@ class AlphaZeroTrainer:
         full_path = Path(f'checkpoints/{self.run_tag}')
         full_path.mkdir(parents=True, exist_ok=True)
         torch.save(checkpoint, f'{full_path}/{self.history.cur_epoch}.pt')
-
-    def initialize_evaluator(self, model, hypers, memory) -> MCTS_Evaluator:
-        # env = TODO 
-        # return MCTS_Evaluator(env, model, hypers, memory)
-        raise NotImplementedError('initialize_evaluator must be implemented by subclass')
     
     def enque_training_samples(self, training_examples):
         self.memory.insert(list(training_examples))
-
     
         
     def train_step(self) -> Optional[Tuple[float, float, float, float]]:
@@ -174,17 +178,16 @@ class AlphaZeroTrainer:
             return cum_vl, cum_pl, cum_tl, cum_pa
         else:
             logging.info(f'Replay memory size not large enough, {self.memory.size()} < {self.hypers.replay_memory_min_size}')
-
-    def train(self):
+    
+    def run_training_loop(self) -> None:
         # we need to wrap class methods in a function to pass to mp.Pool
-        def train_batch_wrapper(args):
-            return self.train_batch(*args)
+        def collect_training_episode_wrapper():
+            evaluator = self.initialize_evaluator(self.model, self.convert_obs_batch_to_tensor, self.hypers.mcts_c_puct, self.epsilon, training=True)
+            return self.collect_training_episode(self.model, evaluator, self.hypers.mcts_iters_train)
         
-        def collect_training_episode_wrapper(args):
-            return self.collect_training_episode(*args)
-        
-        def test_wrapper(args):
-            return self.test(*args)
+        def test_wrapper():
+            evaluator = self.initialize_evaluator(self.model, self.convert_obs_batch_to_tensor, self.hypers.mcts_c_puct, self.epsilon, training=False)
+            return self.collect_test_episode(self.model, evaluator, self.hypers.mcts_iters_eval)
         
         def enque_and_train(training_samples):
             training_examples, reward, info = training_samples
@@ -205,7 +208,15 @@ class AlphaZeroTrainer:
         with mp.Pool(self.num_processes) as pool:
             results = []
             for _ in range(self.memory.size(), self.hypers.replay_memory_min_size):
-                results.append(pool.apply_async(collect_training_episode_wrapper, (), callback=enque_and_train, error_callback=print))
+                results.append(
+                    apply_async_dill(
+                        pool,
+                        collect_training_episode_wrapper,
+                        (),
+                        callback=enque_and_train,
+                        error_callback=print
+                    )
+                )
             for r in results:
                 r.wait()
         
@@ -220,7 +231,15 @@ class AlphaZeroTrainer:
             with mp.Pool(self.num_processes) as pool:
                 results = []
                 for _ in range(self.history.cur_train_episode, self.hypers.episodes_per_epoch * cur_epoch):
-                    results.append(pool.apply_async(collect_training_episode_wrapper, (), callback=enque_and_train, error_callback=print))
+                    results.append(
+                        apply_async_dill(
+                            pool,
+                            collect_training_episode_wrapper,
+                            (),
+                            callback=enque_and_train,
+                            error_callback=print
+                        )
+                    )
                 for r in results:
                     r.wait()
 
@@ -229,7 +248,15 @@ class AlphaZeroTrainer:
                 with mp.Pool(self.num_processes) as pool:
                     results = []
                     for _ in range(self.hypers.eval_games):
-                        results.append(pool.apply_async(test_wrapper, (), callback=add_evaluation_episode_to_history_wrapper, error_callback=print))
+                        results.append(
+                            apply_async_dill(
+                                pool,
+                                test_wrapper,
+                                (),
+                                callback=add_evaluation_episode_to_history_wrapper,
+                                error_callback=print
+                            )
+                        )
                     for r in results:
                         r.wait()
 
@@ -261,6 +288,10 @@ def init_trainer_from_checkpoint(filename, load_replay_memory=True):
     memory = checkpoint['memory'] if load_replay_memory else None
 
     run_tag = checkpoint['run_tag']
-    
 
     return AlphaZeroTrainer(model, optimizer, hypers, history, memory, run_tag)
+
+
+
+
+
