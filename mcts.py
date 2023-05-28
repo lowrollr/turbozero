@@ -63,10 +63,10 @@ class MCTS_Evaluator:
             puct_node.legal_actions = self.env.get_legal_actions()
 
         # choose which edge to traverse
-        best_move = get_best_move_w_puct(puct_node.legal_actions, puct_node.pior_n, puct_node.pior_w, puct_node.child_probs, self.cpuct)
-        if not puct_node.children[best_move]:
+        best_action = get_best_action(puct_node.legal_actions, puct_node.pior_n, puct_node.pior_w, puct_node.child_probs, self.cpuct)
+        if not puct_node.children[best_action]:
             # get all progressions from this move
-            boards, progressions, stochastic_probs = self.env.get_progressions(best_move)
+            boards, progressions, stochastic_probs = self.env.get_progressions(best_action)
             # convert to tensor
             boards = self.tensor_conversion_fn(boards)
             # get value and probs for each progression
@@ -77,28 +77,28 @@ class MCTS_Evaluator:
             # create a new node for each progression
             reward = 0
             for i, (p_id, term) in enumerate(progressions):
-                puct_node.children[best_move][p_id] = GameStateNode(best_move, softmax_probs[i])
+                puct_node.children[best_action][p_id] = GameStateNode(best_action, softmax_probs[i])
                 if not term:
                     reward += stochastic_probs[i] * values[i]
-            puct_node.pior_n[best_move] = 1
-            puct_node.pior_w[best_move] = reward
+            puct_node.pior_n[best_action] = 1
+            puct_node.pior_w[best_action] = reward
         else:
             # recurse
-            _, _, terminated, _, info = self.env.step(best_move)
+            _, _, terminated, _, info = self.env.step(best_action)
             if not terminated: 
                 placement = info['progression_id']   
-                reward = self.iterate(puct_node.children[best_move][placement])
+                reward = self.iterate(puct_node.children[best_action][placement])
             else:
                 reward = 0
-            puct_node.pior_w[best_move] += reward
-            puct_node.pior_n[best_move] += 1
+            puct_node.pior_w[best_action] += reward
+            puct_node.pior_n[best_action] += 1
 
         puct_node.n += 1
         return reward
 
 
     
-    def choose_progression(self,num_iterations=500):
+    def choose_progression(self, epsilon, num_iterations):
         # if this node is not already visited, get the child probabilities from the model
         initial_observation = self.env._get_obs()
         if self.puct_node.child_probs is None:
@@ -116,14 +116,14 @@ class MCTS_Evaluator:
         # pick best (legal) action
         legal_actions = self.puct_node.legal_actions
         
-        n_probs = np.copy(self.puct_node.pior_n)
-        n_probs /= np.sum(n_probs)
+        mcts_probs = np.copy(self.puct_node.pior_n)
+        mcts_probs /= np.sum(mcts_probs)
         
-        if self.training and (self.epsilon is None or np.random.random() < self.epsilon):
+        if self.training and (self.epsilon is None or np.random.random() < epsilon):
             
-            best_action = legal_actions[np.argmax(np.random.multinomial(1, n_probs * legal_actions))]
+            best_action = legal_actions[np.argmax(np.random.multinomial(1, mcts_probs))]
         else:
-            best_action = legal_actions[np.argmax(n_probs * legal_actions)]
+            best_action = legal_actions[np.argmax(mcts_probs)]
 
         _, reward, terminated, _, info = self.env.step(best_action)
         placement = info['progression_id']
@@ -142,5 +142,5 @@ class MCTS_Evaluator:
         #     self.puct_node.n = 1
         #     self.puct_node.legal_actions = self.env.get_legal_actions()
 
-        return terminated, initial_observation, reward, n_probs, best_action
+        return terminated, initial_observation, reward, mcts_probs, info
     
