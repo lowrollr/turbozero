@@ -24,8 +24,8 @@ def get_best_action(legal_actions, child_n, child_w, child_probs, cpuct):
     
     puct_scores = q_values + (cpuct * child_probs * ((np.sqrt(1 + n_sum))/(1 + child_n)))
     legal_action_scores = puct_scores * legal_actions
-    # randomly break ties
-    best_action = np.random.choice(np.argwhere(legal_action_scores == legal_action_scores.max())[0])
+
+    best_action = np.argmax(legal_action_scores)
     return best_action
 
 
@@ -51,8 +51,8 @@ class MCTS_Evaluator:
         self.puct_node = GameStateNode(None)
         self.epsilon = epsilon
     
-    def reset(self):
-        self.env.reset()
+    def reset(self, seed=None):
+        self.env.reset(seed=seed)
         self.puct_node = GameStateNode(None)
 
     def iterate(self, puct_node: GameStateNode):
@@ -112,9 +112,9 @@ class MCTS_Evaluator:
         mcts_probs = np.copy(self.puct_node.pior_n)
         mcts_probs /= np.sum(mcts_probs)
         
-        if self.training and np.random.random() < self.epsilon:
+        if self.training and self.env.np_random.random() < self.epsilon:
             
-            best_action = np.argmax(np.random.multinomial(1, mcts_probs))
+            best_action = np.argmax(self.env.np_random.multinomial(1, mcts_probs))
         else:
             best_action = np.argmax(mcts_probs)
 

@@ -1,7 +1,6 @@
 from typing import List, Tuple
 from numba import njit
 import numpy as np
-import random
 
 @njit(nogil=True, fastmath=True)
 def merge(values, reverse=False):
@@ -118,15 +117,13 @@ def get_progressions_for_board(board) -> Tuple[List[np.ndarray], List[Tuple[Tupl
             progressions.append(((p_id, 2), get_legal_actions(new_board1).sum() == 0))
         return boards, progressions, probs
 
-
-@njit(nogil=True, fastmath=True)
-def post_move(board):
+def post_move(board, rand):
     terminated = False
     placement = None
     # choose a random empty spot
     empty = np.argwhere(board == 0)
-    index = np.random.choice(empty.shape[0], 1)[0]
-    value = 2 if random.random() >= 0.9 else 1
+    index = rand.choice(empty.shape[0], 1)[0]
+    value = 2 if rand.random() >= 0.9 else 1
     board[empty[index, 0], empty[index, 1]] = value
     placement = ((empty[index, 0] * 4) + empty[index, 1], value)
 

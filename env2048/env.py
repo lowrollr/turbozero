@@ -44,7 +44,7 @@ class Env2048(SpStochasticMCTSEnv):
         num_starting_tiles = options.get('starting_tiles', 2)
         self.board = np.zeros((self.size, self.size), dtype=np.int32)
         # choose 2 random indices for the first 2 tiles
-        indices = np.random.choice(self.size ** 2, num_starting_tiles, replace=False)
+        indices = self.np_random.choice(self.size ** 2, num_starting_tiles, replace=False)
         for index in indices:
             self.board[index//self.size, index%self.size] = 1
         return self._get_obs(), self._get_info()
@@ -53,7 +53,7 @@ class Env2048(SpStochasticMCTSEnv):
         score = apply_move(self.board, action)
         self.score += score
         self.moves += 1
-        placement, terminated = post_move(self.board)
+        placement, terminated = post_move(self.board, self.np_random)
 
         info = {
             'score': self.score,
