@@ -132,18 +132,9 @@ def post_move(board, rand):
     
     return placement, terminated
 
-def compare_tiles(arr): # thanks GPT-4!
-    # Compare with the tile below
-    shifted_down = np.roll(arr, -1, axis=0)
-    vertical_comparison = np.logical_and(np.not_equal(arr, 0), np.equal(arr, shifted_down)).astype(float)
-    vertical_comparison[:-1, :] = vertical_comparison[1:, :]
-    vertical_comparison[-1, :] = 0
-
-    # Compare with the tile to the right
-    shifted_right = np.roll(arr, -1, axis=1)
-    horizontal_comparison = np.logical_and(np.not_equal(arr, 0), np.equal(arr, shifted_right)).astype(float)
-    horizontal_comparison[:, :-1] = horizontal_comparison[:, 1:]
-    horizontal_comparison[:, -1] = 0
+def compare_tiles(arr):
+    vertical_comparison = np.pad(np.logical_and(np.equal(arr[:-1, :], arr[1:, :]), np.not_equal(arr[:-1, :], 0)).astype(float), ((0, 1), (0, 0)), mode='constant', constant_values=0)
+    horizontal_comparison = np.pad(np.logical_and(np.equal(arr[:, :-1], arr[:, 1:]), np.not_equal(arr[:, :-1], 0)).astype(float), ((0, 0), (0, 1)), mode='constant', constant_values=0)
 
     return vertical_comparison, horizontal_comparison
 
