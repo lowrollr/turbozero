@@ -13,8 +13,8 @@ class Vectorized2048Env:
 
         ones = torch.eye(16, dtype=torch.int16).view(16, 4, 4)
         twos = torch.eye(16, dtype=torch.int16).view(16, 4, 4) * 2
-        self.base_progressions = torch.concat([ones, twos], dim=0)
-        self.base_probabilities = torch.concat([torch.full((16,), 0.9), torch.full((16,), 0.1)], dim=0)
+        self.base_progressions = torch.concat([ones, twos], dim=0).to(device)
+        self.base_probabilities = torch.concat([torch.full((16,), 0.9), torch.full((16,), 0.1)], dim=0).to(device)
 
     def reset(self, seed=None) -> None:
         if seed is not None:
