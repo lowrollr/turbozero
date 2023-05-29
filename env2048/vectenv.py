@@ -106,14 +106,14 @@ class Vectorized2048Env:
     def merge(self) -> None:
         shape = self.boards.shape
         bs_flat = self.boards.view(-1, shape[-1])
-        mask = (bs_flat != 0)
+        mask = (bs_flat != 0).int()
         _, sorted_indices = torch.sort(mask, dim=1, descending=True)
         bs_flat = torch.gather(bs_flat, 1, sorted_indices)
         for i in range(3):
             is_same = torch.logical_and(bs_flat[:,i] == bs_flat[:,i+1], bs_flat[:,i] != 0).int()
             bs_flat[:,i] += is_same
             bs_flat[:,i+1] *= (1 - is_same)
-        mask = (bs_flat != 0)
+        mask = (bs_flat != 0).int()
         _, sorted_indices = torch.sort(mask, dim=1, descending=True)
         bs_flat = torch.gather(bs_flat, 1, sorted_indices)
         self.boards = bs_flat.view(shape)
