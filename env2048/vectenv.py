@@ -5,21 +5,21 @@ import torch
 class Vectorized2048Env:
     def __init__(self, num_parallel_envs, device):
         self.num_parallel_envs = num_parallel_envs
-        self.boards = torch.zeros((num_parallel_envs, 1, 4, 4), dtype=torch.int32, device=device)
+        self.boards = torch.zeros((num_parallel_envs, 1, 4, 4), dtype=torch.float32, device=device)
         self.valid_mask = torch.ones((num_parallel_envs, 1, 1, 1), dtype=torch.bool, device=device)
         self.mcts_trees = [None for _ in range(num_parallel_envs)]
         self.device = device
         self.very_negative_value = -1e5
 
-        ones = torch.eye(16, dtype=torch.int32).view(16, 4, 4)
-        twos = torch.eye(16, dtype=torch.int32).view(16, 4, 4) * 2
+        ones = torch.eye(16, dtype=torch.float32).view(16, 4, 4)
+        twos = torch.eye(16, dtype=torch.float32).view(16, 4, 4) * 2
         self.base_progressions = torch.concat([ones, twos], dim=0).to(device)
         self.base_probabilities = torch.concat([torch.full((16,), 0.9), torch.full((16,), 0.1)], dim=0).to(device)
 
-        self.mask0 = torch.tensor([[[[self.very_negative_value, 1]]]], dtype=torch.int32, device=device)
-        self.mask1 = torch.tensor([[[[1, self.very_negative_value]]]], dtype=torch.int32, device=device)
-        self.mask2 = torch.tensor([[[[1], [self.very_negative_value]]]], dtype=torch.int32, device=device)
-        self.mask3 = torch.tensor([[[[self.very_negative_value], [1]]]], dtype=torch.int32, device=device)
+        self.mask0 = torch.tensor([[[[self.very_negative_value, 1]]]], dtype=torch.float32, device=device)
+        self.mask1 = torch.tensor([[[[1, self.very_negative_value]]]], dtype=torch.float32, device=device)
+        self.mask2 = torch.tensor([[[[1], [self.very_negative_value]]]], dtype=torch.float32, device=device)
+        self.mask3 = torch.tensor([[[[self.very_negative_value], [1]]]], dtype=torch.float32, device=device)
 
     def reset(self, seed=None) -> None:
         if seed is not None:
@@ -55,10 +55,10 @@ class Vectorized2048Env:
         m2 = torch.nn.functional.conv2d(self.boards, self.mask2, padding=0, bias=None).view(self.num_parallel_envs, 12)
         m3 = torch.nn.functional.conv2d(self.boards, self.mask3, padding=0, bias=None).view(self.num_parallel_envs, 12)
 
-        m0_valid = torch.any(m0 > 0, dim=1, keepdim=True)
-        m1_valid = torch.any(m1 > 0, dim=1, keepdim=True)
-        m2_valid = torch.any(m2 > 0, dim=1, keepdim=True)
-        m3_valid = torch.any(m3 > 0, dim=1, keepdim=True)
+        m0_valid = torch.any(m0 > 0.5, dim=1, keepdim=True)
+        m1_valid = torch.any(m1 > 0.5, dim=1, keepdim=True)
+        m2_valid = torch.any(m2 > 0.5, dim=1, keepdim=True)
+        m3_valid = torch.any(m3 > 0.5, dim=1, keepdim=True)
 
         # check for matching tiles
         vertical_comparison = torch.any((torch.logical_and(self.boards[:,:,:-1,:] == self.boards[:,:,1:,:], self.boards[:,:,1:,:] != 0)).view(self.num_parallel_envs, 12), dim=1, keepdim=True)
@@ -108,14 +108,14 @@ class Vectorized2048Env:
     def merge(self) -> None:
         shape = self.boards.shape
         bs_flat = self.boards.view(-1, shape[-1])
-        mask = (bs_flat != 0).int()
+        mask = (bs_flat != 0).float()
         _, sorted_indices = torch.sort(mask, dim=1, descending=True)
         bs_flat = torch.gather(bs_flat, 1, sorted_indices)
         for i in range(3):
-            is_same = torch.logical_and(bs_flat[:,i] == bs_flat[:,i+1], bs_flat[:,i] != 0).int()
+            is_same = torch.logical_and(bs_flat[:,i] == bs_flat[:,i+1], bs_flat[:,i] != 0).float()
             bs_flat[:,i] += is_same
             bs_flat[:,i+1] *= (1 - is_same)
-        mask = (bs_flat != 0).int()
+        mask = (bs_flat != 0).float()
         _, sorted_indices = torch.sort(mask, dim=1, descending=True)
         bs_flat = torch.gather(bs_flat, 1, sorted_indices)
         self.boards = bs_flat.view(shape)
