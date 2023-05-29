@@ -21,8 +21,6 @@ class Vectorized2048Env:
         self.mask2 = torch.tensor([[[[1], [self.very_negative_value]]]], dtype=torch.float32, device=device)
         self.mask3 = torch.tensor([[[[self.very_negative_value], [1]]]], dtype=torch.float32, device=device)
 
-        self.env_indices = torch.arange(self.num_parallel_envs, device=device)
-
     def reset(self, seed=None) -> None:
         if seed is not None:
             torch.manual_seed(seed)
@@ -88,10 +86,8 @@ class Vectorized2048Env:
         progs, probs = self.get_progressions()
         probs = probs.masked_fill(probs.amax(dim=1, keepdim=True) == 0, 1)
         indices = torch.multinomial(probs, 1)
-        
         if mask is not None:
-            ind_to_update = mask.squeeze()
-            self.boards[ind_to_update] = progs[(self.env_indices[ind_to_update], indices[ind_to_update, 0])].unsqueeze(1)
+            self.boards = torch.where(mask, progs[(range(self.num_parallel_envs), indices[:,0])].unsqueeze(1), self.boards)
         else:
             self.boards = progs[(range(self.num_parallel_envs), indices[:,0])].unsqueeze(1)
     
