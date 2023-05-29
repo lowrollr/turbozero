@@ -16,6 +16,11 @@ class Vectorized2048Env:
         self.base_progressions = torch.concat([ones, twos], dim=0).to(device)
         self.base_probabilities = torch.concat([torch.full((16,), 0.9), torch.full((16,), 0.1)], dim=0).to(device)
 
+        self.mask0 = torch.tensor([[[[self.very_negative_value, 1]]]], dtype=torch.int16, device=device)
+        self.mask1 = torch.tensor([[[[1, self.very_negative_value]]]], dtype=torch.int16, device=device)
+        self.mask2 = torch.tensor([[[[1], [self.very_negative_value]]]], dtype=torch.int16, device=device)
+        self.mask3 = torch.tensor([[[[self.very_negative_value], [1]]]], dtype=torch.int16, device=device)
+
     def reset(self, seed=None) -> None:
         if seed is not None:
             torch.manual_seed(seed)
@@ -43,15 +48,12 @@ class Vectorized2048Env:
 
     def get_legal_moves(self) -> torch.Tensor:
         # check for empty spaces
-        mask0 = torch.tensor([[[[self.very_negative_value, 1]]]], dtype=torch.int16)
-        mask1 = torch.tensor([[[[1, self.very_negative_value]]]], dtype=torch.int16)
-        mask2 = torch.tensor([[[[1], [self.very_negative_value]]]], dtype=torch.int16)
-        mask3 = torch.tensor([[[[self.very_negative_value], [1]]]], dtype=torch.int16)
         
-        m0 = torch.nn.functional.conv2d(self.boards, mask0, padding=0, bias=None).view(self.num_parallel_envs, 12)
-        m1 = torch.nn.functional.conv2d(self.boards, mask1, padding=0, bias=None).view(self.num_parallel_envs, 12)
-        m2 = torch.nn.functional.conv2d(self.boards, mask2, padding=0, bias=None).view(self.num_parallel_envs, 12)
-        m3 = torch.nn.functional.conv2d(self.boards, mask3, padding=0, bias=None).view(self.num_parallel_envs, 12)
+        
+        m0 = torch.nn.functional.conv2d(self.boards, self.mask0, padding=0, bias=None).view(self.num_parallel_envs, 12)
+        m1 = torch.nn.functional.conv2d(self.boards, self.mask1, padding=0, bias=None).view(self.num_parallel_envs, 12)
+        m2 = torch.nn.functional.conv2d(self.boards, self.mask2, padding=0, bias=None).view(self.num_parallel_envs, 12)
+        m3 = torch.nn.functional.conv2d(self.boards, self.mask3, padding=0, bias=None).view(self.num_parallel_envs, 12)
 
         m0_valid = torch.any(m0 > 0, dim=1, keepdim=True)
         m1_valid = torch.any(m1 > 0, dim=1, keepdim=True)
