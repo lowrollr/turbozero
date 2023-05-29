@@ -5,21 +5,21 @@ import torch
 class Vectorized2048Env:
     def __init__(self, num_parallel_envs, device):
         self.num_parallel_envs = num_parallel_envs
-        self.boards = torch.zeros((num_parallel_envs, 1, 4, 4), dtype=torch.short, device=device)
+        self.boards = torch.zeros((num_parallel_envs, 1, 4, 4), dtype=torch.int32, device=device)
         self.valid_mask = torch.ones((num_parallel_envs, 1, 1, 1), dtype=torch.bool, device=device)
         self.mcts_trees = [None for _ in range(num_parallel_envs)]
         self.device = device
         self.very_negative_value = -1e5
 
-        ones = torch.eye(16, dtype=torch.short).view(16, 4, 4)
-        twos = torch.eye(16, dtype=torch.short).view(16, 4, 4) * 2
+        ones = torch.eye(16, dtype=torch.int32).view(16, 4, 4)
+        twos = torch.eye(16, dtype=torch.int32).view(16, 4, 4) * 2
         self.base_progressions = torch.concat([ones, twos], dim=0).to(device)
         self.base_probabilities = torch.concat([torch.full((16,), 0.9), torch.full((16,), 0.1)], dim=0).to(device)
 
-        self.mask0 = torch.tensor([[[[self.very_negative_value, 1]]]], dtype=torch.short, device=device)
-        self.mask1 = torch.tensor([[[[1, self.very_negative_value]]]], dtype=torch.short, device=device)
-        self.mask2 = torch.tensor([[[[1], [self.very_negative_value]]]], dtype=torch.short, device=device)
-        self.mask3 = torch.tensor([[[[self.very_negative_value], [1]]]], dtype=torch.short, device=device)
+        self.mask0 = torch.tensor([[[[self.very_negative_value, 1]]]], dtype=torch.int32, device=device)
+        self.mask1 = torch.tensor([[[[1, self.very_negative_value]]]], dtype=torch.int32, device=device)
+        self.mask2 = torch.tensor([[[[1], [self.very_negative_value]]]], dtype=torch.int32, device=device)
+        self.mask3 = torch.tensor([[[[self.very_negative_value], [1]]]], dtype=torch.int32, device=device)
 
     def reset(self, seed=None) -> None:
         if seed is not None:
