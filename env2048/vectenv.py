@@ -20,6 +20,7 @@ class Vectorized2048Env:
         self.mask1 = torch.tensor([[[[1, self.very_negative_value]]]], dtype=torch.float32, device=device)
         self.mask2 = torch.tensor([[[[1], [self.very_negative_value]]]], dtype=torch.float32, device=device)
         self.mask3 = torch.tensor([[[[self.very_negative_value], [1]]]], dtype=torch.float32, device=device)
+        self.env_indices = torch.arange(num_parallel_envs, device=device)
 
     def reset(self, seed=None) -> None:
         if seed is not None:
@@ -33,6 +34,8 @@ class Vectorized2048Env:
         self.push_moves(actions)
         self.update_valid_mask()
         terminated_boards = torch.logical_not(self.valid_mask.clone())
+        if torch.any(terminated_boards):
+            self.reset_invalid_boards()
         self.reset_invalid_boards()
         self.spawn_tiles()
         return terminated_boards
@@ -84,26 +87,21 @@ class Vectorized2048Env:
 
     def spawn_tiles(self, mask=None) -> None:
         progs, probs = self.get_progressions()
-        probs = probs.masked_fill(probs.amax(dim=1, keepdim=True) == 0, 1)
-        indices = torch.multinomial(probs, 1)
+        probs.masked_fill_(probs.amax(dim=1, keepdim=True) == 0, 1)
+        indices = torch.multinomial(probs, 1, replacement=True)
         if mask is not None:
-            self.boards = torch.where(mask, progs[(range(self.num_parallel_envs), indices[:,0])].unsqueeze(1), self.boards)
+            self.boards = torch.where(mask, progs[(torch.arange(self.num_parallel_envs), indices[:,0])].unsqueeze(1), self.boards)
         else:
-            self.boards = progs[(range(self.num_parallel_envs), indices[:,0])].unsqueeze(1)
+            self.boards = progs[(torch.arange(self.num_parallel_envs), indices[:,0])].unsqueeze(1)
     
     def rotate_by_amnts(self, amnts) -> None:
-        rotations_0 = self.boards
-        rotations_1 = torch.rot90(self.boards, 1, (2,3))
-        rotations_2 = torch.rot90(self.boards, 2, (2,3))
-        rotations_3 = torch.rot90(self.boards, 3, (2,3))
-        mask_0 = (amnts == 0)
         mask_90 = (amnts == 1)
         mask_180 = (amnts == 2)
-        mask_270 = (amnts == 3)    
-        self.boards[mask_0] = rotations_0[mask_0]
-        self.boards[mask_90] = rotations_1[mask_90]
-        self.boards[mask_180] = rotations_2[mask_180]
-        self.boards[mask_270] = rotations_3[mask_270]
+        mask_270 = (amnts == 3)
+    
+        self.boards[mask_90] = self.boards[mask_90].flip(2).transpose(2, 3)
+        self.boards[mask_180] = self.boards[mask_180].flip(3).flip(2)
+        self.boards[mask_270] = self.boards[mask_270].flip(3).transpose(2, 3)
 
     def merge(self) -> None:
         shape = self.boards.shape
