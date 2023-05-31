@@ -6,7 +6,7 @@ class Vectorized2048Env:
     def __init__(self, num_parallel_envs, device):
         self.num_parallel_envs = num_parallel_envs
         self.boards = torch.zeros((num_parallel_envs, 1, 4, 4), dtype=torch.float32, device=device)
-        self.valid_mask = torch.ones((num_parallel_envs, 1, 1, 1), dtype=torch.bool, device=device)
+        self.invalid_mask = torch.zeros((num_parallel_envs, 1, 1, 1), dtype=torch.bool, device=device)
         self.mcts_trees = [None for _ in range(num_parallel_envs)]
         self.device = device
         self.very_negative_value = -1e5
@@ -26,28 +26,25 @@ class Vectorized2048Env:
         if seed is not None:
             torch.manual_seed(seed)
         self.boards.fill_(0)
-        self.valid_mask.fill_(0)
+        self.invalid_mask.fill_(0)
         self.spawn_tiles()
         self.spawn_tiles()
         
     def step(self, actions: torch.Tensor) -> torch.Tensor:
         self.push_moves(actions)
-        self.update_valid_mask()
-        terminated_boards = torch.logical_not(self.valid_mask.clone())
-        if torch.any(terminated_boards):
-            self.reset_invalid_boards()
-        self.reset_invalid_boards()
-        self.spawn_tiles()
-        return terminated_boards
+        self.update_invalid_mask()
+        self.spawn_tiles(torch.logical_not(self.invalid_mask))
+        return self.invalid_mask
     
     def reset_invalid_boards(self):
-        self.boards *= self.valid_mask.view(self.num_parallel_envs, 1, 1, 1)
-        self.spawn_tiles(torch.logical_not(self.valid_mask))
-        self.valid_mask.fill_(1)
+        self.boards *= torch.logical_not(self.invalid_mask)
+        self.spawn_tiles(self.invalid_mask)
+        self.spawn_tiles(self.invalid_mask)
+        self.invalid_mask.fill_(0)
         
 
-    def update_valid_mask(self) -> None:
-        self.valid_mask *= (self.get_legal_moves().sum(dim=1, keepdim=True) > 0).view(-1, 1, 1, 1)
+    def update_invalid_mask(self) -> None:
+        self.invalid_mask *= (self.get_legal_moves().sum(dim=1, keepdim=True) == 0).view(-1, 1, 1, 1)
 
     def get_legal_moves(self) -> torch.Tensor:
         # check for empty spaces
