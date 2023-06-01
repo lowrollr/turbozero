@@ -19,3 +19,16 @@ class AZ_HYPERPARAMETERS:
     num_epochs: int = 100
     eval_games: int = 200
     weight_decay: float = 0.0
+
+@dataclass()
+class LazyAZHyperparameters:
+    learning_rate: float = 1e-3
+    num_iters_train: int = 20
+    iter_depth_train: int = 4
+    num_iters_eval: int = 20
+    iter_depth_test: int = 4
+    replay_memory_size: int = 1000
+    replay_memory_min_size: int = 1
+    policy_factor: int = 1
+    minibatch_size: int = 128
+    minibatches_per_update: int = 16
