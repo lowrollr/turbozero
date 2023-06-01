@@ -51,7 +51,7 @@ class VectorizedTrainer:
         inputs, target_policy, target_value = zip(*self.memory.sample(self.hypers.minibatch_size))
         inputs = torch.from_numpy(np.array(inputs)).to(self.device).float()
         target_policy = torch.from_numpy(np.array(target_policy)).to(self.device).float()
-        target_value = torch.from_numpy(np.array(target_value)).to(self.device).float()
+        target_value = torch.from_numpy(np.array(target_value)).to(self.device).float().log()
         target_policy /= target_policy.sum(dim=1, keepdim=True)
 
         self.optimizer.zero_grad()
