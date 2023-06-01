@@ -23,12 +23,14 @@ class AZ_HYPERPARAMETERS:
 @dataclass()
 class LazyAZHyperparameters:
     learning_rate: float = 1e-3
-    num_iters_train: int = 20
-    iter_depth_train: int = 4
-    num_iters_eval: int = 20
-    iter_depth_test: int = 4
+    num_iters_train: int = 5
+    iter_depth_train: int = 3
+    num_iters_eval: int = 5
+    iter_depth_test: int = 3
     replay_memory_size: int = 1000
     replay_memory_min_size: int = 1
     policy_factor: int = 1
     minibatch_size: int = 128
     minibatches_per_update: int = 16
+    episodes_per_epoch: int = 5
+    eval_episodes_per_epoch: int = 5

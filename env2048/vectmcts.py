@@ -13,11 +13,19 @@ class Vectorized2048MCTSLazy:
         self.visits = torch.zeros((self.env.num_parallel_envs,4), dtype=torch.float32, device=self.env.device, requires_grad=False)
         self.puct_c = puct_c
         self.indices = torch.arange(self.env.num_parallel_envs, dtype=torch.int64, device=self.env.device, requires_grad=False)
+        self.very_positive_value = 1e5
     
+    def reset(self, seed=None):
+        self.env.reset(seed=seed)
+        self.inter_scores.zero_()
+        self.action_scores.zero_()
+        self.visits.zero_()
+
+
     def choose_action_with_puct(self, probs, legal_actions):
         n_sum = torch.sum(self.visits, dim=1, keepdim=True)
 
-        q_values = torch.where(self.visits > 0, self.action_scores / self.visits, 100)
+        q_values = torch.where(self.visits > 0, self.action_scores / self.visits, self.very_positive_value)
         puct_scores = q_values + (self.puct_c * probs * torch.sqrt(n_sum + 1) / (1 + self.visits))
         legal_action_scores = puct_scores * legal_actions
         chosen_actions = torch.argmax(legal_action_scores, dim=1, keepdim=True)
@@ -38,9 +46,9 @@ class Vectorized2048MCTSLazy:
             d -= 1
         
     def explore(self, iters, search_depth):
-        self.action_scores.fill_(0)
-        self.inter_scores.fill_(0)
-        self.visits.fill_(0)
+        self.action_scores.zero_()
+        self.inter_scores.zero_()
+        self.visits.zero_()
         legal_actions = self.env.get_legal_moves()
         with torch.no_grad():
             policy_logits, _ = self.model(self.env.boards)
@@ -53,7 +61,7 @@ class Vectorized2048MCTSLazy:
             self.iterate(search_depth)
             self.visits[self.indices, actions] += 1
             self.action_scores[self.indices, actions] += self.inter_scores / search_depth
-            self.inter_scores.fill_(0)
+            self.inter_scores.zero_()
             self.env.boards = initial_state.clone()
             self.env.update_invalid_mask()
 

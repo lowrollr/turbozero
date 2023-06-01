@@ -7,7 +7,6 @@ class Vectorized2048Env:
         self.num_parallel_envs = num_parallel_envs
         self.boards = torch.zeros((num_parallel_envs, 1, 4, 4), dtype=torch.float32, device=device, requires_grad=False)
         self.invalid_mask = torch.zeros((num_parallel_envs, 1, 1, 1), dtype=torch.bool, device=device, requires_grad=False)
-        self.mcts_trees = [None for _ in range(num_parallel_envs)]
         self.device = device
         self.very_negative_value = -1e5
 
@@ -44,7 +43,7 @@ class Vectorized2048Env:
         self.invalid_mask.fill_(0)
     
     def get_high_squares(self):
-        return torch.amax(self.boards, dim=1)
+        return torch.amax(self.boards, dim=(1, 2, 3))
         
     def update_invalid_mask(self) -> None:
         self.invalid_mask = (self.get_legal_moves().sum(dim=1, keepdim=True) == 0).view(-1, 1, 1, 1)
