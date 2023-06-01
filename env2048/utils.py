@@ -143,7 +143,7 @@ def rotate_training_examples(training_examples):
     rotated_inputs = []
     for i in inputs:
         for k in range(4):
-            rotated_inputs.append(np.rot90(i, k=k))
+            rotated_inputs.append(np.rot90(i, k=k, axes=(1, 2)))
     rotated_probs = []
     for p in probs:
         # left -> down

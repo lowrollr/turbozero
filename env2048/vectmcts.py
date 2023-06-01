@@ -35,13 +35,13 @@ class Vectorized2048MCTSLazy:
         d = depth
         while d > 0:
             with torch.no_grad():
-                policy_logits, value = self.model(self.env.boards)
-            policy_logits = torch.max(policy_logits, torch.tensor(0.00001))
-            self.inter_scores += value.squeeze(1) * torch.logical_not(self.env.invalid_mask.view(self.env.num_parallel_envs))
+                policy_logits, values = self.model(self.env.boards)
+            values.clamp_(0)
+            self.inter_scores += values.squeeze(1) * torch.logical_not(self.env.invalid_mask.view(self.env.num_parallel_envs))
             legal_actions = self.env.get_legal_moves()
-            policy_logits *= legal_actions
-            policy_logits.masked_fill_(policy_logits.amax(dim=1, keepdim=True) == 0, 1)
-            next_actions = torch.multinomial(torch.nn.functional.softmax(policy_logits, dim=1), num_samples=1, replacement=True).squeeze(1)
+            distribution = torch.nn.functional.softmax(policy_logits, dim=1) * legal_actions
+            distribution.masked_fill_(distribution.sum(dim=1, keepdim=True) == 0, 1)    
+            next_actions = torch.where(distribution.sum(dim=1) != 0, torch.multinomial(distribution, num_samples=1, replacement=True).squeeze(1), 0)
             self.env.step(next_actions)
             d -= 1
         
@@ -52,7 +52,6 @@ class Vectorized2048MCTSLazy:
         legal_actions = self.env.get_legal_moves()
         with torch.no_grad():
             policy_logits, _ = self.model(self.env.boards)
-        policy_logits = torch.max(policy_logits, torch.tensor(0.00001))
         policy_logits = torch.nn.functional.softmax(policy_logits, dim=1)
         initial_state = self.env.boards.clone()
         for i in range(iters):

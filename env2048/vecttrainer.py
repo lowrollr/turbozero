@@ -1,5 +1,6 @@
 import torch
 from collections import deque
+from env2048.utils import rotate_training_examples
 from history import Metric, TrainingMetrics
 from hyperparameters import AZ_HYPERPARAMETERS, LazyAZHyperparameters
 from memory import GameReplayMemory
@@ -68,6 +69,7 @@ class VectorizedTrainer:
         game = []
         for i in range(len(states)):
             game.append((*states[i], total_moves - i))
+        game = list(rotate_training_examples(game))
         self.memory.insert(game)
 
     def run_collection_step(self, is_eval):
