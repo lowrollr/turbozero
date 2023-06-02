@@ -91,7 +91,7 @@ class VectorizedTrainer:
         return are_terminal_envs
     
     def add_collection_metrics(self, terminated_envs, is_eval):
-        high_squares = self.eval.env.get_high_squares().cpu().numpy()
+        high_squares = self.eval.env.get_high_squares().clone().cpu().numpy()
         for t in terminated_envs:
             ind = t[0]
             moves = len(self.unfinished_games[ind])
