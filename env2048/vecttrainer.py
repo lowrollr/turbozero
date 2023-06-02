@@ -1,6 +1,9 @@
 import torch
 from collections import deque
+from az_resnet import AZResnet
 from env2048.utils import rotate_training_examples
+from env2048.vectenv import Vectorized2048Env
+from env2048.vectmcts import Vectorized2048MCTSLazy
 from history import Metric, TrainingMetrics
 from hyperparameters import AZ_HYPERPARAMETERS, LazyAZHyperparameters
 from memory import GameReplayMemory
@@ -8,13 +11,17 @@ import numpy as np
 import logging
 
 class VectorizedTrainer:
-    def __init__(self, evaluator, model, hypers, device, history=None, memory=None, log_results=True, interactive=True):
+    def __init__(self, num_parallel_envs: int, model: AZResnet, hypers: LazyAZHyperparameters, device: torch.device, history=None, memory=None, log_results=True, interactive=True):
+
         self.log_results = log_results
         self.interactive = interactive
-        self.eval = evaluator
+        self.num_parallel_envs = num_parallel_envs
         self.model = model.to(device)
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=hypers.learning_rate)
-        self.unfinished_games = [[] for _ in range(self.eval.env.num_parallel_envs)]
+        self.train_evaluator = Vectorized2048MCTSLazy(Vectorized2048Env(num_parallel_envs, device), model, 1)
+        self.train_evaluator.reset()
+        self.unfinished_games_train = [[] for _ in range(num_parallel_envs)]
+        self.unfinished_games_test = [[] for _ in range(num_parallel_envs)]
 
         if memory is None:
             self.memory = GameReplayMemory(hypers.replay_memory_size)
@@ -28,6 +35,12 @@ class VectorizedTrainer:
         
         self.hypers: LazyAZHyperparameters = hypers
         self.device = device
+
+        if hypers.eval_episodes_per_epoch > 0:
+            self.test_evaluator = Vectorized2048MCTSLazy(Vectorized2048Env(num_parallel_envs, device), model, 1)
+            self.test_evaluator.reset()
+        else:
+            self.test_evaluator = None
         
 
     def set_logging_mode(self, on: bool) -> None:
@@ -61,9 +74,9 @@ class VectorizedTrainer:
     def push_examples_to_memory_buffer(self, terminated_envs):
         for t in terminated_envs:
             ind = t[0]
-            moves = len(self.unfinished_games[ind])
-            self.assign_remaining_moves(self.unfinished_games[ind], moves)
-            self.unfinished_games[ind] = []
+            moves = len(self.unfinished_games_train[ind])
+            self.assign_remaining_moves(self.unfinished_games_train[ind], moves)
+            self.unfinished_games_train[ind] = []
 
     def assign_remaining_moves(self, states, total_moves):
         game = []
@@ -73,35 +86,46 @@ class VectorizedTrainer:
         self.memory.insert(game)
 
     def run_collection_step(self, is_eval):
+        evaluator = self.test_evaluator if is_eval and self.test_evaluator else self.train_evaluator
         self.model.eval()
-        visits = self.eval.explore(self.hypers.num_iters_train, self.hypers.iter_depth_train)
-        np_boards = self.eval.env.boards.clone().cpu().numpy()
+        visits = evaluator.explore(self.hypers.num_iters_train, self.hypers.iter_depth_train)
+        np_boards = evaluator.env.boards.clone().cpu().numpy()
         actions = torch.argmax(visits, dim=1)
-        terminated = self.eval.env.step(actions)
+        terminated = evaluator.env.step(actions)
         np_visits = visits.clone().cpu().numpy()
-        for i in range(self.eval.env.num_parallel_envs):
-            self.unfinished_games[i].append((np_boards[i], np_visits[i]))
+        for i in range(evaluator.env.num_parallel_envs):
+            if is_eval:
+                self.unfinished_games_test[i].append((np_boards[i], np_visits[i]))
+            else:
+                self.unfinished_games_train[i].append((np_boards[i], np_visits[i]))
         are_terminal_envs = terminated.any()
         if are_terminal_envs:
-            terminated_envs = torch.nonzero(terminated.view(self.eval.env.num_parallel_envs)).cpu().numpy()
+            terminated_envs = torch.nonzero(terminated.view(evaluator.env.num_parallel_envs)).cpu().numpy()
             self.add_collection_metrics(terminated_envs, is_eval)
-            self.push_examples_to_memory_buffer(terminated_envs)
-            self.eval.env.reset_invalid_boards()
+            if not is_eval:
+                self.push_examples_to_memory_buffer(terminated_envs)
+            evaluator.env.reset_invalid_boards()
 
         return are_terminal_envs
     
     def add_collection_metrics(self, terminated_envs, is_eval):
-        high_squares = self.eval.env.get_high_squares().clone().cpu().numpy()
+        if self.test_evaluator and is_eval:
+            high_squares = self.test_evaluator.env.get_high_squares().clone().cpu().numpy()
+        else:
+            high_squares = self.train_evaluator.env.get_high_squares().clone().cpu().numpy()
         for t in terminated_envs:
             ind = t[0]
-            moves = len(self.unfinished_games[ind])
-            high_square = high_squares[ind]
+            
             if is_eval:
+                moves = len(self.unfinished_games_test[ind])
+                high_square = high_squares[ind]
                 self.history.add_evaluation_data({
                     'reward': moves,
                     'high_square': int(2 ** high_square)
                 }, log=self.log_results)
             else:
+                moves = len(self.unfinished_games_train[ind])
+                high_square = high_squares[ind]
                 self.history.add_episode_data({
                     'reward': moves,
                     'log2_high_square': int(high_square)
@@ -142,8 +166,6 @@ class VectorizedTrainer:
 
     def run_training_loop(self, epochs=None):
         while self.history.cur_epoch < epochs if epochs is not None else True:
-            self.eval.reset()
-            self.unfinished_games = [[] for _ in range(self.eval.env.num_parallel_envs)]
             while self.history.cur_train_episode < self.hypers.episodes_per_epoch * (self.history.cur_epoch+1):
                 run_train_step = self.run_collection_step(False)
                 if run_train_step:
@@ -169,11 +191,11 @@ class VectorizedTrainer:
                         cumulative_policy_accuracy /= self.hypers.minibatches_per_update
                         cumulative_loss /= self.hypers.minibatches_per_update
                         self.add_train_metrics(cumulative_policy_loss, cumulative_value_loss, cumulative_policy_accuracy, cumulative_loss)
-
-            self.eval.reset()
-            self.unfinished_games = [[] for _ in range(self.eval.env.num_parallel_envs)]
-            while self.history.cur_test_step < self.hypers.eval_episodes_per_epoch:
-                self.run_collection_step(True)
+            if self.test_evaluator:
+                self.test_evaluator.reset()
+                self.unfinished_games_test = [[] for _ in range(self.num_parallel_envs)]
+                while self.history.cur_test_step < self.hypers.eval_episodes_per_epoch:
+                    self.run_collection_step(True)
             
             self.add_epoch_metrics()
             if self.interactive:
