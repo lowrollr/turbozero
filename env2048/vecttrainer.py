@@ -1,3 +1,4 @@
+from pathlib import Path
 import torch
 from collections import deque
 from az_resnet import AZResnet
@@ -11,13 +12,24 @@ import numpy as np
 import logging
 
 class VectorizedTrainer:
-    def __init__(self, num_parallel_envs: int, model: AZResnet, hypers: LazyAZHyperparameters, device: torch.device, history=None, memory=None, log_results=True, interactive=True):
-
+    def __init__(
+        self, 
+        num_parallel_envs: int, 
+        model: AZResnet, 
+        optimizer: torch.optim.Optimizer,
+        hypers: LazyAZHyperparameters, 
+        device: torch.device, 
+        history=None, 
+        memory=None, 
+        log_results=True, 
+        interactive=True, 
+        run_tag='model'
+    ):
         self.log_results = log_results
         self.interactive = interactive
         self.num_parallel_envs = num_parallel_envs
         self.model = model.to(device)
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=hypers.learning_rate)
+        self.optimizer = optimizer
         self.train_evaluator = Vectorized2048MCTSLazy(Vectorized2048Env(num_parallel_envs, device), model, 1)
         self.train_evaluator.reset()
         self.unfinished_games_train = [[] for _ in range(num_parallel_envs)]
@@ -42,6 +54,24 @@ class VectorizedTrainer:
         else:
             self.test_evaluator = None
         
+        self.run_tag = run_tag
+    
+    def save_checkpoint(self):
+        directory = f'./checkpoints/{self.run_tag}'
+        Path(directory).mkdir(parents=True, exist_ok=True)
+        filepath = directory + f'/{self.history.cur_epoch}.pt'
+        torch.save({
+            'parallel_envs': self.num_parallel_envs,
+            'model_arch_params': self.model.arch_params,
+            'model_state_dict': self.model.state_dict(),
+            'optimizer_state_dict': self.optimizer.state_dict(),
+            'hypers': self.hypers,
+            'history': self.history,
+            'memory': self.memory,
+            'run_tag': self.run_tag,
+            'unfinished_games_train': self.unfinished_games_train,
+            'unfinished_games_test': self.unfinished_games_test,
+        }, filepath)
 
     def set_logging_mode(self, on: bool) -> None:
         self.log_results = on
@@ -203,4 +233,23 @@ class VectorizedTrainer:
             self.history.start_new_epoch()
 
 
+def load_trainer_from_checkpoint(checkpoint_path, device, load_replay_memory=True):
+    checkpoint = torch.load(checkpoint_path)
+    hypers = checkpoint['hypers']
+    model = AZResnet(checkpoint['model_arch_params'])
+    model.load_state_dict(checkpoint['model_state_dict'])
+    model.to(device)
 
+    optimizer = torch.optim.AdamW(model.parameters(), lr=hypers.learning_rate)
+    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+
+    history = checkpoint['history']
+    history.reset_all_figs()
+    memory = checkpoint['memory'] if load_replay_memory else None
+    run_tag = checkpoint['run_tag']
+    parallel_envs = checkpoint['parallel_envs']
+    trainer = VectorizedTrainer(parallel_envs, model, optimizer, hypers, device, history, memory, run_tag=run_tag)
+    trainer.unfinished_games_train = checkpoint['unfinished_games_train']
+    trainer.unfinished_games_test = checkpoint['unfinished_games_test']
+
+    return trainer
