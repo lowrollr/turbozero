@@ -129,7 +129,7 @@ class VectorizedTrainer:
         if torch.rand(1) > epsilon:
             actions = torch.argmax(visits, dim=1)
         else:
-            actions = torch.distributions.categorical.Categorical(probs=visits).sample()
+            actions = torch.multinomial(visits, 1, replacement=True).squeeze(1)
         terminated = evaluator.env.step(actions)
         np_visits = visits.clone().cpu().numpy()
         for i in range(evaluator.env.num_parallel_envs):

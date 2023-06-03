@@ -91,7 +91,7 @@ class Vectorized2048Env:
             boards_batch = self.boards[start_index:end_index]
             progs, probs = self.get_progressions(boards_batch)
             probs.masked_fill_(probs.amax(dim=1, keepdim=True) == 0, 1)
-            indices = torch.distributions.categorical.Categorical(probs=probs).sample().unsqueeze(1)
+            indices = torch.multinomial(probs, 1, replacement=True)
             if mask is not None:
                 self.boards[start_index:end_index] = torch.where(mask[start_index:end_index], progs[(self.env_indices[:end_index-start_index], indices[:,0])].unsqueeze(1), boards_batch)
             else:
