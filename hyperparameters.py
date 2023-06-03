@@ -34,3 +34,6 @@ class LazyAZHyperparameters:
     minibatches_per_update: int = 16
     episodes_per_epoch: int = 5
     eval_episodes_per_epoch: int = 5
+    epsilon_decay_per_epoch: float = 0.0001
+    epsilon_start: float = 1.0
+    epsilon_end: float = 0.01

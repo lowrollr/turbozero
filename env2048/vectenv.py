@@ -3,7 +3,7 @@ from typing import Optional, Tuple
 import torch
 
 class Vectorized2048Env:
-    def __init__(self, num_parallel_envs, device):
+    def __init__(self, num_parallel_envs, device, progression_batch_size=None):
         self.num_parallel_envs = num_parallel_envs
         self.boards = torch.zeros((num_parallel_envs, 1, 4, 4), dtype=torch.float32, device=device, requires_grad=False)
         self.invalid_mask = torch.zeros((num_parallel_envs, 1, 1, 1), dtype=torch.bool, device=device, requires_grad=False)
@@ -21,6 +21,8 @@ class Vectorized2048Env:
         self.mask3 = torch.tensor([[[[self.very_negative_value], [1]]]], dtype=torch.float32, device=device, requires_grad=False)
         
         self.env_indices = torch.arange(num_parallel_envs, device=device, requires_grad=False)
+
+        self.progression_batch_size = num_parallel_envs if progression_batch_size is None else progression_batch_size
 
     def reset(self, seed=None) -> None:
         if seed is not None:
@@ -72,24 +74,30 @@ class Vectorized2048Env:
 
         return torch.concat([m0_valid, m1_valid, m2_valid, m3_valid], dim=1)
 
-    def get_progressions(self) -> Tuple[torch.Tensor, torch.Tensor]:
+    def get_progressions(self, boards_batch) -> Tuple[torch.Tensor, torch.Tensor]:
         # check and see if each of the progressions are valid (no tile already in that spot)
         # base_progressions is a 32x4x4 tensor with all the possible progressions
         # bs is an Nx4x4 tensor with N board states
         # returns an 32xNx4x4 tensor with 32 possible progressions for each board state
-        valid_progressions = torch.logical_not(torch.any((self.boards * self.base_progressions).view(self.num_parallel_envs, 32, 16), dim=2)).view(self.num_parallel_envs, 32, 1, 1)
-        progressions = (self.boards + self.base_progressions) * valid_progressions
-        probs = self.base_probabilities * valid_progressions.view(self.num_parallel_envs, 32)
+        valid_progressions = torch.logical_not(torch.any((boards_batch * self.base_progressions).view(-1, 32, 16), dim=2)).view(-1, 32, 1, 1)
+        progressions = (boards_batch + self.base_progressions) * valid_progressions
+        probs = self.base_probabilities * valid_progressions.view(-1, 32)
         return progressions, probs
 
     def spawn_tiles(self, mask=None) -> None:
-        progs, probs = self.get_progressions()
-        probs.masked_fill_(probs.amax(dim=1, keepdim=True) == 0, 1)
-        indices = torch.multinomial(probs, 1, replacement=True)
-        if mask is not None:
-            self.boards = torch.where(mask, progs[(torch.arange(self.num_parallel_envs), indices[:,0])].unsqueeze(1), self.boards)
-        else:
-            self.boards = progs[(torch.arange(self.num_parallel_envs), indices[:,0])].unsqueeze(1)
+        start_index = 0
+        while start_index < self.num_parallel_envs:
+            end_index = min(start_index + self.progression_batch_size, self.num_parallel_envs)
+            boards_batch = self.boards[start_index:end_index]
+            progs, probs = self.get_progressions(boards_batch)
+            probs.masked_fill_(probs.amax(dim=1, keepdim=True) == 0, 1)
+            indices = torch.multinomial(probs, 1, replacement=True)
+            if mask is not None:
+                self.boards[start_index:end_index] = torch.where(mask[start_index:end_index], progs[(self.env_indices[:end_index-start_index], indices[:,0])].unsqueeze(1), boards_batch)
+            else:
+                self.boards[start_index:end_index] = progs[(self.env_indices[:end_index-start_index], indices[:,0])].unsqueeze(1)
+
+            start_index = end_index
     
     def rotate_by_amnts(self, amnts) -> None:
         mask_90 = (amnts == 1)

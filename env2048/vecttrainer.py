@@ -23,14 +23,15 @@ class VectorizedTrainer:
         memory=None, 
         log_results=True, 
         interactive=True, 
-        run_tag='model'
+        run_tag='model',
+        progression_batch_size=1000
     ):
         self.log_results = log_results
         self.interactive = interactive
         self.num_parallel_envs = num_parallel_envs
         self.model = model.to(device)
         self.optimizer = optimizer
-        self.train_evaluator = Vectorized2048MCTSLazy(Vectorized2048Env(num_parallel_envs, device), model, 1)
+        self.train_evaluator = Vectorized2048MCTSLazy(Vectorized2048Env(num_parallel_envs, device, progression_batch_size), model, 1)
         self.train_evaluator.reset()
         self.unfinished_games_train = [[] for _ in range(num_parallel_envs)]
         self.unfinished_games_test = [[] for _ in range(num_parallel_envs)]
@@ -78,6 +79,11 @@ class VectorizedTrainer:
         
     def set_interactive_mode(self, on: bool) -> None:
         self.interactive = on
+
+    def set_progression_batch_size(self, size: int) -> None:
+        self.train_evaluator.env.progression_batch_size = size
+        if self.test_evaluator:
+            self.test_evaluator.env.progression_batch_size = size
 
     def init_history(self):
         self.history = TrainingMetrics(
