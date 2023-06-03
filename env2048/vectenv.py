@@ -3,7 +3,7 @@ from typing import Optional, Tuple
 import torch
 
 class Vectorized2048Env:
-    def __init__(self, num_parallel_envs, device, progression_batch_size=None):
+    def __init__(self, num_parallel_envs, device, progression_batch_size, generator):
         self.num_parallel_envs = num_parallel_envs
         self.boards = torch.zeros((num_parallel_envs, 1, 4, 4), dtype=torch.float32, device=device, requires_grad=False)
         self.invalid_mask = torch.zeros((num_parallel_envs, 1, 1, 1), dtype=torch.bool, device=device, requires_grad=False)
@@ -22,7 +22,8 @@ class Vectorized2048Env:
         
         self.env_indices = torch.arange(num_parallel_envs, device=device, requires_grad=False)
 
-        self.progression_batch_size = num_parallel_envs if progression_batch_size is None else progression_batch_size
+        self.progression_batch_size = progression_batch_size
+        self.generator = generator
 
     def reset(self, seed=None) -> None:
         if seed is not None:
@@ -91,7 +92,7 @@ class Vectorized2048Env:
             boards_batch = self.boards[start_index:end_index]
             progs, probs = self.get_progressions(boards_batch)
             probs.masked_fill_(probs.amax(dim=1, keepdim=True) == 0, 1)
-            indices = torch.multinomial(probs, 1, replacement=True)
+            indices = probs.multinomial(1, True, generator=self.generator)
             if mask is not None:
                 self.boards[start_index:end_index] = torch.where(mask[start_index:end_index], progs[(self.env_indices[:end_index-start_index], indices[:,0])].unsqueeze(1), boards_batch)
             else:
