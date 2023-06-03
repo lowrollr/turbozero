@@ -50,7 +50,7 @@ class VectorizedTrainer:
         self.device = device
 
         if hypers.eval_episodes_per_epoch > 0:
-            self.test_evaluator = Vectorized2048MCTSLazy(Vectorized2048Env(num_parallel_envs, device), model, 1)
+            self.test_evaluator = Vectorized2048MCTSLazy(Vectorized2048Env(num_parallel_envs, device), model, hypers.mcts_c_puct)
             self.test_evaluator.reset()
         else:
             self.test_evaluator = None

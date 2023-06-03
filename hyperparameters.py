@@ -37,3 +37,4 @@ class LazyAZHyperparameters:
     epsilon_decay_per_epoch: float = 0.0001
     epsilon_start: float = 1.0
     epsilon_end: float = 0.01
+    mcts_c_puct: float = 1.0
