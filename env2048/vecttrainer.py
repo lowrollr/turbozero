@@ -115,12 +115,15 @@ class VectorizedTrainer:
         game = list(rotate_training_examples(game))
         self.memory.insert(game)
 
-    def run_collection_step(self, is_eval):
+    def run_collection_step(self, is_eval, epsilon=0.0):
         evaluator = self.test_evaluator if is_eval and self.test_evaluator else self.train_evaluator
         self.model.eval()
         visits = evaluator.explore(self.hypers.num_iters_train, self.hypers.iter_depth_train)
         np_boards = evaluator.env.boards.clone().cpu().numpy()
-        actions = torch.argmax(visits, dim=1)
+        if torch.rand(1) > epsilon:
+            actions = torch.argmax(visits, dim=1)
+        else:
+            actions = torch.multinomial(visits, 1, replacement=True).squeeze(1)
         terminated = evaluator.env.step(actions)
         np_visits = visits.clone().cpu().numpy()
         for i in range(evaluator.env.num_parallel_envs):
@@ -197,7 +200,9 @@ class VectorizedTrainer:
     def run_training_loop(self, epochs=None):
         while self.history.cur_epoch < epochs if epochs is not None else True:
             while self.history.cur_train_episode < self.hypers.episodes_per_epoch * (self.history.cur_epoch+1):
-                run_train_step = self.run_collection_step(False)
+                episode_fraction = (self.history.cur_train_episode % self.hypers.episodes_per_epoch) / self.hypers.episodes_per_epoch
+                epsilon = max(self.hypers.epsilon_start - (self.hypers.epsilon_decay_per_epoch * (self.history.cur_epoch + episode_fraction)), self.hypers.epsilon_end)
+                run_train_step = self.run_collection_step(False, epsilon)
                 if run_train_step:
                     cumulative_value_loss = 0.0
                     cumulative_policy_loss = 0.0
@@ -251,5 +256,4 @@ def load_trainer_from_checkpoint(checkpoint_path, device, load_replay_memory=Tru
     trainer = VectorizedTrainer(parallel_envs, model, optimizer, hypers, device, history, memory, run_tag=run_tag)
     trainer.unfinished_games_train = checkpoint['unfinished_games_train']
     trainer.unfinished_games_test = checkpoint['unfinished_games_test']
-
     return trainer

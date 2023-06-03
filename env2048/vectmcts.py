@@ -45,7 +45,7 @@ class Vectorized2048MCTSLazy:
             self.env.step(next_actions)
             d -= 1
         
-    def explore(self, iters, search_depth, epsilon=1.0):
+    def explore(self, iters, search_depth):
         self.action_scores.zero_()
         self.inter_scores.zero_()
         self.visits.zero_()
@@ -55,9 +55,7 @@ class Vectorized2048MCTSLazy:
         policy_logits = torch.nn.functional.softmax(policy_logits, dim=1)
         initial_state = self.env.boards.clone()
         for i in range(iters):
-            actions = self.choose_action_with_puct(policy_logits, legal_actions)
-            if torch.rand(1) > epsilon:
-                actions = torch.argmax(policy_logits * legal_actions, dim=1)        
+            actions = self.choose_action_with_puct(policy_logits, legal_actions)    
             self.env.step(actions)
             self.iterate(search_depth)
             self.visits[self.indices, actions] += 1
