@@ -26,12 +26,12 @@ class Vectorized2048Env:
 
         self.fws_cont = torch.ones(num_parallel_envs, dtype=torch.bool, device=device, requires_grad=False)
         self.fws_sums = torch.zeros(num_parallel_envs, dtype=torch.float32, device=device, requires_grad=False)
-        self.fws_res = torch.zeros(num_parallel_envs, dtype=torch.float32, device=device, requires_grad=False)
+        self.fws_res = torch.zeros(num_parallel_envs, dtype=torch.int64, device=device, requires_grad=False)
         self.randn = torch.zeros(num_parallel_envs, dtype=torch.float32, device=device, requires_grad=False)
 
         self.fws_cont_batch = torch.ones(progression_batch_size, dtype=torch.bool, device=device, requires_grad=False)
         self.fws_sums_batch = torch.zeros(progression_batch_size, dtype=torch.float32, device=device, requires_grad=False)
-        self.fws_res_batch = torch.zeros(progression_batch_size, dtype=torch.float32, device=device, requires_grad=False)
+        self.fws_res_batch = torch.zeros(progression_batch_size, dtype=torch.int64, device=device, requires_grad=False)
         self.randn_batch = torch.zeros(progression_batch_size, dtype=torch.float32, device=device, requires_grad=False)
 
     def fast_weighted_sample(self, weights, norm=True, generator=None): # yields > 50% speedup over torch.multinomial for our use-cases!
@@ -39,7 +39,7 @@ class Vectorized2048Env:
             nweights = weights.div(weights.sum(dim=1, keepdim=True))
         else:
             nweights = weights
-            
+
         num_samples = nweights.shape[0]
         num_categories = nweights.shape[1]
 
@@ -133,7 +133,7 @@ class Vectorized2048Env:
             boards_batch = self.boards[start_index:end_index]
             progs, probs = self.get_progressions(boards_batch)
             probs.masked_fill_(probs.amax(dim=1, keepdim=True) == 0, 1)
-            indices = self.fast_weighted_sample(probs, norm=True)
+            indices = self.fast_weighted_sample(probs, norm=True).unsqueeze(1)
             if mask is not None:
                 self.boards[start_index:end_index] = torch.where(mask[start_index:end_index], progs[(self.env_indices[:end_index-start_index], indices[:,0])].unsqueeze(1), boards_batch)
             else:
