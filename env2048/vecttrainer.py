@@ -26,17 +26,15 @@ class VectorizedTrainer:
         run_tag='model',
         progression_batch_size=1000
     ):
-        self.torch_generator = torch.Generator(device=device)
         self.log_results = log_results
         self.interactive = interactive
         self.num_parallel_envs = num_parallel_envs
         self.model = model.to(device)
         self.optimizer = optimizer
-        self.train_evaluator = Vectorized2048MCTSLazy(Vectorized2048Env(num_parallel_envs, device, progression_batch_size, self.torch_generator), model, 1)
+        self.train_evaluator = Vectorized2048MCTSLazy(Vectorized2048Env(num_parallel_envs, device, progression_batch_size), model, 1)
         self.train_evaluator.reset()
         self.unfinished_games_train = [[] for _ in range(num_parallel_envs)]
         self.unfinished_games_test = [[] for _ in range(num_parallel_envs)]
-        
 
         if memory is None:
             self.memory = GameReplayMemory(hypers.replay_memory_size)
@@ -52,13 +50,14 @@ class VectorizedTrainer:
         self.device = device
 
         if hypers.eval_episodes_per_epoch > 0:
-            self.test_evaluator = Vectorized2048MCTSLazy(Vectorized2048Env(num_parallel_envs, device, progression_batch_size, self.torch_generator), model, hypers.mcts_c_puct)
+            self.test_evaluator = Vectorized2048MCTSLazy(Vectorized2048Env(num_parallel_envs, device, progression_batch_size), model, hypers.mcts_c_puct)
             self.test_evaluator.reset()
         else:
             self.test_evaluator = None
         
         self.run_tag = run_tag
     
+
     def save_checkpoint(self):
         directory = f'./checkpoints/{self.run_tag}'
         Path(directory).mkdir(parents=True, exist_ok=True)
@@ -131,7 +130,7 @@ class VectorizedTrainer:
         if torch.rand(1) > epsilon:
             actions = torch.argmax(visits, dim=1)
         else:
-            actions = visits.multinomial(1, True, generator=self.torch_generator).squeeze(1)
+            actions = evaluator.env.fast_weighted_sample(visits, norm=True)
         terminated = evaluator.env.step(actions)
         np_visits = visits.clone().cpu().numpy()
         for i in range(evaluator.env.num_parallel_envs):

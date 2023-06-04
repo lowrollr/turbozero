@@ -41,7 +41,7 @@ class Vectorized2048MCTSLazy:
             legal_actions = self.env.get_legal_moves()
             distribution = torch.nn.functional.softmax(policy_logits, dim=1) * legal_actions
             distribution.masked_fill_(distribution.sum(dim=1, keepdim=True) == 0, 1)    
-            next_actions = torch.where(distribution.sum(dim=1) != 0, distribution.multinomial(1, True, generator=self.env.generator).squeeze(1), 0)
+            next_actions = torch.where(distribution.sum(dim=1) != 0, self.env.fast_weighted_sample(distribution, norm=True), 0)
             self.env.step(next_actions)
             d -= 1
         

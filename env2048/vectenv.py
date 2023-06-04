@@ -3,7 +3,7 @@ from typing import Optional, Tuple
 import torch
 
 class Vectorized2048Env:
-    def __init__(self, num_parallel_envs, device, progression_batch_size, generator):
+    def __init__(self, num_parallel_envs, device, progression_batch_size):
         self.num_parallel_envs = num_parallel_envs
         self.boards = torch.zeros((num_parallel_envs, 1, 4, 4), dtype=torch.float32, device=device, requires_grad=False)
         self.invalid_mask = torch.zeros((num_parallel_envs, 1, 1, 1), dtype=torch.bool, device=device, requires_grad=False)
@@ -23,7 +23,48 @@ class Vectorized2048Env:
         self.env_indices = torch.arange(num_parallel_envs, device=device, requires_grad=False)
 
         self.progression_batch_size = progression_batch_size
-        self.generator = generator
+
+        self.fws_cont = torch.ones(num_parallel_envs, dtype=torch.bool, device=device, requires_grad=False)
+        self.fws_sums = torch.zeros(num_parallel_envs, dtype=torch.float32, device=device, requires_grad=False)
+        self.fws_res = torch.zeros(num_parallel_envs, dtype=torch.float32, device=device, requires_grad=False)
+        self.randn = torch.zeros(num_parallel_envs, dtype=torch.float32, device=device, requires_grad=False)
+
+        self.fws_cont_batch = torch.ones(progression_batch_size, dtype=torch.bool, device=device, requires_grad=False)
+        self.fws_sums_batch = torch.zeros(progression_batch_size, dtype=torch.float32, device=device, requires_grad=False)
+        self.fws_res_batch = torch.zeros(progression_batch_size, dtype=torch.float32, device=device, requires_grad=False)
+        self.randn_batch = torch.zeros(progression_batch_size, dtype=torch.float32, device=device, requires_grad=False)
+
+    def fast_weighted_sample(self, weights, norm=True, generator=None): # yields > 50% speedup over torch.multinomial for our use-cases!
+        if norm:
+            nweights = weights.div(weights.sum(dim=1, keepdim=True))
+        else:
+            nweights = weights
+            
+        num_samples = nweights.shape[0]
+        num_categories = nweights.shape[1]
+
+        if num_samples == self.progression_batch_size:
+            self.fws_cont_batch.fill_(1)
+            self.fws_sums_batch.zero_()
+            self.fws_res_batch.zero_()
+            self.randn_batch.uniform_(0, 1, generator = generator)
+            conts, sums, res, rand_vals = self.fws_cont_batch, self.fws_sums_batch, self.fws_res_batch, self.randn_batch
+        else:
+            self.fws_cont.fill_(1)
+            self.fws_sums.zero_()
+            self.fws_res.zero_()
+            self.randn.uniform_(0, 1, generator = generator)
+            conts, sums, res, rand_vals = self.fws_cont, self.fws_sums, self.fws_res, self.randn
+
+        for i in range(num_categories - 1):
+            sums.add_(nweights[:, i])
+            cont = rand_vals.gt(sums)
+            res.add_(torch.logical_not(cont) * i * conts)
+            conts.mul_(cont)
+        res.add_(conts * (num_categories - 1))
+        
+        return res
+    
 
     def reset(self, seed=None) -> None:
         if seed is not None:
@@ -92,7 +133,7 @@ class Vectorized2048Env:
             boards_batch = self.boards[start_index:end_index]
             progs, probs = self.get_progressions(boards_batch)
             probs.masked_fill_(probs.amax(dim=1, keepdim=True) == 0, 1)
-            indices = probs.multinomial(1, True, generator=self.generator)
+            indices = self.fast_weighted_sample(probs, norm=True)
             if mask is not None:
                 self.boards[start_index:end_index] = torch.where(mask[start_index:end_index], progs[(self.env_indices[:end_index-start_index], indices[:,0])].unsqueeze(1), boards_batch)
             else:
