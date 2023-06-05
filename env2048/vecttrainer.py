@@ -242,6 +242,7 @@ class VectorizedTrainer:
             self.add_epoch_metrics()
             if self.interactive:
                 self.history.generate_plots()
+            self.save_checkpoint()
             self.history.start_new_epoch()
 
 
