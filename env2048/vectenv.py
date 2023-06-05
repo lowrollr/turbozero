@@ -34,6 +34,8 @@ class Vectorized2048Env:
         self.fws_res_batch = torch.zeros(progression_batch_size, dtype=torch.int64, device=device, requires_grad=False)
         self.randn_batch = torch.zeros(progression_batch_size, dtype=torch.float32, device=device, requires_grad=False)
 
+        self.rank = torch.arange(4, 0, -1, device=device).expand((self.num_parallel_envs * 4, 4))
+
     def fast_weighted_sample(self, weights, norm=True, generator=None): # yields > 50% speedup over torch.multinomial for our use-cases!
         if norm:
             nweights = weights.div(weights.sum(dim=1, keepdim=True))
@@ -142,31 +144,44 @@ class Vectorized2048Env:
             start_index = end_index
     
     def rotate_by_amnts(self, amnts) -> None:
-        mask_90 = (amnts == 1)
-        mask_180 = (amnts == 2)
-        mask_270 = (amnts == 3)
-    
-        self.boards[mask_90] = self.boards[mask_90].flip(2).transpose(2, 3)
-        self.boards[mask_180] = self.boards[mask_180].flip(3).flip(2)
-        self.boards[mask_270] = self.boards[mask_270].flip(3).transpose(2, 3)
+        amnts = amnts.view(-1, 1, 1, 1).expand_as(self.boards)    
+        self.boards = torch.where(amnts == 1, self.boards.flip(2).transpose(2,3), self.boards)
+        self.boards = torch.where(amnts == 2, self.boards.flip(3).flip(2), self.boards)
+        self.boards = torch.where(amnts == 3, self.boards.flip(3).transpose(2,3), self.boards)
 
+ 
+    def customized_merge_sort(self, bs_flat):
+        non_zero_mask = (bs_flat != 0)
+
+        # Set the rank of zero elements to zero
+        rank = self.rank * non_zero_mask
+
+        # Create a tensor of sorted indices by sorting the rank tensor along dim=-1
+        sorted_indices = torch.argsort(rank, dim=-1, descending=True)
+
+        sorted_bs_flat = torch.zeros_like(bs_flat)
+        sorted_bs_flat.scatter_(1, sorted_indices, bs_flat)
+        return sorted_bs_flat
+    
     def merge(self) -> None:
         shape = self.boards.shape
         bs_flat = self.boards.view(-1, shape[-1])
-        mask = (bs_flat != 0).float()
-        _, sorted_indices = torch.sort(mask, dim=1, descending=True, stable=True)
-        bs_flat = torch.gather(bs_flat, 1, sorted_indices)
+
+        # Step 1: initial sort using a customized version of merge sort
+        bs_flat = self.customized_merge_sort(bs_flat)
+
+        # Step 2: apply merge operation
         for i in range(3):
-            is_same = torch.logical_and(bs_flat[:,i] == bs_flat[:,i+1], bs_flat[:,i] != 0).float()
-            bs_flat[:,i] += is_same
-            bs_flat[:,i+1] *= (1 - is_same)
-        mask = (bs_flat != 0).float()
-        _, sorted_indices = torch.sort(mask, dim=1, descending=True, stable=True)
-        bs_flat = torch.gather(bs_flat, 1, sorted_indices)
+            is_same = torch.logical_and(bs_flat[:,i] == bs_flat[:,i+1], bs_flat[:,i] != 0)
+            bs_flat[:,i].add_(is_same)
+            bs_flat[:,i+1].masked_fill_(is_same, 0)
+
+        # Step 3: reapply the customized merge sort
+        bs_flat = self.customized_merge_sort(bs_flat)
+
         self.boards = bs_flat.view(shape)
 
     def push_moves(self, moves) -> None:
         self.rotate_by_amnts(moves)
         self.merge()
         self.rotate_by_amnts((4-moves) % 4)
-    
