@@ -69,10 +69,7 @@ class VectorizedTrainer:
             'optimizer_state_dict': self.optimizer.state_dict(),
             'hypers': self.hypers,
             'history': self.history,
-            'memory': self.memory,
-            'run_tag': self.run_tag,
-            'unfinished_games_train': self.unfinished_games_train,
-            'unfinished_games_test': self.unfinished_games_test,
+            'run_tag': self.run_tag
         }, filepath)
 
     def set_logging_mode(self, on: bool) -> None:
@@ -242,7 +239,7 @@ class VectorizedTrainer:
                     self.run_collection_step(True)
             
                 self.add_epoch_metrics()
-                
+
             if self.interactive:
                 self.history.generate_plots()
             self.save_checkpoint()
