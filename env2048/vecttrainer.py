@@ -246,7 +246,7 @@ class VectorizedTrainer:
             self.history.start_new_epoch()
 
 
-def load_trainer_from_checkpoint(checkpoint_path, device, load_replay_memory=True):
+def load_trainer_from_checkpoint(checkpoint_path, device):
     checkpoint = torch.load(checkpoint_path)
     hypers = checkpoint['hypers']
     model = AZResnet(checkpoint['model_arch_params'])
@@ -258,10 +258,7 @@ def load_trainer_from_checkpoint(checkpoint_path, device, load_replay_memory=Tru
 
     history = checkpoint['history']
     history.reset_all_figs()
-    memory = checkpoint['memory'] if load_replay_memory else None
     run_tag = checkpoint['run_tag']
     parallel_envs = checkpoint['parallel_envs']
-    trainer = VectorizedTrainer(parallel_envs, model, optimizer, hypers, device, history, memory, run_tag=run_tag)
-    trainer.unfinished_games_train = checkpoint['unfinished_games_train']
-    trainer.unfinished_games_test = checkpoint['unfinished_games_test']
+    trainer = VectorizedTrainer(parallel_envs, model, optimizer, hypers, device, history, run_tag=run_tag)
     return trainer
