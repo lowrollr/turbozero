@@ -37,6 +37,7 @@ class Vectorized2048Env:
         self.rank = torch.arange(4, 0, -1, device=device).expand((self.num_parallel_envs * 4, 4))
 
     def fast_weighted_sample(self, weights, norm=True, generator=None): # yields > 50% speedup over torch.multinomial for our use-cases!
+        # weights.div_(weights.sum(dim=1, keepdim=True))
         if norm:
             nweights = weights.div(weights.sum(dim=1, keepdim=True))
         else:
@@ -110,11 +111,10 @@ class Vectorized2048Env:
         vertical_comparison = torch.any((torch.logical_and(self.boards[:,:,:-1,:] == self.boards[:,:,1:,:], self.boards[:,:,1:,:] != 0)).view(self.num_parallel_envs, 12), dim=1, keepdim=True)
         horizontal_comparison = torch.any((torch.logical_and(self.boards[:,:,:,:-1] == self.boards[:,:,:,1:], self.boards[:,:,:,1:] != 0)).view(self.num_parallel_envs, 12), dim=1, keepdim=True)
 
-        m0_valid = torch.logical_or(m0_valid, horizontal_comparison)
-        m2_valid = torch.logical_or(m2_valid, horizontal_comparison)
-
-        m1_valid = torch.logical_or(m1_valid, vertical_comparison)
-        m3_valid = torch.logical_or(m3_valid, vertical_comparison)
+        m0_valid.logical_or_(horizontal_comparison)
+        m2_valid.logical_or_(horizontal_comparison)
+        m1_valid.logical_or_(vertical_comparison)
+        m3_valid.logical_or_(vertical_comparison)
 
         return torch.concat([m0_valid, m1_valid, m2_valid, m3_valid], dim=1)
 
@@ -134,7 +134,6 @@ class Vectorized2048Env:
             end_index = min(start_index + self.progression_batch_size, self.num_parallel_envs)
             boards_batch = self.boards[start_index:end_index]
             progs, probs = self.get_progressions(boards_batch)
-            probs.masked_fill_(probs.amax(dim=1, keepdim=True) == 0, 1)
             indices = self.fast_weighted_sample(probs, norm=True).unsqueeze(1)
             if mask is not None:
                 self.boards[start_index:end_index] = torch.where(mask[start_index:end_index], progs[(self.env_indices[:end_index-start_index], indices[:,0])].unsqueeze(1), boards_batch)

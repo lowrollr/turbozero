@@ -122,31 +122,32 @@ class VectorizedTrainer:
         game = list(rotate_training_examples(game))
         self.memory.insert(game)
 
-    def run_collection_step(self, is_eval, epsilon=0.0):
+    def run_collection_step(self, is_eval, epsilon=0.0) -> int:
         evaluator = self.test_evaluator if is_eval and self.test_evaluator else self.train_evaluator
         self.model.eval()
         visits = evaluator.explore(self.hypers.num_iters_train, self.hypers.iter_depth_train)
         np_boards = evaluator.env.boards.clone().cpu().numpy()
+        np_visits = visits.clone().cpu().numpy()
         if torch.rand(1) > epsilon:
             actions = torch.argmax(visits, dim=1)
         else:
             actions = evaluator.env.fast_weighted_sample(visits, norm=True)
         terminated = evaluator.env.step(actions)
-        np_visits = visits.clone().cpu().numpy()
+        
         for i in range(evaluator.env.num_parallel_envs):
             if is_eval:
                 self.unfinished_games_test[i].append((np_boards[i], np_visits[i]))
             else:
                 self.unfinished_games_train[i].append((np_boards[i], np_visits[i]))
-        are_terminal_envs = terminated.any()
-        if are_terminal_envs:
+        num_terminal_envs = int(terminated.count_nonzero().item())
+        if num_terminal_envs:
             terminated_envs = torch.nonzero(terminated.view(evaluator.env.num_parallel_envs)).cpu().numpy()
             self.add_collection_metrics(terminated_envs, is_eval)
             if not is_eval:
                 self.push_examples_to_memory_buffer(terminated_envs)
             evaluator.env.reset_invalid_boards()
 
-        return are_terminal_envs
+        return num_terminal_envs
     
     def add_collection_metrics(self, terminated_envs, is_eval):
         if self.test_evaluator and is_eval:
@@ -209,37 +210,39 @@ class VectorizedTrainer:
             while self.history.cur_train_episode < self.hypers.episodes_per_epoch * (self.history.cur_epoch+1):
                 episode_fraction = (self.history.cur_train_episode % self.hypers.episodes_per_epoch) / self.hypers.episodes_per_epoch
                 epsilon = max(self.hypers.epsilon_start - (self.hypers.epsilon_decay_per_epoch * (self.history.cur_epoch + episode_fraction)), self.hypers.epsilon_end)
-                run_train_step = self.run_collection_step(False, epsilon)
-                if run_train_step:
-                    cumulative_value_loss = 0.0
-                    cumulative_policy_loss = 0.0
-                    cumulative_policy_accuracy = 0.0
-                    cumulative_loss = 0.0
-                    report = True
-                    for _ in range(self.hypers.minibatches_per_update):
-                        
-                        if self.memory.size() > self.hypers.replay_memory_min_size:
-                            value_loss, policy_loss, polcy_accuracy, loss = self.run_training_step()
-                            cumulative_value_loss += value_loss
-                            cumulative_policy_loss += policy_loss
-                            cumulative_policy_accuracy += polcy_accuracy
-                            cumulative_loss += loss
-                        else:
-                            logging.info(f'Replay memory size ({self.memory.size()}) <= min size ({self.hypers.replay_memory_min_size}), skipping training step')
-                            report = False
-                    if report:
-                        cumulative_value_loss /= self.hypers.minibatches_per_update
-                        cumulative_policy_loss /= self.hypers.minibatches_per_update
-                        cumulative_policy_accuracy /= self.hypers.minibatches_per_update
-                        cumulative_loss /= self.hypers.minibatches_per_update
-                        self.add_train_metrics(cumulative_policy_loss, cumulative_value_loss, cumulative_policy_accuracy, cumulative_loss)
+                train_steps = self.run_collection_step(False, epsilon)
+                if train_steps:
+                    for _ in range(train_steps):
+                        cumulative_value_loss = 0.0
+                        cumulative_policy_loss = 0.0
+                        cumulative_policy_accuracy = 0.0
+                        cumulative_loss = 0.0
+                        report = True
+                        for _ in range(self.hypers.minibatches_per_update):
+                            
+                            if self.memory.size() > self.hypers.replay_memory_min_size:
+                                value_loss, policy_loss, polcy_accuracy, loss = self.run_training_step()
+                                cumulative_value_loss += value_loss
+                                cumulative_policy_loss += policy_loss
+                                cumulative_policy_accuracy += polcy_accuracy
+                                cumulative_loss += loss
+                            else:
+                                logging.info(f'Replay memory size ({self.memory.size()}) <= min size ({self.hypers.replay_memory_min_size}), skipping training step')
+                                report = False
+                        if report:
+                            cumulative_value_loss /= self.hypers.minibatches_per_update
+                            cumulative_policy_loss /= self.hypers.minibatches_per_update
+                            cumulative_policy_accuracy /= self.hypers.minibatches_per_update
+                            cumulative_loss /= self.hypers.minibatches_per_update
+                            self.add_train_metrics(cumulative_policy_loss, cumulative_value_loss, cumulative_policy_accuracy, cumulative_loss)
             if self.test_evaluator:
                 self.test_evaluator.reset()
                 self.unfinished_games_test = [[] for _ in range(self.num_parallel_envs)]
                 while self.history.cur_test_step < self.hypers.eval_episodes_per_epoch:
                     self.run_collection_step(True)
             
-            self.add_epoch_metrics()
+                self.add_epoch_metrics()
+                
             if self.interactive:
                 self.history.generate_plots()
             self.save_checkpoint()
