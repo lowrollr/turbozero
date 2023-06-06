@@ -25,7 +25,7 @@ class Vectorized2048MCTSLazy:
 
         q_values = torch.where(self.visits > 0, self.action_scores / self.visits, self.very_positive_value)
         puct_scores = q_values + (self.puct_c * probs * torch.sqrt(n_sum + 1) / (1 + self.visits))
-        legal_action_scores = puct_scores * legal_actions
+        legal_action_scores = puct_scores - (self.very_positive_value * (1 - legal_actions))
         chosen_actions = torch.argmax(legal_action_scores, dim=1, keepdim=True)
         return chosen_actions.squeeze(1)
 
@@ -51,7 +51,7 @@ class Vectorized2048MCTSLazy:
             policy_logits, _ = self.model(self.env.boards)
         policy_logits = torch.nn.functional.softmax(policy_logits, dim=1)
         initial_state = self.env.boards.clone()
-        
+
         for _ in range(iters):
             actions = self.choose_action_with_puct(policy_logits, legal_actions)    
             self.env.step(actions)
