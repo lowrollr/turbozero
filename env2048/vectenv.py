@@ -61,7 +61,7 @@ class Vectorized2048Env:
 
         for i in range(num_categories - 1):
             sums.add_(nweights[:, i])
-            cont = rand_vals.gt(sums)
+            cont = rand_vals.ge(sums)
             res.add_(torch.logical_not(cont) * i * conts)
             conts.mul_(cont)
         res.add_(conts * (num_categories - 1))
@@ -153,7 +153,7 @@ class Vectorized2048Env:
         non_zero_mask = (bs_flat != 0)
 
         # Set the rank of zero elements to zero
-        rank = self.rank * non_zero_mask
+        rank = (self.rank * non_zero_mask)
 
         # Create a tensor of sorted indices by sorting the rank tensor along dim=-1
         sorted_indices = torch.argsort(rank, dim=-1, descending=True)
