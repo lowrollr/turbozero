@@ -125,7 +125,9 @@ class VectorizedTrainer:
     def run_collection_step(self, is_eval, epsilon=0.0) -> int:
         evaluator = self.test_evaluator if is_eval and self.test_evaluator else self.train_evaluator
         self.model.eval()
-        visits = evaluator.explore(self.hypers.num_iters_train, self.hypers.iter_depth_train)
+        iters = self.hypers.num_iters_eval if is_eval else self.hypers.num_iters_train
+        depth = self.hypers.iter_depth_test if is_eval else self.hypers.iter_depth_train
+        visits = evaluator.explore(iters, depth)
         np_boards = evaluator.env.boards.clone().cpu().numpy()
         np_visits = visits.clone().cpu().numpy()
         if torch.rand(1) > epsilon:
