@@ -105,12 +105,15 @@ class VectorizedTrainer:
             ]
         )
 
-    def push_examples_to_memory_buffer(self, terminated_envs):
+    def push_examples_to_memory_buffer(self, terminated_envs, is_eval):
         for t in terminated_envs:
             ind = t[0]
-            moves = len(self.unfinished_games_train[ind])
-            self.assign_remaining_moves(self.unfinished_games_train[ind], moves)
-            self.unfinished_games_train[ind] = []
+            if not is_eval:
+                moves = len(self.unfinished_games_train[ind])
+                self.assign_remaining_moves(self.unfinished_games_train[ind], moves)
+                self.unfinished_games_train[ind] = []
+            else:
+                self.unfinished_games_test[ind] = []
 
     def assign_remaining_moves(self, states, total_moves):
         game = []
@@ -140,8 +143,7 @@ class VectorizedTrainer:
         if num_terminal_envs:
             terminated_envs = torch.nonzero(terminated.view(evaluator.env.num_parallel_envs)).cpu().numpy()
             self.add_collection_metrics(terminated_envs, is_eval)
-            if not is_eval:
-                self.push_examples_to_memory_buffer(terminated_envs)
+            self.push_examples_to_memory_buffer(terminated_envs, is_eval)
             evaluator.env.reset_invalid_boards()
 
         return num_terminal_envs
@@ -247,7 +249,7 @@ class VectorizedTrainer:
 
 
 def load_trainer_from_checkpoint(checkpoint_path, device):
-    checkpoint = torch.load(checkpoint_path)
+    checkpoint = torch.load(checkpoint_path, map_location=device)
     hypers = checkpoint['hypers']
     model = AZResnet(checkpoint['model_arch_params'])
     model.load_state_dict(checkpoint['model_state_dict'])
