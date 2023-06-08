@@ -1,40 +1,12 @@
-import random
-from collections import deque, OrderedDict
+
 import numpy as np
-import torch
-from dataclasses import dataclass
-from env import _2048Env
-from mcts import MCTS_Evaluator
 import time
-import bottleneck
-import os 
-import numba
+import torch
 
-class ReplayMemory:
-    def __init__(self, max_size=10000) -> None:
-        self.max_size = max_size
-        self.memory = deque([], maxlen=max_size)
-        pass
+from legacy_cpu.env import _2048Env
+from legacy_cpu.mcts import MCTS_Evaluator
+from core.memory import GameReplayMemory
 
-    def sample(self, num_samples): 
-        return random.sample(self.memory, num_samples)
-    
-    def insert(self, sample):
-        self.memory.append(sample)
-
-    def size(self):
-        return len(self.memory)
-    
-class GameReplayMemory(ReplayMemory):
-    def __init__(self, max_size=10000) -> None:
-        super().__init__(max_size)
-    
-    def sample(self, num_samples):
-        games = random.choices(self.memory, k=num_samples)
-        samples = []
-        for game in games:
-            samples.append(random.sample(game, 1)[0])
-        return samples
 
 def load_from_checkpoint(filename, model_class, load_replay_memory=True):
     run_tag = filename.split('_')[0]
@@ -52,7 +24,7 @@ def load_from_checkpoint(filename, model_class, load_replay_memory=True):
     if load_replay_memory:
         memory = checkpoint.get('memory')
     elif memory is None:
-        memory = ReplayMemory(hypers.replay_memory_size)
+        memory = GameReplayMemory(hypers.replay_memory_size)
     
     return model, optimizer, hypers, history, memory, run_tag
     
@@ -123,45 +95,22 @@ def collect_episode(model, hypers, tensor_conversion_fn, epsilon=None):
     training_examples = []
     env = _2048Env()
     env.reset()
-    mcts = MCTS_Evaluator(model, env, tensor_conversion_fn=tensor_conversion_fn, cpuct=hypers.mcts_c_puct, exploration_cutoff=hypers.exploration_cutoff, epsilon=epsilon, training=True)
+    mcts = MCTS_Evaluator(model, env, tensor_conversion_fn=tensor_conversion_fn, cpuct=hypers.mcts_c_puct, epsilon=epsilon, training=True)
     moves = 0
     deviations = []
     with torch.no_grad():
         while True:
             # get inputs, reward, mcts probs, run n_iterations of MCTS
-            terminated, inputs, reward, mcts_probs, _, deviated = mcts.choose_progression(hypers.mcts_iters_train)
-            
+            terminated, obs, _, mcts_probs, _ = mcts.choose_progression(hypers.mcts_iters_train)
             moves += 1
-            if deviated:
-                deviations.append(moves)
-            training_examples.append([inputs, mcts_probs])
+            training_examples.append([obs, mcts_probs])
             if terminated:
                 break
-
-        rem_reward = reward
+        reward = moves
+        rem_reward = moves
         for example in training_examples:
             example.append(rem_reward)
             rem_reward -= 1
 
     return training_examples, reward, moves, env.get_highest_square(), np.mean(deviations), env.get_score()
 
-
-def rotate_training_examples(training_examples):
-    inputs, probs, rewards = zip(*training_examples)
-    rotated_inputs = []
-    for i in inputs:
-        for k in range(4):
-            rotated_inputs.append(np.rot90(i, k=k))
-    rotated_probs = []
-    for p in probs:
-        # left -> down
-        # down -> right
-        # right -> up
-        # up -> left
-        for k in range(4):
-            rotated_probs.append(np.roll(p, k))
-    rotated_rewards = []
-    for r in rewards:
-        rotated_rewards.extend([r] * 4)
-    
-    return zip(rotated_inputs, rotated_probs, rotated_rewards)

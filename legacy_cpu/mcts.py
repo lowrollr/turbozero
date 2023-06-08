@@ -2,11 +2,11 @@ from copy import deepcopy
 from typing import Dict, List, Optional, Tuple
 from collections import defaultdict
 import numpy as np
-from env import _2048Env, get_legal_actions
+from legacy_cpu.env import _2048Env, get_legal_actions
 import numba
 import torch
 
-from stochastic_sp_env import SpStochasticMCTSEnv
+from legacy_cpu.stochastic_sp_env import SpStochasticMCTSEnv
 
 
 

@@ -4,15 +4,15 @@ from typing import Iterable
 import numpy as np
 import torch
 
-from az_resnet import AZResnet
+from core.vz_resnet import AZResnet
 from .env import Env2048
 
-from history import TrainingMetrics, Metric
-from mcts import MCTS_Evaluator
+from core.history import TrainingMetrics, Metric
+from legacy_cpu.mcts import MCTS_Evaluator
 from .utils import compare_tiles, rotate_training_examples
 
 
-from trainer import AlphaZeroTrainer
+from legacy_cpu.trainer import AlphaZeroTrainer
 
 
 class _2048Trainer(AlphaZeroTrainer):

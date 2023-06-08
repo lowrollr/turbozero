@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 
 @dataclass
-class AZResnetArchitectureParameters:
+class VZArchitectureParameters:
     input_size: torch.Size
     policy_size: int
     res_channels: int
@@ -42,8 +42,8 @@ class ResidualBlock(nn.Module):
         return out
 
 
-class AZResnet(nn.Module):
-    def __init__(self, arch_params: AZResnetArchitectureParameters) -> None:
+class VZResnet(nn.Module):
+    def __init__(self, arch_params: VZArchitectureParameters) -> None:
         super().__init__()
         assert len(arch_params.input_size) == 3  # (channels, height, width)
         self.input_channels, self.input_height, self.input_width = arch_params.input_size
