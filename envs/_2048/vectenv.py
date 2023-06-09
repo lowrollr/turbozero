@@ -95,11 +95,9 @@ class _2048Env(VectEnv):
         rank = (self.rank * non_zero_mask)
 
         # Create a tensor of sorted indices by sorting the rank tensor along dim=-1
-        sorted_indices = torch.argsort(rank, dim=-1, descending=True)
+        sorted_indices = torch.argsort(rank, dim=-1, descending=True, stable=True)
 
-        sorted_bs_flat = torch.zeros_like(bs_flat)
-        sorted_bs_flat.scatter_(1, sorted_indices, bs_flat)
-        return sorted_bs_flat
+        return torch.gather(bs_flat, dim=-1, index=sorted_indices)
     
     def merge(self) -> None:
         shape = self.states.shape
