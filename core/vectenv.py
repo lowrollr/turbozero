@@ -30,10 +30,12 @@ class VectEnv:
         self.fws_cont = torch.ones(num_parallel_envs, dtype=torch.bool, device=device, requires_grad=False)
         self.fws_sums = torch.zeros(num_parallel_envs, dtype=torch.float32, device=device, requires_grad=False)
         self.fws_res = torch.zeros(num_parallel_envs, dtype=torch.int64, device=device, requires_grad=False)
+        self.lnzero = torch.zeros(num_parallel_envs, dtype=torch.long, device=device, requires_grad=False)
         self.randn = torch.zeros(num_parallel_envs, dtype=torch.float32, device=device, requires_grad=False)
         self.fws_cont_batch = torch.ones(self.progression_batch_size , dtype=torch.bool, device=device, requires_grad=False)
         self.fws_sums_batch = torch.zeros(self.progression_batch_size , dtype=torch.float32, device=device, requires_grad=False)
         self.fws_res_batch = torch.zeros(self.progression_batch_size , dtype=torch.int64, device=device, requires_grad=False)
+        self.lnzero_batch = torch.zeros(self.progression_batch_size , dtype=torch.long, device=device, requires_grad=False)
         self.randn_batch = torch.zeros(self.progression_batch_size , dtype=torch.float32, device=device, requires_grad=False)
         self.env_indices = torch.arange(num_parallel_envs, device=device, requires_grad=False)
 
@@ -97,19 +99,26 @@ class VectEnv:
             self.fws_sums_batch.zero_()
             self.fws_res_batch.zero_()
             self.randn_batch.uniform_(0, 1, generator = generator)
-            conts, sums, res, rand_vals = self.fws_cont_batch, self.fws_sums_batch, self.fws_res_batch, self.randn_batch
+            self.lnzero_batch.zero_()
+            conts, sums, res, rand_vals, lnzero = self.fws_cont_batch, self.fws_sums_batch, self.fws_res_batch, self.randn_batch, self.lnzero_batch
         else:
             self.fws_cont.fill_(1)
             self.fws_sums.zero_()
             self.fws_res.zero_()
             self.randn.uniform_(0, 1, generator = generator)
-            conts, sums, res, rand_vals = self.fws_cont, self.fws_sums, self.fws_res, self.randn
+            self.lnzero.zero_()
+            conts, sums, res, rand_vals, lnzero = self.fws_cont, self.fws_sums, self.fws_res, self.randn, self.lnzero
 
         for i in range(num_categories - 1):
-            sums.add_(nweights[:, i])
+            w_slice = nweights[:, i]
+            sums.add_(w_slice)
             cont = rand_vals.ge(sums)
             res.add_(torch.logical_not(cont) * i * conts)
             conts.mul_(cont)
-        res.add_(conts * (num_categories - 1))
+            lnzero = torch.max(lnzero, (w_slice != 0) * i)
+
+        lnzero = torch.max(lnzero, (nweights[:, -1] != 0) * (num_categories - 1))
+
+        res.add_(conts * lnzero)
         
         return res
