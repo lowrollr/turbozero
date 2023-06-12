@@ -186,7 +186,6 @@ def init_2048_trainer_from_checkpoint(
     history = checkpoint['history']
     history.reset_all_figs()
     run_tag = checkpoint['run_tag']
-    parallel_envs = checkpoint['parallel_envs']
 
     train_evaluator = _2048LazyMCTS(_2048Env(parallel_envs, device, progression_batch_size), model, hypers.mcts_c_puct)
     test_evaluator = _2048LazyMCTS(_2048Env(parallel_envs, device, progression_batch_size), model, hypers.mcts_c_puct)
