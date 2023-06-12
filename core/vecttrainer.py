@@ -10,6 +10,13 @@ import numpy as np
 import logging
 from .lazy_mcts import VectorizedLazyMCTS
 
+MOVE_MAP = {
+    0: 'left',
+    1: 'down',
+    2: 'right',
+    3: 'up'
+}
+
 class VectTrainer:
     def __init__(self, 
         train_evaluator: VectorizedLazyMCTS,
@@ -93,11 +100,10 @@ class VectTrainer:
         np_states = evaluator.env.states.clone().cpu().numpy()
         np_visits = visits.clone().cpu().numpy()
         
-        if torch.rand(1) > epsilon:
+        if torch.rand(1) >= epsilon:
             actions = torch.argmax(visits, dim=1)
         else:
             actions = evaluator.env.fast_weighted_sample(visits, norm=True)
-        
         terminated = evaluator.env.step(actions)
         
         for i in range(evaluator.env.num_parallel_envs):
