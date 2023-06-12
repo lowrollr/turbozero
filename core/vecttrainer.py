@@ -10,12 +10,6 @@ import numpy as np
 import logging
 from .lazy_mcts import VectorizedLazyMCTS
 
-MOVE_MAP = {
-    0: 'left',
-    1: 'down',
-    2: 'right',
-    3: 'up'
-}
 
 class VectTrainer:
     def __init__(self, 
