@@ -51,7 +51,7 @@ class _2048Trainer(VectTrainer):
 
 
     def init_history(self):
-        self.history = TrainingMetrics(
+        return TrainingMetrics(
             train_metrics=[
                 Metric(name='loss', xlabel='Step', ylabel='Loss', addons={'running_mean': 100}, maximize=False, alert_on_best=self.log_results),
                 Metric(name='value_loss', xlabel='Step', ylabel='Loss', addons={'running_mean': 100}, maximize=False, alert_on_best=self.log_results, proper_name='Value Loss'),

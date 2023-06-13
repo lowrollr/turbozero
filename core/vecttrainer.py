@@ -49,7 +49,7 @@ class VectTrainer:
             self.memory = memory
 
         if history is None:
-            self.init_history()
+            self.history = self.init_history()
         else:
             self.history = history
         
@@ -85,7 +85,7 @@ class VectTrainer:
         depth = self.hypers.iter_depth_test if is_eval else self.hypers.iter_depth_train
         return evaluator, iters, depth
 
-    def run_collection_step(self, is_eval, epsilon=0.0) -> int:
+    def run_collection_step(self, is_eval, epsilon=0.0, reset_after=True) -> int:
         
         self.model.eval()
         evaluator, iters, depth = self.get_evaluator_and_args(is_eval)
@@ -112,7 +112,8 @@ class VectTrainer:
         if num_terminal_envs:
             self.add_collection_metrics(terminated_envs, is_eval)
             self.push_examples_to_memory_buffer(terminated_envs, is_eval)
-            evaluator.env.reset_invalid_states()
+            if reset_after:
+                evaluator.env.reset_invalid_states()
 
         return num_terminal_envs
     
@@ -143,8 +144,17 @@ class VectTrainer:
         loss.backward()
         self.optimizer.step()
         return policy_loss.item(), value_loss.item(), policy_accuracy.item(), loss.item()
+    
+    def run_test_batch(self) -> None:
+        # stores result in eval metrics
+        # TODO: maybe return this as its own object instead
+        num_terminated = 0
+        while num_terminated < self.num_parallel_envs:
+            num_terminated += self.run_collection_step(True, reset_after=False)
+        
+    
 
-    def run_training_loop(self, epochs=None):
+    def run_training_loop(self, epochs=None) -> None:
         while self.history.cur_epoch < epochs if epochs is not None else True:
             while self.history.cur_train_episode < self.hypers.episodes_per_epoch * (self.history.cur_epoch+1):
                 episode_fraction = (self.history.cur_train_episode % self.hypers.episodes_per_epoch) / self.hypers.episodes_per_epoch
