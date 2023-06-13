@@ -1,19 +1,27 @@
-# alpha-2048
+# lazy-zero
 
-alpha-2048 is a specializied implementation of DeepMind's AlphaZero algorithm, modified to play stochasic single-player games like 2048. This project implements the stochastic AlphaZero algorithm, the 2048 environment, and parallelized training. 
+LazyZero is an approximate, GPU-accelerated, vectorized implementation of DeepMind's AlphaZero reinforcement learning algorithm. AlphaZero is an algorithm that utilizes Deep Neural Networks alongside Monte Carlo Tree Search to make decisions in perfect-information games, which has since been extended to other applications, such as video compression and code generation. 
 
-After training the model, the agent is able to score 2048 or higher in the majority of games it plays.
+AlphaZero is incredibly compute-inefficient, oftentimes requiring hundreds of thousands of model inference and game logic calls per episode step. AlphaGo, for instance, could only be trained with thousands of TPUs. While efforts have been made to better parallelize AlphaZero using batch processing, there (to my knowledge) is a lack of a true vectorized approch that takes full advantage of GPU-parallelism. 
 
-I wrote a long blog post about how it all works [here](jacob.land).
+The LazyZero project aims to introduce a framework for fully-vectorized training of AlphaZero agents with the following features:
+* __end-to-end GPU acceleration:__ environment logic/simulation + model training/inference all happens without data ever leaving the GPU
+    * __WIP:__ the current implementation stores training examples in the Replay Memory buffer in RAM rather than on the GPU, in order to truly be GPU-accelerated end-to-end this mechanism will be moved to the GPU as well
+* __a lazy, vectorized implementation of MCTS:__ rather than utilize the resource-hungry full implementation of MCTS, we utilize a lazy version that identifies branches to explore during each iteration using PUCT at the root node, and then samples from a policy to carry out shallow rollouts. This approach is completely vectorized and can be carried out across thousands of environments at once. 
+    * While this approach ultimately only trains an approximation of a true-alphazero policy, it is many magnitudes more efficient to train, and I hope to prove it yields a *close* approximation of the non-lazy policy. In compute-constrained environments, LazyZero could provide a viable alternative where AlphaZero is infeasible.
+    * *__Key Idea: The learned policy is algorithm-agnostic, which means production environments could still utilize full-MCTS while using the lazily-trained policy__*
+* __a gymnasium-esque framework for defining vectorized environments:__ we define base classes for vectorized environments that closely resemble the gymnasium environment spec. 
+    * we currently implement an environment for stochastic, single-player games. Future work will implement the traditional multi-agent environment as well
+    * Future work may also include a migration to be gymnasium-compatible
+* __toy examples__: Train a model with LazyZero to play and win *2048*. Play hundreds of thousands of games in parallel on a single GPU!
 
-If you want to learn even more about AlphaZero, there's a great Stanford article that goes more in depth [here](https://web.stanford.edu/~surag/posts/alphazero.html). 
+While LazyZero shows promise, it is still just a hypothesis rather than a proven framework. While environments like *2048* are vectorizable, it is unclear whether that holds true across more sophisticated, interesting use-cases. In addition, further testing and research is necessary to determine whether or not LazyZero provides a good-enough approximation of true AlphaZero to merit use. *There is much work to be done to answer these questions.*
 
-## Training the model yourself
-
-I have written a training notebook [training.ipynb](https://github.com/lowrollr/alpha-2048/blob/main/training.ipynb) that should include everything you need to get started, just follow along with the comments I've written regarding setting up hyperparemeters. If you'd like to include your own environment instead of the 2048 environment I've implemented, you may do that as well. 
-
-## 2048 Training Results
-
-TBD
+If you'd like to collaborate on these ideas with me, please reach out! 
 
 
+## Planned Features
+* support for multi-player environments
+* cpu-parallelism for training in non-GPU computing environments using multiprocessing
+* implement full-MCTS for production environments
+* GPU replay memory buffer
