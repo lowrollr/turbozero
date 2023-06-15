@@ -2,6 +2,7 @@ from typing import Optional, Tuple
 import torch
 
 from core import GLOB_FLOAT_TYPE
+from core.torchscripts import fast_weighted_sample
 
 class VectEnv:
     def __init__(self, 
@@ -29,7 +30,8 @@ class VectEnv:
         self.randn = torch.zeros((num_parallel_envs,1), dtype=GLOB_FLOAT_TYPE, device=device, requires_grad=False)
        
         self.env_indices = torch.arange(num_parallel_envs, device=device, requires_grad=False)
-
+        fast_weighted_sample(torch.rand((num_parallel_envs, 4)), self.randn)
+        self.fws = torch.jit.trace(fast_weighted_sample, (torch.rand((num_parallel_envs, 4)), self.randn), check_trace=False)
     
     def reset(self, seed=None):
         raise NotImplementedError()
@@ -70,8 +72,12 @@ class VectEnv:
     def reset_invalid_states(self):
         raise NotImplementedError()
 
-    def fast_weighted_sample(self, weights, norm=True, generator=None): # yields > 50% speedup over torch.multinomial for our use-cases!
-        torch.rand(self.randn.shape, out=self.randn, generator=generator)        
+    def fast_weighted_sample(self, weights): # yields > 50% speedup over torch.multinomial for our use-cases!
+        return self.fws(weights, self.randn)
+    
+    def fast_weighted_sample_old(self, weights, norm=True, generator=None): # yields > 50% speedup over torch.multinomial for our use-cases!
+        torch.rand(self.randn.shape, out=self.randn, generator=generator)
+        
         cum_weights = weights.cumsum(dim=1)
         cum_weights.div_(cum_weights[:, -1:])
         return (self.randn < cum_weights).long().argmax(dim=1)
