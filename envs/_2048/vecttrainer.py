@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import Optional
 import torch
 from collections import deque
+from core import GLOB_FLOAT_TYPE
 from core.vz_resnet import VZArchitectureParameters, VZResnet
 from core.vecttrainer import VectTrainer
 from envs._2048.vectenv import _2048Env
@@ -129,16 +130,16 @@ class _2048Trainer(VectTrainer):
     def run_training_step(self):
         self.model.train()
         inputs, target_policy, target_value = zip(*self.memory.sample(self.hypers.minibatch_size))
-        inputs = torch.from_numpy(np.array(inputs)).to(self.device).float()
-        target_policy = torch.from_numpy(np.array(target_policy)).to(self.device).float()
-        target_value = torch.from_numpy(np.array(target_value)).to(self.device).float().log()
+        inputs = torch.from_numpy(np.array(inputs)).to(device=self.device, dtype=GLOB_FLOAT_TYPE)
+        target_policy = torch.from_numpy(np.array(target_policy)).to(device=self.device, dtype=GLOB_FLOAT_TYPE)
+        target_value = torch.from_numpy(np.array(target_value)).to(device=self.device, dtype=GLOB_FLOAT_TYPE)
         target_policy /= target_policy.sum(dim=1, keepdim=True)
 
         self.optimizer.zero_grad()
         policy, value = self.model(inputs)
         policy_loss = self.hypers.policy_factor * torch.nn.functional.cross_entropy(policy, target_policy)
         value_loss = torch.nn.functional.mse_loss(value.flatten(), target_value)
-        policy_accuracy = torch.eq(torch.argmax(target_policy, dim=1), torch.argmax(policy, dim=1)).float().mean()
+        policy_accuracy = torch.eq(torch.argmax(target_policy, dim=1), torch.argmax(policy, dim=1)).to(dtype=GLOB_FLOAT_TYPE).mean()
         loss = policy_loss + value_loss
 
         loss.backward()
@@ -153,14 +154,13 @@ def init_new_2048_trainer(
         hypers: VZHyperparameters,
         log_results=True,
         interactive=True,
-        progression_batch_size: Optional[int] = None,
         run_tag: Optional[str] = None
     ) -> _2048Trainer:
         model = VZResnet(arch_params).to(device)
         optimizer = torch.optim.AdamW(model.parameters(), lr=hypers.learning_rate)
 
-        train_evaluator = _2048LazyMCTS(_2048Env(parallel_envs, device, progression_batch_size), model, hypers.mcts_c_puct)
-        test_evaluator = _2048LazyMCTS(_2048Env(parallel_envs, device, progression_batch_size), model, hypers.mcts_c_puct)
+        train_evaluator = _2048LazyMCTS(_2048Env(parallel_envs, device), model, hypers.mcts_c_puct)
+        test_evaluator = _2048LazyMCTS(_2048Env(parallel_envs, device), model, hypers.mcts_c_puct)
 
         return _2048Trainer(train_evaluator, test_evaluator, model, optimizer, hypers, parallel_envs, device, None, None, log_results, interactive, run_tag)
 
@@ -170,8 +170,7 @@ def init_2048_trainer_from_checkpoint(
         device: torch.device, 
         memory: Optional[GameReplayMemory] = None, 
         log_results=True, 
-        interactive=True,
-        progression_batch_size: Optional[int] = None
+        interactive=True
     ) -> _2048Trainer:
     
     checkpoint = torch.load(checkpoint_path, map_location=device)
@@ -187,7 +186,7 @@ def init_2048_trainer_from_checkpoint(
     history.reset_all_figs()
     run_tag = checkpoint['run_tag']
 
-    train_evaluator = _2048LazyMCTS(_2048Env(parallel_envs, device, progression_batch_size), model, hypers.mcts_c_puct)
-    test_evaluator = _2048LazyMCTS(_2048Env(parallel_envs, device, progression_batch_size), model, hypers.mcts_c_puct)
+    train_evaluator = _2048LazyMCTS(_2048Env(parallel_envs, device), model, hypers.mcts_c_puct)
+    test_evaluator = _2048LazyMCTS(_2048Env(parallel_envs, device), model, hypers.mcts_c_puct)
     trainer = _2048Trainer(train_evaluator, test_evaluator, model, optimizer, hypers, parallel_envs, device, history, memory, log_results, interactive, run_tag=run_tag)
     return trainer

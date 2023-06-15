@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import Optional
 import torch
 from collections import deque
+from core import GLOB_FLOAT_TYPE
 from core.vz_resnet import VZResnet
 from core.history import Metric, TrainingMetrics
 from core.hyperparameters import VZHyperparameters
@@ -129,16 +130,16 @@ class VectTrainer:
     def run_training_step(self):
         self.model.train()
         inputs, target_policy, target_value = zip(*self.memory.sample(self.hypers.minibatch_size))
-        inputs = torch.from_numpy(np.array(inputs)).to(self.device).float()
-        target_policy = torch.from_numpy(np.array(target_policy)).to(self.device).float()
-        target_value = torch.from_numpy(np.array(target_value)).to(self.device).float()
+        inputs = torch.from_numpy(np.array(inputs)).to(device=self.device, dtype=GLOB_FLOAT_TYPE)
+        target_policy = torch.from_numpy(np.array(target_policy)).to(device=self.device, dtype=GLOB_FLOAT_TYPE)
+        target_value = torch.from_numpy(np.array(target_value)).to(device=self.device, dtype=GLOB_FLOAT_TYPE)
         target_policy /= target_policy.sum(dim=1, keepdim=True)
 
         self.optimizer.zero_grad()
         policy, value = self.model(inputs)
         policy_loss = self.hypers.policy_factor * torch.nn.functional.cross_entropy(policy, target_policy)
         value_loss = torch.nn.functional.mse_loss(value.flatten(), target_value)
-        policy_accuracy = torch.eq(torch.argmax(target_policy, dim=1), torch.argmax(policy, dim=1)).float().mean()
+        policy_accuracy = torch.eq(torch.argmax(target_policy, dim=1), torch.argmax(policy, dim=1)).to(dtype=GLOB_FLOAT_TYPE).mean()
         loss = policy_loss + value_loss
 
         loss.backward()
@@ -184,7 +185,7 @@ class VectTrainer:
                             cumulative_policy_accuracy /= self.hypers.minibatches_per_update
                             cumulative_loss /= self.hypers.minibatches_per_update
                             self.add_train_metrics(cumulative_policy_loss, cumulative_value_loss, cumulative_policy_accuracy, cumulative_loss)
-            if self.test_evaluator:
+            if self.hypers.eval_episodes_per_epoch > 0 and self.test_evaluator is not None:
                 self.test_evaluator.reset()
                 self.unfinished_games_test = [[] for _ in range(self.num_parallel_envs)]
                 while self.history.cur_test_step < self.hypers.eval_episodes_per_epoch:

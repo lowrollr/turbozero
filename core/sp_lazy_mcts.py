@@ -35,7 +35,7 @@ class SinglePlayerVectorizedLazyMCTS(VectorizedLazyMCTS):
             
             legal_actions = self.env.get_legal_actions()
             distribution = torch.nn.functional.softmax(policy_logits, dim=1) * legal_actions
-            next_actions = torch.where(distribution.sum(dim=1) != 0, self.env.fast_weighted_sample(distribution, norm=True), 0)
+            next_actions = self.env.fast_weighted_sample(distribution, norm=True)
             depth -= 1
             if depth == 0:
                 values.clamp_(0)

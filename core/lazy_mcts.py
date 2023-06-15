@@ -1,5 +1,7 @@
 
 import torch
+
+from core import GLOB_FLOAT_TYPE
 from .vectenv import VectEnv
 
 class VectorizedLazyMCTS:
@@ -9,14 +11,14 @@ class VectorizedLazyMCTS:
 
         self.action_scores = torch.zeros(
             (self.env.num_parallel_envs, *self.env.policy_shape), 
-            dtype=torch.float32,
+            dtype=GLOB_FLOAT_TYPE,
             device=self.env.device,
             requires_grad=False
         )
 
         self.visit_counts = torch.zeros_like(
             self.action_scores, 
-            dtype=torch.float32, 
+            dtype=GLOB_FLOAT_TYPE, 
             device=self.env.device, 
             requires_grad=False
         )

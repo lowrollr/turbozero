@@ -1,39 +1,39 @@
 
 from typing import Optional, Tuple
 import torch
+from core import GLOB_FLOAT_TYPE
 from core.vectenv import VectEnv
 
 class _2048Env(VectEnv):
-    def __init__(self, num_parallel_envs, device, progression_batch_size):
+    def __init__(self, num_parallel_envs, device):
         super().__init__(
             num_parallel_envs=num_parallel_envs,
             state_shape=torch.Size([1, 4, 4]),
             policy_shape=torch.Size([4]),
             value_shape=torch.Size([1]),
             device=device, 
-            is_stochastic=True, 
-            progression_batch_size=progression_batch_size
+            is_stochastic=True
         )
 
         self.very_negative_value = -1e5
 
-        ones = torch.eye(16, dtype=torch.float32, requires_grad=False).view(16, 4, 4)
-        twos = torch.eye(16, dtype=torch.float32, requires_grad=False).view(16, 4, 4) * 2
+        ones = torch.eye(16, dtype=GLOB_FLOAT_TYPE, requires_grad=False).view(16, 4, 4)
+        twos = torch.eye(16, dtype=GLOB_FLOAT_TYPE, requires_grad=False).view(16, 4, 4) * 2
         self.base_progressions = torch.concat([ones, twos], dim=0).to(device)
         self.base_probabilities = torch.concat([torch.full((16,), 0.9, requires_grad=False), torch.full((16,), 0.1, requires_grad=False)], dim=0).to(device)
 
-        self.mask0 = torch.tensor([[[[self.very_negative_value, 1]]]], dtype=torch.float32, device=device, requires_grad=False)
-        self.mask1 = torch.tensor([[[[1], [self.very_negative_value]]]], dtype=torch.float32, device=device, requires_grad=False)
-        self.mask2 = torch.tensor([[[[1, self.very_negative_value]]]], dtype=torch.float32, device=device, requires_grad=False)
-        self.mask3 = torch.tensor([[[[self.very_negative_value], [1]]]], dtype=torch.float32, device=device, requires_grad=False)
+        self.mask0 = torch.tensor([[[[self.very_negative_value, 1]]]], dtype=GLOB_FLOAT_TYPE, device=device, requires_grad=False)
+        self.mask1 = torch.tensor([[[[1], [self.very_negative_value]]]], dtype=GLOB_FLOAT_TYPE, device=device, requires_grad=False)
+        self.mask2 = torch.tensor([[[[1, self.very_negative_value]]]], dtype=GLOB_FLOAT_TYPE, device=device, requires_grad=False)
+        self.mask3 = torch.tensor([[[[self.very_negative_value], [1]]]], dtype=GLOB_FLOAT_TYPE, device=device, requires_grad=False)
     
         self.rank = torch.arange(4, 0, -1, device=device, requires_grad=False).expand((self.num_parallel_envs * 4, 4))
 
     def reset(self, seed=None) -> None:
         if seed is not None:
             torch.manual_seed(seed)
-        self.states.fill_(0)
-        self.invalid_mask.fill_(0)
+        self.states.zero_()
+        self.invalid_mask.zero_()
         self.stochastic_step()
         self.stochastic_step()
     
@@ -41,7 +41,7 @@ class _2048Env(VectEnv):
         self.states *= torch.logical_not(self.invalid_mask).view(self.num_parallel_envs, 1, 1, 1)
         self.stochastic_step(self.invalid_mask)
         self.stochastic_step(self.invalid_mask)
-        self.invalid_mask.fill_(0)
+        self.invalid_mask.zero_()
     
     def get_high_squares(self):
         return torch.amax(self.states, dim=(1, 2, 3))
@@ -72,13 +72,13 @@ class _2048Env(VectEnv):
 
         return torch.concat([m0_valid, m1_valid, m2_valid, m3_valid], dim=1)
 
-    def get_stochastic_progressions(self, states_batch) -> Tuple[torch.Tensor, torch.Tensor]:
+    def get_stochastic_progressions(self) -> Tuple[torch.Tensor, torch.Tensor]:
         # check and see if each of the progressions are valid (no tile already in that spot)
         # base_progressions is a 32x4x4 tensor with all the possible progressions
         # bs is an Nx4x4 tensor with N board states
         # returns an 32xNx4x4 tensor with 32 possible progressions for each board state
-        valid_progressions = torch.logical_not(torch.any((states_batch * self.base_progressions).view(-1, 32, 16), dim=2))
-        progressions = (states_batch + self.base_progressions) * valid_progressions.view(self.progression_batch_size, 32, 1, 1)
+        valid_progressions = torch.logical_not(torch.any((self.states * self.base_progressions).view(-1, 32, 16), dim=2))
+        progressions = (self.states + self.base_progressions) * valid_progressions.view(self.num_parallel_envs, 32, 1, 1)
         probs = self.base_probabilities * valid_progressions
         return progressions, probs
     
