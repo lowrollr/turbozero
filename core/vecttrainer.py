@@ -1,3 +1,4 @@
+from copy import deepcopy
 from pathlib import Path
 from typing import Optional
 import torch
@@ -16,7 +17,7 @@ class VectTrainer:
     def __init__(self, 
         train_evaluator: VectorizedLazyMCTS,
         test_evaluator: Optional[VectorizedLazyMCTS],
-        model: torch.nn.Module, 
+        model: VZResnet, 
         optimizer: torch.optim.Optimizer,
         hypers: VZHyperparameters, 
         num_parallel_envs: int, 
@@ -38,7 +39,7 @@ class VectTrainer:
         self.interactive = interactive
         self.num_parallel_envs = num_parallel_envs
 
-        self.model = model.to(device)
+        self.model = model
         self.optimizer = optimizer
         
         self.unfinished_episodes_train = [[] for _ in range(num_parallel_envs)]
@@ -87,10 +88,12 @@ class VectTrainer:
         return evaluator, iters, depth
 
     def run_collection_step(self, is_eval, epsilon=0.0, reset_after=True) -> int:
-        
         self.model.eval()
+        fused_model = deepcopy(self.model)
+        fused_model.fuse()
+
         evaluator, iters, depth = self.get_evaluator_and_args(is_eval)
-        visits = evaluator.explore(iters, depth)
+        visits = evaluator.explore(fused_model, iters, depth)
 
         np_states = evaluator.env.states.clone().cpu().numpy()
         np_visits = visits.clone().cpu().numpy()

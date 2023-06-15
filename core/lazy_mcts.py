@@ -5,9 +5,8 @@ from core import GLOB_FLOAT_TYPE
 from .vectenv import VectEnv
 
 class VectorizedLazyMCTS:
-    def __init__(self, env: VectEnv, model: torch.nn.Module, puct_coeff: float, very_positive_value: float = 1e8) -> None:
+    def __init__(self, env: VectEnv, puct_coeff: float, very_positive_value: float = 1e8) -> None:
         self.env = env
-        self.model = model
 
         self.action_scores = torch.zeros(
             (self.env.num_parallel_envs, *self.env.policy_shape), 
@@ -29,6 +28,7 @@ class VectorizedLazyMCTS:
         # this requires implementations to think carefully about choosing this value, which should be unnecessary
         self.very_positive_value = very_positive_value
 
+
     def reset(self, seed=None) -> None:
         self.env.reset(seed=seed)
         self.reset_puct()
@@ -40,14 +40,13 @@ class VectorizedLazyMCTS:
     def choose_action_with_puct(self, probs: torch.Tensor, legal_actions: torch.Tensor) -> torch.Tensor:
         raise NotImplementedError()
     
-    def iterate(self, depth: int) -> torch.Tensor:
+    def iterate(self, model: torch.nn.Module, depth: int) -> torch.Tensor:
         raise NotImplementedError()
     
-    def explore(self, iters: int, search_depth: int) -> torch.Tensor:
-        self.model.eval()
+    def explore(self, model: torch.nn.Module, iters: int, search_depth: int) -> torch.Tensor:
         self.reset_puct()
 
-        return self.explore_for_iters(iters, search_depth)
+        return self.explore_for_iters(model, iters, search_depth)
     
-    def explore_for_iters(self, iters: int, search_depth: int) -> torch.Tensor:
+    def explore_for_iters(self, model: torch.nn.Module, iters: int, search_depth: int) -> torch.Tensor:
         raise NotImplementedError()

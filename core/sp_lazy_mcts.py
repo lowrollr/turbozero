@@ -8,8 +8,8 @@ import torch
 # THIS CLASS RELIES ON REWARDS BEING STRICTLY POSITIVE OR ZERO (FOR NOW)
 
 class SinglePlayerVectorizedLazyMCTS(VectorizedLazyMCTS):
-    def __init__(self, env: VectEnv, model: torch.nn.Module, puct_coeff: float, very_positive_value: float) -> None:
-        super().__init__(env, model, puct_coeff, very_positive_value)
+    def __init__(self, env: VectEnv, puct_coeff: float, very_positive_value: float) -> None:
+        super().__init__(env, puct_coeff, very_positive_value)
         
     def choose_action_with_puct(self, probs: torch.Tensor, legal_actions: torch.Tensor) -> torch.Tensor:
         n_sum = torch.sum(self.visit_counts, dim=1, keepdim=True)
@@ -28,10 +28,10 @@ class SinglePlayerVectorizedLazyMCTS(VectorizedLazyMCTS):
 
         return chosen_actions.squeeze(1)
 
-    def iterate(self, depth: int) -> torch.Tensor:
+    def iterate(self, model: torch.nn.Module, depth: int) -> torch.Tensor:
         while depth > 0:
             with torch.no_grad():
-                policy_logits, values = self.model(self.env.states)
+                policy_logits, values = model(self.env.states)
             
             legal_actions = self.env.get_legal_actions()
             distribution = torch.nn.functional.softmax(policy_logits, dim=1) * legal_actions
@@ -42,10 +42,10 @@ class SinglePlayerVectorizedLazyMCTS(VectorizedLazyMCTS):
                 return values.squeeze(1) * torch.logical_not(self.env.invalid_mask)
             self.env.step(next_actions)
 
-    def explore_for_iters(self, iters: int, search_depth: int) -> torch.Tensor:
+    def explore_for_iters(self, model: torch.nn.Module,iters: int, search_depth: int) -> torch.Tensor:
         legal_actions = self.env.get_legal_actions()
         with torch.no_grad():
-            policy_logits, _ = self.model(self.env.states)
+            policy_logits, _ = model(self.env.states)
         policy_logits = torch.nn.functional.softmax(policy_logits, dim=1)
         initial_state = self.env.states.clone()
 
@@ -54,7 +54,7 @@ class SinglePlayerVectorizedLazyMCTS(VectorizedLazyMCTS):
             self.env.step(actions)
             
             self.visit_counts[self.env.env_indices, actions] += 1
-            self.action_scores[self.env.env_indices, actions] += self.iterate(search_depth)
+            self.action_scores[self.env.env_indices, actions] += self.iterate(model, search_depth)
             self.env.states = initial_state.clone()
             self.env.update_invalid_mask()
 

@@ -61,10 +61,17 @@ class _2048Env(VectEnv):
         m2_valid = torch.any(m2 > 0.5, dim=1, keepdim=True)
         m3_valid = torch.any(m3 > 0.5, dim=1, keepdim=True)
 
-        # check for matching tiles
-        vertical_comparison = torch.any((torch.logical_and(self.states[:,:,:-1,:] == self.states[:,:,1:,:], self.states[:,:,1:,:] != 0)).view(self.num_parallel_envs, 12), dim=1, keepdim=True)
-        horizontal_comparison = torch.any((torch.logical_and(self.states[:,:,:,:-1] == self.states[:,:,:,1:], self.states[:,:,:,1:] != 0)).view(self.num_parallel_envs, 12), dim=1, keepdim=True)
+        # Compute the differences between adjacent elements in the 2nd and 3rd dimensions
+        vertical_diff = self.states[:, :, :-1, :] - self.states[:, :, 1:, :]
+        horizontal_diff = self.states[:, :, :, :-1] - self.states[:, :, :, 1:]
 
+        # Check where the differences are zero, excluding the zero elements in the original matrix
+        vertical_zeros = torch.logical_and(vertical_diff == 0, self.states[:, :, 1:, :] != 0)
+        horizontal_zeros = torch.logical_and(horizontal_diff == 0, self.states[:, :, :, 1:] != 0)
+
+        # Flatten the last two dimensions and compute the logical OR along the last dimension
+        vertical_comparison = vertical_zeros.view(self.num_parallel_envs, 12).any(dim=1, keepdim=True)
+        horizontal_comparison = horizontal_zeros.view(self.num_parallel_envs, 12).any(dim=1, keepdim=True)
         m0_valid.logical_or_(horizontal_comparison)
         m2_valid.logical_or_(horizontal_comparison)
         m1_valid.logical_or_(vertical_comparison)

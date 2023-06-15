@@ -18,7 +18,7 @@ class _2048Trainer(VectTrainer):
     def __init__(self, 
         train_evaluator: _2048LazyMCTS,
         test_evaluator: Optional[_2048LazyMCTS],
-        model: torch.nn.Module, 
+        model: VZResnet, 
         optimizer: torch.optim.Optimizer,
         hypers: VZHyperparameters, 
         num_parallel_envs: int, 
@@ -190,7 +190,7 @@ def init_2048_trainer_from_checkpoint(
     history.reset_all_figs()
     run_tag = checkpoint['run_tag']
 
-    train_evaluator = _2048LazyMCTS(_2048Env(parallel_envs, device), model, hypers.mcts_c_puct)
-    test_evaluator = _2048LazyMCTS(_2048Env(parallel_envs, device), model, hypers.mcts_c_puct)
+    train_evaluator = _2048LazyMCTS(_2048Env(parallel_envs, device), hypers.mcts_c_puct)
+    test_evaluator = _2048LazyMCTS(_2048Env(parallel_envs, device), hypers.mcts_c_puct)
     trainer = _2048Trainer(train_evaluator, test_evaluator, model, optimizer, hypers, parallel_envs, device, history, memory, log_results, interactive, run_tag=run_tag)
     return trainer

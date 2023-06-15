@@ -20,16 +20,28 @@ class VZArchitectureParameters:
     value_fc_size: int = 32
 
 
+class ConvBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size, stride) -> None:
+        super(ConvBlock, self).__init__()
+        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size = kernel_size, stride = stride, padding = 'same', bias=False)
+        self.bn = nn.BatchNorm2d(out_channels)
+        self.relu = nn.ReLU()
+
+
+    def forward(self, x):
+        out = self.conv(x)
+        out = self.bn(out)
+        out = self.relu(out)
+        return out
+
+    def fuse(self):
+        torch.quantization.fuse_modules(self, ['conv', 'bn', 'relu'], inplace=True)
+
 class ResidualBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size, stride = 1, downsample = None):
+    def __init__(self, in_channels, out_channels, kernel_size, stride = 1):
         super(ResidualBlock, self).__init__()
-        self.conv1 = nn.Sequential(
-                        nn.Conv2d(in_channels, out_channels, kernel_size = kernel_size, stride = stride, padding = 'same', bias=False),
-                        nn.BatchNorm2d(out_channels),
-                        nn.ReLU())
-        self.conv2 = nn.Sequential(
-                        nn.Conv2d(out_channels, out_channels, kernel_size = kernel_size, stride = 1, padding = 'same', bias=False),
-                        nn.BatchNorm2d(out_channels))
+        self.conv1 = ConvBlock(in_channels, out_channels, kernel_size, stride)
+        self.conv2 = ConvBlock(out_channels, out_channels, kernel_size, stride)
         self.relu = nn.ReLU()
         self.out_channels = out_channels
         
@@ -40,6 +52,10 @@ class ResidualBlock(nn.Module):
         out += residual
         out = self.relu(out)
         return out
+    
+    def fuse(self):
+        self.conv1.fuse()
+        self.conv2.fuse()
 
 
 class VZResnet(nn.Module):
@@ -48,11 +64,7 @@ class VZResnet(nn.Module):
         assert len(arch_params.input_size) == 3  # (channels, height, width)
         self.input_channels, self.input_height, self.input_width = arch_params.input_size
 
-        self.input_block = nn.Sequential(
-            nn.Conv2d(self.input_channels, arch_params.res_channels, kernel_size = arch_params.kernel_size, stride = 1, padding = 'same', bias=False),
-            nn.BatchNorm2d(arch_params.res_channels),
-            nn.ReLU()
-        )
+        self.input_block = ConvBlock(self.input_channels, arch_params.res_channels, arch_params.kernel_size, stride = 1)
 
         self.res_blocks = nn.Sequential(
             *[ResidualBlock(arch_params.res_channels, arch_params.res_channels, arch_params.kernel_size) \
@@ -88,3 +100,15 @@ class VZResnet(nn.Module):
         policy = self.policy_head(x)
         value = self.value_head(x)
         return policy, value
+    
+    def fuse(self):
+        self.input_block.fuse()
+        for b in self.res_blocks:
+            if isinstance(b, ResidualBlock):
+                b.fuse()
+        for b in self.policy_head:
+            if isinstance(b, ResidualBlock):
+                b.fuse()
+        for b in self.value_head:
+            if isinstance(b, ResidualBlock):
+                b.fuse()
