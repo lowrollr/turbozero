@@ -161,8 +161,8 @@ def init_new_2048_trainer(
             model = model.half()
         optimizer = torch.optim.AdamW(model.parameters(), lr=hypers.learning_rate)
 
-        train_evaluator = _2048LazyMCTS(_2048Env(parallel_envs, device), model, hypers.mcts_c_puct)
-        test_evaluator = _2048LazyMCTS(_2048Env(parallel_envs, device), model, hypers.mcts_c_puct)
+        train_evaluator = _2048LazyMCTS(_2048Env(parallel_envs, device), hypers.mcts_c_puct)
+        test_evaluator = _2048LazyMCTS(_2048Env(parallel_envs, device), hypers.mcts_c_puct)
 
         return _2048Trainer(train_evaluator, test_evaluator, model, optimizer, hypers, parallel_envs, device, None, None, log_results, interactive, run_tag)
 
