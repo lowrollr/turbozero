@@ -101,7 +101,7 @@ class VectTrainer:
         if torch.rand(1) >= epsilon:
             actions = torch.argmax(visits, dim=1)
         else:
-            actions = evaluator.env.fast_weighted_sample(visits, norm=True)
+            actions = evaluator.env.fast_weighted_sample(visits)
         terminated = evaluator.env.step(actions)
         
         for i in range(evaluator.env.num_parallel_envs):

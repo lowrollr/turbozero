@@ -58,7 +58,7 @@ class VectEnv:
 
     def stochastic_step(self, mask=None) -> None:
         progs, probs = self.get_stochastic_progressions()
-        indices = self.fast_weighted_sample(probs, norm=True)
+        indices = self.fast_weighted_sample(probs)
                 
         if mask is not None:
             self.states = torch.where(mask.view(self.num_parallel_envs, 1, 1, 1), progs[(self.env_indices, indices)].unsqueeze(1), self.states)
@@ -72,12 +72,6 @@ class VectEnv:
     def reset_invalid_states(self):
         raise NotImplementedError()
 
-    def fast_weighted_sample(self, weights): # yields > 50% speedup over torch.multinomial for our use-cases!
+    def fast_weighted_sample(self, weights): 
         return self.fws(weights, self.randn)
     
-    def fast_weighted_sample_old(self, weights, norm=True, generator=None): # yields > 50% speedup over torch.multinomial for our use-cases!
-        torch.rand(self.randn.shape, out=self.randn, generator=generator)
-        
-        cum_weights = weights.cumsum(dim=1)
-        cum_weights.div_(cum_weights[:, -1:])
-        return (self.randn < cum_weights).long().argmax(dim=1)
