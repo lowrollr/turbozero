@@ -157,6 +157,8 @@ def init_new_2048_trainer(
         run_tag: Optional[str] = None
     ) -> _2048Trainer:
         model = VZResnet(arch_params).to(device)
+        if GLOB_FLOAT_TYPE == torch.float16:
+            model = model.half()
         optimizer = torch.optim.AdamW(model.parameters(), lr=hypers.learning_rate)
 
         train_evaluator = _2048LazyMCTS(_2048Env(parallel_envs, device), model, hypers.mcts_c_puct)
@@ -178,6 +180,8 @@ def init_2048_trainer_from_checkpoint(
     model = VZResnet(checkpoint['model_arch_params'])
     model.load_state_dict(checkpoint['model_state_dict'])
     model.to(device)
+    if GLOB_FLOAT_TYPE == torch.float16:
+        model = model.half()
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=hypers.learning_rate)
     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
