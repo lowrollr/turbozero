@@ -59,6 +59,7 @@ class VectTrainer:
         self.device = device
         
         self.run_tag = run_tag
+        self.already_terminated = set()
     
 
     def save_checkpoint(self, custom_name: Optional[str] = None) -> None:
@@ -87,10 +88,11 @@ class VectTrainer:
         depth = self.hypers.iter_depth_test if is_eval else self.hypers.iter_depth_train
         return evaluator, iters, depth
 
-    def run_collection_step(self, is_eval, epsilon=0.0, reset_after=True) -> int:
+    def run_collection_step(self, is_eval, epsilon=0.0, fixed_batch=False) -> int:
         self.model.eval()
         fused_model = deepcopy(self.model)
         fused_model.fuse()
+
 
         evaluator, iters, depth = self.get_evaluator_and_args(is_eval)
         visits = evaluator.explore(fused_model, iters, depth)
@@ -110,13 +112,24 @@ class VectTrainer:
             else:
                 self.unfinished_episodes_train[i].append((np_states[i], np_visits[i]))
 
-        terminated_envs = torch.nonzero(terminated).cpu().numpy()
+        terminated_envs = torch.nonzero(terminated).flatten().cpu().tolist()
         num_terminal_envs = len(terminated_envs)
 
         if num_terminal_envs:
-            self.add_collection_metrics(terminated_envs, is_eval)
-            self.push_examples_to_memory_buffer(terminated_envs, is_eval)
-            if reset_after:
+            t_envs = []
+            if fixed_batch:
+                num_terminal_envs = 0
+                for e in terminated_envs:
+                    if e not in self.already_terminated:
+                        self.already_terminated.add(e)
+                        t_envs.append(e)
+                        num_terminal_envs += 1
+            else:
+                t_envs = terminated_envs
+
+            self.add_collection_metrics(t_envs, is_eval)
+            self.push_examples_to_memory_buffer(t_envs, is_eval)
+            if not fixed_batch:
                 evaluator.env.reset_invalid_states()
 
         return num_terminal_envs
@@ -152,9 +165,10 @@ class VectTrainer:
     def run_test_batch(self) -> None:
         # stores result in eval metrics
         # TODO: maybe return this as its own object instead
+        self.already_terminated = set()
         num_terminated = 0
         while num_terminated < self.num_parallel_envs:
-            num_terminated += self.run_collection_step(True, reset_after=False)
+            num_terminated += self.run_collection_step(True, fixed_batch=True)
         
     
 

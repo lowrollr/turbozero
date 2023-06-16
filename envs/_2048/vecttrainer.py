@@ -75,7 +75,7 @@ class _2048Trainer(VectTrainer):
 
     def push_examples_to_memory_buffer(self, terminated_envs, is_eval):
         for t in terminated_envs:
-            ind = t[0]
+            ind = t
             if not is_eval:
                 moves = len(self.unfinished_episodes_train[ind])
                 self.assign_remaining_moves(self.unfinished_episodes_train[ind], moves)
@@ -96,7 +96,7 @@ class _2048Trainer(VectTrainer):
         else:
             high_squares = self.train_evaluator.env.get_high_squares().clone().cpu().numpy()
         for t in terminated_envs:
-            ind = t[0]
+            ind = t
             
             if is_eval:
                 moves = len(self.unfinished_episodes_test[ind])
