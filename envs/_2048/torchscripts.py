@@ -34,7 +34,6 @@ def merge(states, rankt) -> torch.Tensor:
     return bs_flat.view(shape)
 
 def rotate_by_amnts(states, amnts):
-    amnts = amnts.view(-1, 1, 1, 1).expand_as(states)    
     states = torch.where(amnts == 1, states.flip(2).transpose(2,3), states)
     states = torch.where(amnts == 2, states.flip(3).flip(2), states)
     states = torch.where(amnts == 3, states.flip(3).transpose(2,3), states)
@@ -42,6 +41,7 @@ def rotate_by_amnts(states, amnts):
 
 def push_actions(states, actions) -> torch.Tensor:
     rankt = torch.arange(4, 0, -1, device=states.device, requires_grad=False).expand((states.shape[0] * 4, 4))
+    actions = actions.view(-1, 1, 1, 1).expand_as(states)   
     states = rotate_by_amnts(states, actions)
     states = merge(states, rankt)
     states = rotate_by_amnts(states, (4-actions) % 4)

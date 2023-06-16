@@ -174,7 +174,7 @@ class VectTrainer:
                         for _ in range(self.hypers.minibatches_per_update):
                             
                             if self.memory.size() > self.hypers.replay_memory_min_size:
-                                value_loss, policy_loss, polcy_accuracy, loss = self.run_training_step()
+                                policy_loss, value_loss, polcy_accuracy, loss = self.run_training_step()
                                 cumulative_value_loss += value_loss
                                 cumulative_policy_loss += policy_loss
                                 cumulative_policy_accuracy += polcy_accuracy
