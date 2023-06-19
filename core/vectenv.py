@@ -35,13 +35,13 @@ class VectEnv:
     def reset(self, seed=None):
         raise NotImplementedError()
     
-    def step(self, actions):
+    def step(self, actions) -> Tuple[torch.Tensor, dict]:
         self.push_actions(actions)
         if self.is_stochastic:
             # make step on legal states
             self.stochastic_step(torch.logical_not(self.invalid_mask))
         self.update_invalid_mask()
-        return self.invalid_mask
+        return self.invalid_mask, {}
     
     def update_invalid_mask(self):
         self.invalid_mask = self.is_terminal()

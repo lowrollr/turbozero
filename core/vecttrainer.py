@@ -104,7 +104,7 @@ class VectTrainer:
             actions = torch.argmax(visits, dim=1)
         else:
             actions = evaluator.env.fast_weighted_sample(visits)
-        terminated = evaluator.env.step(actions)
+        terminated, _ = evaluator.env.step(actions)
         
         for i in range(evaluator.env.num_parallel_envs):
             if is_eval:
