@@ -2,12 +2,18 @@
 
 LazyZero is an approximate, GPU-accelerated, vectorized implementation of DeepMind's AlphaZero reinforcement learning algorithm. AlphaZero is an algorithm that utilizes Deep Neural Networks alongside Monte Carlo Tree Search to make decisions in perfect-information games, which has since been extended to other applications, such as video compression and code generation. 
 
-AlphaZero is incredibly compute-inefficient, oftentimes requiring hundreds of thousands of model inference and game logic calls per episode step. AlphaGo, for instance, could only be trained with thousands of TPUs. While efforts have been made to better parallelize AlphaZero using batch processing, there (to my knowledge) is a lack of a true vectorized approch that takes full advantage of GPU-parallelism. 
+I speak a lot about AlphaZero and Monte Carlo Tree Search (MCTS) in this wiki, it would be useful to read the following atricle before jumping in if you aren't familiar with these concepts: https://web.stanford.edu/~surag/posts/alphazero.html. This article does a great job explaining the intuition behind AlphaZero and illustrating concepts with code.
 
-The LazyZero project aims to introduce a framework for fully-vectorized training of AlphaZero agents with the following features:
+One issue with AlphaZero is that it is incredibly compute-inefficient to train, oftentimes requiring hundreds of model inference calls and even more game logic calls per episode step. AlphaGo, for instance, could only be trained with thousands of TPUs. This costliness combined with the need to train on millions of episodes means that as problem complexity scales, compute requirements also scale to the point where it becomes infeasible to effectively train a model.
+
+While efforts have been made to better parallelize AlphaZero using batch processing, there (to my knowledge) is a lack of a true vectorized approch that takes full advantage of GPU-parallelism. 
+
+In this project I introduce __*LazyZero*__, a fully-vectorized implementation of AlphaZero that sacrifices model accuracy for dramatically better efficiency.
+
+The LazyZero project aims to introduce a framework for fully-vectorized training of AlphaZero-esque models with the following features:
 * __end-to-end GPU acceleration:__ environment logic/simulation + model training/inference all happens without data ever leaving the GPU
     * __WIP:__ the current implementation stores training examples in the Replay Memory buffer in RAM rather than on the GPU, in order to truly be GPU-accelerated end-to-end this mechanism will be moved to the GPU as well
-* __a lazy, vectorized implementation of MCTS:__ rather than utilize the resource-hungry full implementation of MCTS, we utilize a lazy version that identifies branches to explore during each iteration using PUCT at the root node, then samples from the learned policy to carry out fixed-depth rollouts. This approach is completely vectorized and can be carried out across thousands of environments at once. 
+* __a lazy, vectorized implementation of MCTS:__ rather than utilize the resource-hungry full implementation of MCTS, we utilize a lazy version that identifies branches to explore during each iteration using PUCT at the root node, then samples from the learned policy to carry out fixed-depth rollouts. This approach is completely vectorizable and can be carried out across thousands of environments at once. 
     * While this approach ultimately only trains an approximation of a true-alphazero policy, it is many magnitudes more efficient to train, and I hope to prove it yields a *close* approximation of the non-lazy policy. In compute-constrained environments, LazyZero could provide a viable alternative where AlphaZero is infeasible.
     * *__Key Idea: The learned policy is algorithm-agnostic, which means production environments could still utilize full-MCTS while using the lazily-trained policy__*
 * __a gymnasium-esque framework for defining vectorized environments:__ we define base classes for vectorized environments that closely resemble the gymnasium environment spec. 
@@ -59,7 +65,13 @@ All LazyZero environments inherit from the VectEnv base class. Much like gymnasi
 However, certain details make this implementation incompatible with other aspects of gymnasium, so for the time being these environments are not compatible with gymnasium tooling.
 
 ### LazyMCTS
-LazyMCTS is an approximates true Monte Carlo Tree Search by performing MCTS-esque exploration/exploitation decisions at the root node only, and then carrying out fixed-depth rollouts sampling from the current trained policy. Like AlphaZero, LazyMCTS uses the PUCT algorithm to choose which action to explore for a given iteration of LazyMCTS.
+LazyMCTS approximates true Monte Carlo Tree Search by performing MCTS-esque exploration/exploitation decisions at the root node only, and then carrying out fixed-depth rollouts sampling from the current trained policy. Maintining W and N values at the root node is trivial and easily vectorizable, but maintining these values for a dynamically expanding tree structure is infeasible to vectorize, so LazyMCTS performs fixed-depth rollouts sampling from the model policy instead.
+
+![image](./misc/one_lazyzero_iteration.png)
+
+With a vectorized environment and a vectorized search algorithm, we can perform an episode step using LazyMCTS across many environments all at once, without data ever leaving the GPU. We can take this further and perform entire training or evaluation episodes entirely on the GPU. 
+
+This leads into the issue of storing training examples in the Replay Memory Buffer, a key component of AlphaZero.
 
 
 ## Results
