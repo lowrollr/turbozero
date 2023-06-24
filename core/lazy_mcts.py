@@ -15,20 +15,13 @@ class VectorizedLazyMCTS:
             requires_grad=False
         )
 
-
-        self.cumulative_rollout_probability = torch.ones(
-            (self.env.num_parallel_envs,),
-            dtype=GLOB_FLOAT_TYPE,
-            device=self.env.device,
+        self.visit_counts = torch.zeros_like(
+            self.action_scores, 
+            dtype=GLOB_FLOAT_TYPE, 
+            device=self.env.device, 
             requires_grad=False
         )
 
-        self.cumulative_visit_probabilities = torch.zeros_like(
-            self.action_scores,
-            dtype=GLOB_FLOAT_TYPE,
-            device=self.env.device,
-            requires_grad=False
-        )
 
         self.puct_coeff = puct_coeff
 
@@ -43,7 +36,7 @@ class VectorizedLazyMCTS:
     
     def reset_puct(self) -> None:
         self.action_scores.zero_()
-        self.cumulative_visit_probabilities.zero_()
+        self.visit_counts.zero_()
 
     def choose_action_with_puct(self, probs: torch.Tensor, legal_actions: torch.Tensor) -> torch.Tensor:
         raise NotImplementedError()
