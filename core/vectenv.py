@@ -30,7 +30,7 @@ class VectEnv:
         self.randn = torch.zeros((num_parallel_envs,1), dtype=GLOB_FLOAT_TYPE, device=device, requires_grad=False)
        
         self.env_indices = torch.arange(num_parallel_envs, device=device, requires_grad=False)
-        self.fws = torch.jit.trace(fast_weighted_sample, (torch.rand((num_parallel_envs, 4), device=device, requires_grad=False, dtype=GLOB_FLOAT_TYPE), self.randn), check_trace=False)
+        self.fws = torch.jit.trace(fast_weighted_sample, (torch.rand((num_parallel_envs, *policy_shape), device=device, requires_grad=False, dtype=GLOB_FLOAT_TYPE), self.randn), check_trace=False)
     
     def reset(self, seed=None):
         raise NotImplementedError()
