@@ -3,7 +3,7 @@ import torch
 
 def get_legal_actions(states, ray_tensor):
     states_size = states.shape[-1]
-    index = 0
+    index = 1
     for i in range(2, states_size):
         start, end = 0, states_size - i 
         start_inv, end_inv = i, states_size
@@ -75,8 +75,8 @@ def push_actions(states, ray_tensor, actions):
     states_size = states.shape[-1]
     num_states = states.shape[0]
 
-    flips = torch.zeros((num_rays, states_size, states_size, states_size, states_size), device=states.device, requires_grad=False, dtype=torch.long)
-    f_index = 0
+    flips = torch.zeros((num_rays+1, states_size, states_size, states_size, states_size), device=states.device, requires_grad=False, dtype=torch.long)
+    f_index = 1
     for i in range(2, states_size):
         for x in range(states_size):
             for y in range(states_size):
@@ -104,12 +104,12 @@ def push_actions(states, ray_tensor, actions):
 
     action_ys, action_xs = actions // states_size, actions % states_size
 
-    activated_rays = ray_tensor[torch.arange(num_states), :, action_ys, action_xs]
+    activated_rays = ray_tensor[torch.arange(num_states), :, action_ys, action_xs] * (torch.arange(num_rays, device=states.device).unsqueeze(0).repeat(num_states, 1))
 
-    flips_to_apply = flips[activated_rays, action_ys.unsqueeze(1).repeat(1, 48), action_xs.unsqueeze(1).repeat(1, 48)].amax(dim=1)
+    flips_to_apply = flips[activated_rays, action_ys.unsqueeze(1).repeat(1, 49), action_xs.unsqueeze(1).repeat(1, 49)].amax(dim=1)
 
     not_pass = ~states[torch.arange(num_states), :, action_ys, action_xs].any(dim=1).view(-1, 1, 1)
     states[:, 0, :, :] |= (flips_to_apply * not_pass)
     states[:, 1, :, :] &= ~(flips_to_apply * not_pass)
-
+    states[torch.arange(num_states), 0, action_ys, action_xs] = not_pass.view(-1).long()
     return states
