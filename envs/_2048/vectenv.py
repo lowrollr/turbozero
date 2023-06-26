@@ -12,7 +12,7 @@ class _2048Env(VectEnv):
             state_shape=torch.Size([1, 4, 4]),
             policy_shape=torch.Size([4]),
             value_shape=torch.Size([1]),
-            device=device
+            device=device,
         )
 
         self.push_actions_ts = torch.jit.trace(push_actions, (
@@ -58,4 +58,4 @@ class _2048Env(VectEnv):
         return self.get_stochastic_progressions_ts(self.states)
 
     def push_actions(self, actions) -> None:
-        self.push_actions_ts(self.states, actions)
+        self.states = self.push_actions_ts(self.states, actions)
