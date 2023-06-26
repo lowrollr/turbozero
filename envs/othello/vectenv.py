@@ -45,3 +45,11 @@ class OthelloVectEnv(MPVectEnv):
         self.states[:, 1, 4, 3] = 1
         self.states[:, 0, 4, 4] = 1
 
+    def is_terminal(self):
+        return self.states.sum(dim=(1, 2, 3)) == (self.board_size ** 2)
+    
+    def get_rewards(self):
+        p1_sum = self.states[:, 0].sum(dim=(1, 2))
+        p2_sum = self.states[:, 1].sum(dim=(1, 2))
+        return torch.stack([p1_sum > p2_sum, p2_sum > p1_sum], dim=1).float()
+
