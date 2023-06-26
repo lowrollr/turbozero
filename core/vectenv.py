@@ -19,8 +19,9 @@ class VectEnv:
         self.value_shape = value_shape
 
         self.states = torch.zeros((num_parallel_envs, *state_shape), dtype=GLOB_FLOAT_TYPE, device=device, requires_grad=False)
-        self.invalid_mask = torch.zeros(num_parallel_envs, dtype=torch.bool, device=device, requires_grad=False)
-        
+        self.terminated = torch.zeros(num_parallel_envs, dtype=torch.bool, device=device, requires_grad=False)
+        self.rewards = torch.zeros((num_parallel_envs, ), dtype=GLOB_FLOAT_TYPE, device=device, requires_grad=False)
+
         self.device = device
         self.is_stochastic = is_stochastic
         self.num_parallel_envs = num_parallel_envs
@@ -31,20 +32,19 @@ class VectEnv:
        
         self.env_indices = torch.arange(num_parallel_envs, device=device, requires_grad=False)
         self.fws = torch.jit.trace(fast_weighted_sample, (torch.rand((num_parallel_envs, *policy_shape), device=device, requires_grad=False, dtype=GLOB_FLOAT_TYPE), self.randn), check_trace=False)
-    
+        
     def reset(self, seed=None):
         raise NotImplementedError()
     
     def step(self, actions) -> Tuple[torch.Tensor, dict]:
         self.push_actions(actions)
-        if self.is_stochastic:
-            # make step on legal states
-            self.stochastic_step(torch.logical_not(self.invalid_mask))
-        self.update_invalid_mask()
-        return self.invalid_mask, {}
+        self.next_turn()
+        self.update_terminated()
+        info = {'rewards': self.get_rewards()}
+        return self.terminated, info
     
-    def update_invalid_mask(self):
-        self.invalid_mask = self.is_terminal()
+    def update_terminated(self):
+        self.terminated = self.is_terminal()
 
     def is_terminal(self):
         raise NotImplementedError()
@@ -55,7 +55,7 @@ class VectEnv:
     def get_legal_actions(self):
         return torch.ones(self.num_parallel_envs, *self.policy_shape, dtype=torch.bool, device=self.device, requires_grad=False)
 
-    def stochastic_step(self, mask=None) -> None:
+    def apply_stochastic_progressions(self, mask=None) -> None:
         progs, probs = self.get_stochastic_progressions()
         indices = self.fast_weighted_sample(probs)
                 
@@ -63,7 +63,6 @@ class VectEnv:
             self.states = torch.where(mask.view(self.num_parallel_envs, 1, 1, 1), progs[(self.env_indices, indices)].unsqueeze(1), self.states)
         else:
             self.states = progs[(self.env_indices, indices)].unsqueeze(1)
-
 
     def get_stochastic_progressions(self) -> Tuple[torch.Tensor, torch.Tensor]:
         raise NotImplementedError()
@@ -73,4 +72,10 @@ class VectEnv:
 
     def fast_weighted_sample(self, weights): 
         return self.fws(weights, self.randn)
+    
+    def get_rewards(self):
+        return self.rewards
+    
+    def next_turn(self):
+        raise NotImplementedError()
     

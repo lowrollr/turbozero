@@ -22,7 +22,7 @@ class OthelloVectEnv(MPVectEnv):
         self.reset()
         self.get_legal_actions_traced = torch.jit.trace(get_legal_actions, (self.states, self.ray_tensor))
         self.push_actions_traced = torch.jit.trace(push_actions, (self.states, self.ray_tensor, torch.zeros((self.num_parallel_envs, ), dtype=torch.long, device=device)))
-    
+
     def get_legal_actions(self):
         # adjacent to enemy tiles
         return self.get_legal_actions_traced(self.states, self.ray_tensor)
@@ -38,6 +38,7 @@ class OthelloVectEnv(MPVectEnv):
             torch.manual_seed(seed)
         self.states.zero_()
         self.ray_tensor.zero_()
+        self.rewards.zero_() # we dont even use this tensor right now
         self.states[:, 0, 3, 3] = 1
         self.states[:, 1, 3, 4] = 1
         self.states[:, 1, 4, 3] = 1
