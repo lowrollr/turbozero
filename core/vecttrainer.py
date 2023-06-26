@@ -4,9 +4,9 @@ from typing import Optional
 import torch
 from collections import deque
 from core import GLOB_FLOAT_TYPE
-from core.vz_resnet import VZResnet
+from core.lz_resnet import LZResnet
 from core.history import Metric, TrainingMetrics
-from core.hyperparameters import VZHyperparameters
+from core.hyperparameters import LZHyperparameters
 from core.memory import ReplayMemory, ReplayMemory
 import numpy as np
 import logging
@@ -17,9 +17,9 @@ class VectTrainer:
     def __init__(self, 
         train_evaluator: VectorizedLazyMCTS,
         test_evaluator: Optional[VectorizedLazyMCTS],
-        model: VZResnet, 
+        model: LZResnet, 
         optimizer: torch.optim.Optimizer,
-        hypers: VZHyperparameters, 
+        hypers: LZHyperparameters, 
         num_parallel_envs: int, 
         device: torch.device, 
         history: Optional[TrainingMetrics] = None, 
@@ -79,7 +79,7 @@ class VectTrainer:
     def init_history(self):
         raise NotImplementedError()
 
-    def push_examples_to_memory_buffer(self, terminated_envs, is_eval):
+    def push_examples_to_memory_buffer(self, terminated_envs, is_eval, info):
         raise NotImplementedError()
     
     def get_evaluator_and_args(self, is_eval):
@@ -104,7 +104,7 @@ class VectTrainer:
             actions = torch.argmax(visits, dim=1)
         else:
             actions = evaluator.env.fast_weighted_sample(visits)
-        terminated, _ = evaluator.env.step(actions)
+        terminated, info = evaluator.env.step(actions)
         
         for i in range(evaluator.env.num_parallel_envs):
             if is_eval:
@@ -128,7 +128,7 @@ class VectTrainer:
                 t_envs = terminated_envs
 
             self.add_collection_metrics(t_envs, is_eval)
-            self.push_examples_to_memory_buffer(t_envs, is_eval)
+            self.push_examples_to_memory_buffer(t_envs, is_eval, info)
             if not fixed_batch:
                 evaluator.env.reset_invalid_states()
 

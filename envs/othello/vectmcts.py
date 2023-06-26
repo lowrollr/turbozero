@@ -6,5 +6,5 @@ from envs.othello.vectenv import OthelloVectEnv
 
 
 class OthelloLazyMCTS(VectorizedLazyMCTS):
-    def __init__(self, env: OthelloVectEnv, puct_c: int) -> None:
+    def __init__(self, env: OthelloVectEnv, puct_c: float) -> None:
         super().__init__(env, puct_c, 1e5)

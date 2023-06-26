@@ -48,7 +48,12 @@ class OthelloVectEnv(VectEnv):
         return self.states.sum(dim=(1, 2, 3)) == (self.board_size ** 2)
     
     def get_rewards(self):
+        self.rewards.zero_()
         p1_sum = self.states[:, 0].sum(dim=(1, 2))
         p2_sum = self.states[:, 1].sum(dim=(1, 2))
-        return torch.stack([p1_sum > p2_sum, p2_sum > p1_sum], dim=1).float()
+        self.rewards += 1 * (p1_sum > p2_sum)
+        self.rewards += 0.5 * (p1_sum == p2_sum)
+        return self.rewards
 
+    def reset_invalid_states(self):
+        pass

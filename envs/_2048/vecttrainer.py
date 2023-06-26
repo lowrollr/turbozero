@@ -3,13 +3,13 @@ from typing import Optional
 import torch
 from collections import deque
 from core import GLOB_FLOAT_TYPE
-from core.vz_resnet import VZArchitectureParameters, VZResnet
+from core.lz_resnet import LZArchitectureParameters, LZResnet
 from core.vecttrainer import VectTrainer
 from envs._2048.vectenv import _2048Env
 from .vectmcts import _2048LazyMCTS
 from .utils import rotate_training_examples
 from core.history import Metric, TrainingMetrics
-from core.hyperparameters import VZHyperparameters
+from core.hyperparameters import LZHyperparameters
 from core.memory import GameReplayMemory, ReplayMemory
 import numpy as np
 import logging
@@ -18,9 +18,9 @@ class _2048Trainer(VectTrainer):
     def __init__(self, 
         train_evaluator: _2048LazyMCTS,
         test_evaluator: Optional[_2048LazyMCTS],
-        model: VZResnet, 
+        model: LZResnet, 
         optimizer: torch.optim.Optimizer,
-        hypers: VZHyperparameters, 
+        hypers: LZHyperparameters, 
         num_parallel_envs: int, 
         device: torch.device, 
         history: Optional[TrainingMetrics] = None, 
@@ -30,7 +30,7 @@ class _2048Trainer(VectTrainer):
         run_tag: Optional[str] = None,
     ):
         run_tag = run_tag or '2048'
-        memory = GameReplayMemory(hypers.replay_memory_size)
+        memory = memory or GameReplayMemory(hypers.replay_memory_size)
         super().__init__(
             train_evaluator=train_evaluator,
             test_evaluator=test_evaluator,
@@ -73,7 +73,7 @@ class _2048Trainer(VectTrainer):
             ]
         )
 
-    def push_examples_to_memory_buffer(self, terminated_envs, is_eval):
+    def push_examples_to_memory_buffer(self, terminated_envs, is_eval, info):
         for t in terminated_envs:
             ind = t
             if not is_eval:
@@ -148,15 +148,15 @@ class _2048Trainer(VectTrainer):
 
     
 def init_new_2048_trainer(
-        arch_params: VZArchitectureParameters,
+        arch_params: LZArchitectureParameters,
         parallel_envs: int,
         device: torch.device,
-        hypers: VZHyperparameters,
+        hypers: LZHyperparameters,
         log_results=True,
         interactive=True,
         run_tag: Optional[str] = None
     ) -> _2048Trainer:
-        model = VZResnet(arch_params).to(device)
+        model = LZResnet(arch_params).to(device)
         if GLOB_FLOAT_TYPE == torch.float16:
             model = model.half()
         optimizer = torch.optim.AdamW(model.parameters(), lr=hypers.learning_rate)
@@ -176,8 +176,8 @@ def init_2048_trainer_from_checkpoint(
     ) -> _2048Trainer:
     
     checkpoint = torch.load(checkpoint_path, map_location=device)
-    hypers: VZHyperparameters = checkpoint['hypers']
-    model = VZResnet(checkpoint['model_arch_params'])
+    hypers: LZHyperparameters = checkpoint['hypers']
+    model = LZResnet(checkpoint['model_arch_params'])
     model.load_state_dict(checkpoint['model_state_dict'])
     model.to(device)
     if GLOB_FLOAT_TYPE == torch.float16:

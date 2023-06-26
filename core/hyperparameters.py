@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 
 @dataclass()
-class VZHyperparameters:
+class LZHyperparameters:
     learning_rate: float = 1e-4
     num_iters_train: int = 5
     iter_depth_train: int = 3
