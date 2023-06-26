@@ -10,8 +10,7 @@ class VectEnv:
             state_shape: torch.Size, 
             policy_shape: torch.Size, 
             value_shape: torch.Size, 
-            device: torch.device, 
-            is_stochastic: bool
+            device: torch.device
     ):
         
         self.state_shape = state_shape
@@ -23,7 +22,6 @@ class VectEnv:
         self.rewards = torch.zeros((num_parallel_envs, ), dtype=GLOB_FLOAT_TYPE, device=device, requires_grad=False)
 
         self.device = device
-        self.is_stochastic = is_stochastic
         self.num_parallel_envs = num_parallel_envs
 
 

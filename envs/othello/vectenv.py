@@ -2,10 +2,10 @@
 import torch
 
 from core import GLOB_FLOAT_TYPE
-from core.mp_vectenv import MPVectEnv
+from core.vectenv import VectEnv
 from .torchscripts import get_legal_actions, push_actions
 
-class OthelloVectEnv(MPVectEnv):
+class OthelloVectEnv(VectEnv):
     def __init__(self, 
         num_parallel_envs: int, 
         device: torch.device,
@@ -14,7 +14,7 @@ class OthelloVectEnv(MPVectEnv):
         state_shape = (2, board_size, board_size)
         policy_shape = (64,)
         value_shape = (2, )
-        super().__init__(2, num_parallel_envs, state_shape, policy_shape, value_shape, device, False)
+        super().__init__(num_parallel_envs, state_shape, policy_shape, value_shape, device)
 
         self.board_size = board_size
         num_rays = (8 * (self.board_size - 2)) + 1

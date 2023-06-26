@@ -12,8 +12,7 @@ class _2048Env(VectEnv):
             state_shape=torch.Size([1, 4, 4]),
             policy_shape=torch.Size([4]),
             value_shape=torch.Size([1]),
-            device=device, 
-            is_stochastic=True
+            device=device
         )
 
         self.push_actions_ts = torch.jit.trace(push_actions, (
