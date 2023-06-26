@@ -32,6 +32,9 @@ class OthelloVectEnv(MPVectEnv):
     def push_actions(self, actions):
         self.push_actions_traced(self.states, self.ray_tensor, actions)
     
+    def next_turn(self):
+        self.states = torch.roll(self.states, 1, dims=1)
+    
     def reset(self, seed=None):
         if seed is not None:
             torch.manual_seed(seed)

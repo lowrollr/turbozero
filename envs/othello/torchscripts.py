@@ -53,17 +53,17 @@ def get_legal_actions(states, ray_tensor):
 
         kernel_diag_left_up = torch.zeros((1, 2, i+1, i+1), device=states.device, requires_grad=False, dtype=torch.long)
         for j in range(1, i):
-            kernel_diag_left_up[:, 1, -j-1, j] = 1
-        kernel_diag_left_up[:, 0, 0, i] = 1
-        kernel_diag_left_up[:, :, -1, 0] = -1
+            kernel_diag_left_up[:, 1, j, j] = 1
+        kernel_diag_left_up[:, 0, 0, 0] = 1
+        kernel_diag_left_up[:, :, -1, -1] = -1
         ray_tensor[:, index, start_inv:end_inv, start_inv:end_inv] = torch.nn.functional.conv2d(states, kernel_diag_left_up, padding=0).squeeze(1) == i
         index += 1
 
         kernel_diag_right_up = torch.zeros((1, 2, i+1, i+1), device=states.device, requires_grad=False, dtype=torch.long)
         for j in range(1, i):
-            kernel_diag_right_up[:, 1, -j-1, -j-1] = 1
-        kernel_diag_right_up[:, 0, 0, 0] = 1
-        kernel_diag_right_up[:, :, -1, -1] = -1
+            kernel_diag_right_up[:, 1, -j-1, j] = 1
+        kernel_diag_right_up[:, 0, 0, -1] = 1
+        kernel_diag_right_up[:, :, -1, 0] = -1
         ray_tensor[:, index, start_inv:end_inv, start:end] = torch.nn.functional.conv2d(states, kernel_diag_right_up, padding=0).squeeze(1) == i
         index += 1
 
