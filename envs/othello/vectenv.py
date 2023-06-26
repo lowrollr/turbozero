@@ -16,11 +16,11 @@ class OthelloVectEnv(MPVectEnv):
         value_shape = (2, )
         super().__init__(2, num_parallel_envs, state_shape, policy_shape, value_shape, device, False)
 
-        self.states = self.states.long()
+        self.states = self.states.to(dtype=torch.int8)
 
         self.board_size = board_size
         num_rays = (8 * (self.board_size - 2)) + 1
-        self.ray_tensor = torch.zeros((num_parallel_envs, num_rays, self.board_size, self.board_size), dtype=torch.long, device=device, requires_grad=False)
+        self.ray_tensor = torch.zeros((num_parallel_envs, num_rays, self.board_size, self.board_size), dtype=torch.int8, device=device, requires_grad=False)
         self.reset()
         self.get_legal_actions_traced = torch.jit.trace(get_legal_actions, (self.states, self.ray_tensor))
         self.push_actions_traced = torch.jit.trace(push_actions, (self.states, self.ray_tensor, torch.zeros((self.num_parallel_envs, ), dtype=torch.long, device=device)))

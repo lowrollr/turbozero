@@ -57,5 +57,6 @@ class SinglePlayerVectorizedLazyMCTS(VectorizedLazyMCTS):
             self.action_scores[self.env.env_indices, actions] += self.iterate(model, search_depth)
             self.env.states = initial_state.clone()
             self.env.update_invalid_mask()
-
+        
         return self.visit_counts
+    
