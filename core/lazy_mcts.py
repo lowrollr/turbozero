@@ -54,7 +54,7 @@ class VectorizedLazyMCTS:
         puct_scores = q_values + (self.puct_coeff * probs * torch.sqrt(n_sum + 1) / (1 + self.visit_counts))
 
         # even with puct score of zero only a legal action will be chosen
-        legal_action_scores = (puct_scores * legal_actions) - (1 * torch.logical_not(legal_actions))
+        legal_action_scores = puct_scores - (self.very_positive_value * torch.logical_not(legal_actions))
         chosen_actions = torch.argmax(legal_action_scores, dim=1, keepdim=True)
 
         return chosen_actions.squeeze(1)
@@ -72,7 +72,7 @@ class VectorizedLazyMCTS:
                 legal_actions = self.env.get_legal_actions()
                 distribution = torch.nn.functional.softmax(policy_logits, dim=1) * legal_actions
                 next_actions = self.env.fast_weighted_sample(distribution)
-                terminated, info = self.env.step(next_actions)
+                _, info = self.env.step(next_actions)
                 rewards = info['rewards']
 
     def explore_for_iters(self, model: torch.nn.Module,iters: int, search_depth: int) -> torch.Tensor:
