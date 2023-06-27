@@ -56,16 +56,19 @@ class VectEnv:
     def apply_stochastic_progressions(self, mask=None) -> None:
         progs, probs = self.get_stochastic_progressions()
         indices = self.fast_weighted_sample(probs)
-                
+
+        new_states = progs[(self.env_indices, indices)].unsqueeze(1)
+
         if mask is not None:
-            self.states = torch.where(mask.view(self.num_parallel_envs, 1, 1, 1), progs[(self.env_indices, indices)].unsqueeze(1), self.states)
+            mask = mask.view(self.num_parallel_envs, 1, 1, 1)
+            self.states = self.states * (~mask) + new_states * mask
         else:
-            self.states = progs[(self.env_indices, indices)].unsqueeze(1)
+            self.states = new_states
 
     def get_stochastic_progressions(self) -> Tuple[torch.Tensor, torch.Tensor]:
         raise NotImplementedError()
     
-    def reset_invalid_states(self):
+    def reset_terminated_states(self):
         raise NotImplementedError()
 
     def fast_weighted_sample(self, weights): 

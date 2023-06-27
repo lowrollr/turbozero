@@ -36,7 +36,7 @@ class _2048Env(VectEnv):
         self.apply_stochastic_progressions()
         self.apply_stochastic_progressions()
     
-    def reset_invalid_states(self):
+    def reset_terminated_states(self):
         self.states *= torch.logical_not(self.terminated).view(self.num_parallel_envs, 1, 1, 1)
         self.apply_stochastic_progressions(self.terminated)
         self.apply_stochastic_progressions(self.terminated)
