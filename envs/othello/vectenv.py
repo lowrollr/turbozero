@@ -9,7 +9,8 @@ class OthelloVectEnv(VectEnv):
     def __init__(self, 
         num_parallel_envs: int, 
         device: torch.device,
-        board_size: int = 8   
+        board_size: int = 8,
+        debug=False
     ) -> None:
         state_shape = (2, board_size, board_size)
         policy_shape = (64,)
@@ -20,8 +21,13 @@ class OthelloVectEnv(VectEnv):
         num_rays = (8 * (self.board_size - 2)) + 1
         self.ray_tensor = torch.zeros((num_parallel_envs, num_rays, self.board_size, self.board_size), dtype=torch.float32, device=device, requires_grad=False)
         self.reset()
-        self.get_legal_actions_traced = torch.jit.trace(get_legal_actions, (self.states, self.ray_tensor))
-        self.push_actions_traced = torch.jit.trace(push_actions, (self.states, self.ray_tensor, torch.zeros((self.num_parallel_envs, ), dtype=torch.long, device=device)))
+
+        if debug:
+            self.get_legal_actions_traced = get_legal_actions
+            self.push_actions_traced = push_actions
+        else:
+            self.get_legal_actions_traced = torch.jit.trace(get_legal_actions, (self.states, self.ray_tensor))
+            self.push_actions_traced = torch.jit.trace(push_actions, (self.states, self.ray_tensor, torch.zeros((self.num_parallel_envs, ), dtype=torch.long, device=device)))
 
     def get_legal_actions(self):
         # adjacent to enemy tiles
@@ -38,7 +44,7 @@ class OthelloVectEnv(VectEnv):
             torch.manual_seed(seed)
         self.states.zero_()
         self.ray_tensor.zero_()
-        self.rewards.zero_() # we dont even use this tensor right now
+        self.rewards.zero_()
         self.states[:, 0, 3, 3] = 1
         self.states[:, 1, 3, 4] = 1
         self.states[:, 1, 4, 3] = 1

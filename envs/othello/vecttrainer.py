@@ -96,13 +96,14 @@ def init_new_othello_trainer(
         hypers: LZHyperparameters,
         log_results=True,
         interactive=True,
-        run_tag: Optional[str] = None
+        run_tag: Optional[str] = None,
+        debug=False
     ) -> OthelloTrainer:
         model = LZResnet(arch_params).to(device)
         optimizer = torch.optim.AdamW(model.parameters(), lr=hypers.learning_rate)
 
-        train_evaluator = OthelloLazyMCTS(OthelloVectEnv(parallel_envs, device), hypers.mcts_c_puct)
-        test_evaluator = OthelloLazyMCTS(OthelloVectEnv(parallel_envs, device), hypers.mcts_c_puct)
+        train_evaluator = OthelloLazyMCTS(OthelloVectEnv(parallel_envs, device, debug=debug), hypers.mcts_c_puct)
+        test_evaluator = OthelloLazyMCTS(OthelloVectEnv(parallel_envs, device, debug=debug), hypers.mcts_c_puct)
 
         return OthelloTrainer(train_evaluator, test_evaluator, model, optimizer, hypers, parallel_envs, device, None, None, log_results, interactive, run_tag)
 
@@ -112,7 +113,8 @@ def init_othello_trainer_from_checkpoint(
         device: torch.device, 
         memory: Optional[GameReplayMemory] = None, 
         log_results=True, 
-        interactive=True
+        interactive=True,
+        debug=False
     ) -> OthelloTrainer:
     
     checkpoint = torch.load(checkpoint_path, map_location=device)
@@ -128,8 +130,8 @@ def init_othello_trainer_from_checkpoint(
     history.reset_all_figs()
     run_tag = checkpoint['run_tag']
 
-    train_evaluator = OthelloLazyMCTS(OthelloVectEnv(parallel_envs, device), hypers.mcts_c_puct)
-    test_evaluator = OthelloLazyMCTS(OthelloVectEnv(parallel_envs, device), hypers.mcts_c_puct)
+    train_evaluator = OthelloLazyMCTS(OthelloVectEnv(parallel_envs, device, debug=debug), hypers.mcts_c_puct)
+    test_evaluator = OthelloLazyMCTS(OthelloVectEnv(parallel_envs, device, debug=debug), hypers.mcts_c_puct)
     
     trainer = OthelloTrainer(train_evaluator, test_evaluator, model, optimizer, hypers, parallel_envs, device, history, memory, log_results, interactive, run_tag=run_tag)
     return trainer
