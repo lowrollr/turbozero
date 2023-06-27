@@ -130,7 +130,7 @@ class VectTrainer:
             self.add_collection_metrics(t_envs, is_eval)
             self.push_examples_to_memory_buffer(t_envs, is_eval, info)
             if not fixed_batch:
-                evaluator.env.reset_invalid_states()
+                evaluator.env.reset_terminated_states()
 
         return num_terminal_envs
     

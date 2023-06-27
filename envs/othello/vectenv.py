@@ -45,6 +45,7 @@ class OthelloVectEnv(VectEnv):
         self.states.zero_()
         self.ray_tensor.zero_()
         self.rewards.zero_()
+        self.terminated.zero_()
         self.states[:, 0, 3, 3] = 1
         self.states[:, 1, 3, 4] = 1
         self.states[:, 1, 4, 3] = 1
@@ -61,5 +62,12 @@ class OthelloVectEnv(VectEnv):
         self.rewards += 0.5 * (p1_sum == p2_sum)
         return self.rewards
 
-    def reset_invalid_states(self):
-        pass
+    def reset_terminated_states(self):
+        self.states *= 1 * ~self.terminated.view(-1, 1, 1, 1)
+        self.states[:, 0, 3, 3] += 1 * self.terminated
+        self.states[:, 1, 3, 4] += 1 * self.terminated
+        self.states[:, 1, 4, 3] += 1 * self.terminated
+        self.states[:, 0, 4, 4] += 1 * self.terminated
+        self.terminated.zero_()
+        
+

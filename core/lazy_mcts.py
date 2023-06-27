@@ -44,12 +44,10 @@ class VectorizedLazyMCTS:
 
     def choose_action_with_puct(self, probs: torch.Tensor, legal_actions: torch.Tensor) -> torch.Tensor:
         n_sum = torch.sum(self.visit_counts, dim=1, keepdim=True)
-
-        q_values = torch.where(
-            self.visit_counts > 0,
-            self.action_scores / self.visit_counts,
-            self.very_positive_value
-        )
+        zero_counts = torch.logical_not(self.visit_counts)
+        visit_counts_augmented = self.visit_counts + zero_counts
+        q_values = self.action_scores / visit_counts_augmented
+        q_values += self.very_positive_value * zero_counts
 
         puct_scores = q_values + (self.puct_coeff * probs * torch.sqrt(n_sum + 1) / (1 + self.visit_counts))
 

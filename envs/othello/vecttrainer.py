@@ -5,6 +5,7 @@
 from typing import Optional
 
 import torch
+import numpy as np
 from core import GLOB_FLOAT_TYPE
 from core.history import Metric, TrainingMetrics
 from core.hyperparameters import LZHyperparameters
@@ -49,6 +50,10 @@ class OthelloTrainer(VectTrainer):
         self.test_evaluator: OthelloLazyMCTS
         self.train_evaluator: OthelloLazyMCTS
 
+        board_size = self.train_evaluator.env.board_size
+        ids = np.arange(self.train_evaluator.env.policy_shape[0])
+        self.rotated_action_ids = np.rot90(ids.reshape(board_size, board_size), k=1, axes=(0, 1)).flatten()
+
     def init_history(self):
         return TrainingMetrics(
             train_metrics=[
@@ -72,6 +77,8 @@ class OthelloTrainer(VectTrainer):
                 game = []
                 for (s, v) in self.unfinished_episodes_train[t]:
                     game.append((s, v, reward))
+                
+                game = list(self.rotate_training_examples(game))
                 self.memory.insert(game)
                 self.unfinished_episodes_train[t] = []
 
@@ -88,6 +95,29 @@ class OthelloTrainer(VectTrainer):
 
     def add_epoch_metrics(self):
         pass
+
+    def rotate_training_examples(self, training_examples):
+        inputs, probs, rewards = zip(*training_examples)
+        rotated_inputs = []
+        for i in inputs:
+            for k in range(4):
+                rotated_inputs.append(np.rot90(i, k=k, axes=(1, 2)))
+        rotated_probs = []
+        for p in probs:
+            # left -> down
+            # down -> right
+            # right -> up
+            # up -> left
+            new_p = p
+            for k in range(4):
+                rotated_probs.append(new_p)
+                new_p = new_p[self.rotated_action_ids]
+
+        rotated_rewards = []
+        for r in rewards:
+            rotated_rewards.extend([r] * 4)
+        
+        return zip(rotated_inputs, rotated_probs, rotated_rewards)
 
 def init_new_othello_trainer(
         arch_params: LZArchitectureParameters,
