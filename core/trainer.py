@@ -90,7 +90,7 @@ class Trainer:
                     minibatch_policy_loss /= self.hypers.minibatches_per_update
                     minibatch_policy_accuracy /= self.hypers.minibatches_per_update
                     minibatch_loss /= self.hypers.minibatches_per_update
-                    self.add_train_metrics(minibatch_value_loss, minibatch_policy_loss, minibatch_policy_accuracy, minibatch_loss)
+                    self.add_train_metrics(minibatch_policy_loss, minibatch_value_loss, minibatch_policy_accuracy, minibatch_loss)
             else:
                 logging.info(f'Replay memory samples ({memory_size}) <= min samples ({self.hypers.replay_memory_min_size}), skipping training steps')
     
