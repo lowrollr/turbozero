@@ -7,7 +7,8 @@ from envs.othello.vectenv import OthelloVectEnv
 
 
 class OthelloLazyMCTS(VectorizedLazyMCTS):
-    def __init__(self, env: OthelloVectEnv, puct_c: float) -> None:
+    def __init__(self, num_parallel_envs: int, device: torch.device, board_size: int, puct_c: float, debug: bool = False) -> None:
+        env = OthelloVectEnv(num_parallel_envs, device, board_size=board_size, debug=debug)
         super().__init__(env, puct_c, 1e5)
         self.env: OthelloVectEnv
 
