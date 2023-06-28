@@ -1,4 +1,5 @@
 
+from typing import Optional
 import torch
 import torch.nn as nn
 
@@ -18,6 +19,7 @@ class LZArchitectureParameters:
     kernel_size: int
     policy_fc_size: int = 32
     value_fc_size: int = 32
+    value_output_activation: Optional[nn.Module] = None
 
 
 class ResidualBlock(nn.Module):
@@ -83,6 +85,8 @@ class LZResnet(nn.Module):
             nn.ReLU(),
             nn.Linear(arch_params.value_fc_size, 1)
         )
+        if arch_params.value_output_activation is not None:
+            self.value_head.append(arch_params.value_output_activation)
 
         self.arch_params = arch_params
 
