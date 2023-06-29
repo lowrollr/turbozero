@@ -24,6 +24,19 @@ class Collector:
         self.epsilon_sampler = torch.zeros((num_parallel_envs,), dtype=torch.float32, device=evaluator.env.device, requires_grad=False)
 
     def collect(self, model: torch.nn.Module, epsilon: float = 0.0, reset_terminal: bool = True):
+        
+        terminated, info = self.collect_step(model, epsilon)
+
+        terminated_episodes = self.episode_memory.pop_terminated_episodes(terminated)
+
+        terminated_episodes = self.assign_rewards(terminated_episodes, terminated, info)
+
+        if reset_terminal:
+            self.evaluator.env.reset_terminated_states()
+
+        return terminated_episodes, terminated
+    
+    def collect_step(self, model: torch.nn.Module, epsilon: float = 0.0):
         model.eval()
 
         visits = self.evaluator.explore(model, self.search_iters, self.search_depth)
@@ -37,18 +50,10 @@ class Collector:
 
         terminated, info = self.evaluator.env.step(actions)
 
-        terminated_episodes = self.episode_memory.pop_terminated_episodes(terminated)
-
-        terminated_episodes = self.assign_rewards(terminated_episodes, terminated, info)
-
-        if reset_terminal:
-            self.evaluator.env.reset_terminated_states()
-
-        return terminated_episodes, terminated
+        return terminated, info
     
     def assign_rewards(self, terminated_episodes, terminated, info):
         raise NotImplementedError()
-    
     
     def postprocess(self, terminated_episodes):
         return terminated_episodes

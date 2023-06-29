@@ -146,7 +146,6 @@ class Trainer:
             completed_episodes &= termianted
 
     def training_loop(self, epochs: Optional[int] = None):
-
         while self.history.cur_epoch < epochs if epochs is not None else True:
             while self.history.cur_train_episode < self.hypers.episodes_per_epoch * (self.history.cur_epoch+1):
                 self.selfplay_step()

@@ -19,3 +19,4 @@ class LZHyperparameters:
     epsilon_start: float = 1.0
     epsilon_end: float = 0.01
     mcts_c_puct: float = 1.0
+    improvement_threshold: float = 1.1

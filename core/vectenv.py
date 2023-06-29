@@ -36,9 +36,9 @@ class VectEnv:
     
     def step(self, actions) -> Tuple[torch.Tensor, dict]:
         self.push_actions(actions)
+        info = {'rewards': self.get_rewards()}
         self.next_turn()
         self.update_terminated()
-        info = {'rewards': self.get_rewards()}
         return self.terminated, info
     
     def update_terminated(self):

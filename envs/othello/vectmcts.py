@@ -24,7 +24,10 @@ class OthelloLazyMCTS(VectorizedLazyMCTS):
             actions = self.choose_action_with_puct(policy_logits, legal_actions)    
             _, info = self.env.step(actions)
             self.visit_counts[self.env.env_indices, actions] += 1
-            self.action_scores[self.env.env_indices, actions] += self.iterate(model, search_depth, info['rewards'])
+            value = self.iterate(model, search_depth, info['rewards'])
+            if search_depth % 2 == 1:
+                value = 1 - value
+            self.action_scores[self.env.env_indices, actions] += value
             self.env.states = initial_state.clone()
             self.env.update_terminated()
 

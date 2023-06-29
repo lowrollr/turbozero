@@ -25,8 +25,10 @@ class OthelloCollector(Collector):
         for i, episode in enumerate(terminated_episodes):
             episode_with_rewards = []
             ti = term_indices[i]
-            r1, r2 = info['rewards'][ti].item(), 1 - info['rewards'][ti].item()
-            p1_reward, p2_reward = (r2, r1) if len(episode) % 2 else (r1, r2)
+            cur_player = self.evaluator.env.cur_player[ti].item()
+            reward = info['rewards'][ti].item()
+            r1, r2 = reward, 1 - reward
+            p1_reward, p2_reward = (r2, r1) if cur_player else (r1, r2)
             for ei, (inputs, visits) in enumerate(episode):
                 episode_with_rewards.append((inputs, visits, torch.tensor(p2_reward if ei%2 else p1_reward, dtype=torch.float32, requires_grad=False, device=inputs.device)))
             episodes.append(episode_with_rewards)

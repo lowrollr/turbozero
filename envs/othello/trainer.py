@@ -3,8 +3,11 @@
 
 
 
+from copy import deepcopy
+from pathlib import Path
 from typing import Optional
 import torch
+import logging
 from core.history import Metric, TrainingMetrics
 from core.hyperparameters import LZHyperparameters
 from core.lz_resnet import LZResnet
@@ -59,6 +62,27 @@ class OthelloTrainer(Trainer):
         self.replay_memory = GameReplayMemory(
             hypers.replay_memory_size
         )
+
+        self.best_model = deepcopy(model)
+        self.best_model_optimizer_state_dict = deepcopy(optimizer.state_dict())
+
+
+    def save_checkpoint(self, custom_name: Optional[str] = None) -> None:
+        directory = f'./checkpoints/{self.run_tag}/'
+        Path(directory).mkdir(parents=True, exist_ok=True)
+        filename = custom_name if custom_name is not None else str(self.history.cur_epoch)
+        filepath = directory + f'{filename}.pt'
+        torch.save({
+            'model_arch_params': self.model.arch_params,
+            'model_state_dict': self.model.state_dict(),
+            'optimizer_state_dict': self.optimizer.state_dict(),
+            'best_model_state_dict': self.best_model.state_dict(),
+            'best_model_optimizer_state_dict': self.best_model_optimizer_state_dict,
+            'hypers': self.hypers,
+            'history': self.history,
+            'run_tag': self.run_tag
+        }, filepath)
+
     def init_history(self):
         return TrainingMetrics(
             train_metrics=[
@@ -69,15 +93,56 @@ class OthelloTrainer(Trainer):
             ],
             episode_metrics=[],
             eval_metrics=[],
-            epoch_metrics=[]
+            epoch_metrics=[
+                Metric(name='win_ratio', xlabel='Epoch', ylabel='Ratio', maximize=True, alert_on_best=self.log_results, proper_name='Win Ratio (Current Model vs. Best Model)'),
+            ]
         )
     
     def add_collection_metrics(self, episodes):
-        pass
+        self.history.add_episode_data({}, log=self.log_results)
     def add_evaluation_metrics(self, episodes):
+        self.history.add_evaluation_data({}, log=self.log_results)
+    def add_epoch_metrics(self):
         pass
-    def add_epoch_metrics(self, episodes):
-        pass
+
+    def evaluate_n_episodes(self, num_episodes):
+        # pits the current model against the previous best model
+        split = num_episodes // 2
+        completed_episodes = torch.zeros(num_episodes, dtype=torch.bool, requires_grad=False)
+        scores = torch.zeros(num_episodes, dtype=torch.float32, requires_grad=False)
+        self.test_collector.collect_step(self.model, epsilon=0.0)
+        # hacky way to split the episodes into two sets (this environment cannot terminate on the first step)
+        self.test_collector.evaluator.env.terminated[:split] = True
+        self.test_collector.evaluator.env.reset_terminated_states()
+        use_best_model = True
+        while not completed_episodes.all():
+            model = self.best_model if use_best_model else self.model
+            # we don't need to collect the episodes into episode memory/replay buffer, so we can call collect_step directly
+            terminated, info = self.test_collector.collect_step(model, epsilon=0.0)
+            if not use_best_model:
+                scores += info['rewards'] * terminated * ~completed_episodes
+
+            completed_episodes |= terminated
+            use_best_model = not use_best_model
+
+        score_sum = scores.sum()
+        ratio = score_sum / (num_episodes - score_sum)
+
+        new_best = ratio >= self.hypers.improvement_threshold
+
+        if new_best:
+            self.best_model.load_state_dict(self.model.state_dict())
+            self.best_model_optimizer_state_dict = deepcopy(self.optimizer.state_dict())
+            logging.info(f'Epoch {self.history.cur_epoch} - New best model, win ratio {ratio}')
+        else:
+            self.model.load_state_dict(self.best_model.state_dict())
+            self.optimizer.load_state_dict(self.best_model_optimizer_state_dict)
+            logging.info(f'Epoch {self.history.cur_epoch} - No new best model, win ratio {ratio}')
+        self.add_evaluation_metrics([])
+        self.history.add_epoch_data({
+            'win_ratio': ratio,
+        }, log=self.log_results)
+        
 
 def init_2048_trainer_from_checkpoint(
     num_parallel_envs: int,

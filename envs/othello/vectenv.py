@@ -20,6 +20,8 @@ class OthelloVectEnv(VectEnv):
         self.board_size = board_size
         num_rays = (8 * (self.board_size - 2)) + 1
         self.ray_tensor = torch.zeros((num_parallel_envs, num_rays, self.board_size, self.board_size), dtype=torch.float32, device=device, requires_grad=False)
+        self.cur_player = torch.zeros((num_parallel_envs, ), dtype=torch.long, device=device, requires_grad=False)
+        
         self.reset()
 
         if debug:
@@ -38,6 +40,8 @@ class OthelloVectEnv(VectEnv):
     
     def next_turn(self):
         self.states = torch.roll(self.states, 1, dims=1)
+        self.cur_player += 1
+        self.cur_player %= 2
     
     def reset(self, seed=None):
         if seed is not None:
@@ -46,6 +50,7 @@ class OthelloVectEnv(VectEnv):
         self.ray_tensor.zero_()
         self.rewards.zero_()
         self.terminated.zero_()
+        self.cur_player.zero_()
         self.states[:, 0, 3, 3] = 1
         self.states[:, 1, 3, 4] = 1
         self.states[:, 1, 4, 3] = 1
@@ -54,20 +59,28 @@ class OthelloVectEnv(VectEnv):
     def is_terminal(self):
         return self.states.sum(dim=(1, 2, 3)) == (self.board_size ** 2)
     
+    def update_terminated(self):
+        super().update_terminated()
+        # ensures that cur_player will match with last reward when accessing reward for a terminal state
+        self.cur_player -= 1 * self.terminated
+        self.cur_player %= 2
+    
     def get_rewards(self):
         self.rewards.zero_()
-        p1_sum = self.states[:, 0].sum(dim=(1, 2))
-        p2_sum = self.states[:, 1].sum(dim=(1, 2))
+        p1_sum = self.states[self.env_indices, self.cur_player].sum(dim=(1, 2))
+        p2_sum = self.states[self.env_indices, (self.cur_player + 1) % 2].sum(dim=(1, 2))
         self.rewards += 1 * (p1_sum > p2_sum)
         self.rewards += 0.5 * (p1_sum == p2_sum)
         return self.rewards
 
     def reset_terminated_states(self):
         self.states *= 1 * ~self.terminated.view(-1, 1, 1, 1)
-        self.states[:, 0, 3, 3] += 1 * self.terminated
-        self.states[:, 1, 3, 4] += 1 * self.terminated
-        self.states[:, 1, 4, 3] += 1 * self.terminated
-        self.states[:, 0, 4, 4] += 1 * self.terminated
+        self.cur_player *= 1 * ~self.terminated
+        mask = 1 * self.terminated
+        self.states[:, 0, 3, 3] += mask
+        self.states[:, 1, 3, 4] += mask
+        self.states[:, 1, 4, 3] += mask
+        self.states[:, 0, 4, 4] += mask
         self.terminated.zero_()
         
 
