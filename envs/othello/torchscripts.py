@@ -1,73 +1,104 @@
 import torch
 
 
+def build_filters(device: torch.device, board_size: int):
+    num_filters = (board_size - 2) * 8
+    filters = torch.zeros((num_filters, 2, board_size, board_size), dtype=torch.float32, device=device, requires_grad=False)
+
+    index = 0
+    top_left_indices = []
+    top_right_indices = []
+    bottom_left_indices = []
+    bottom_right_indices = []
+    close_to_top_left = []
+    close_to_top_right = []
+    close_to_bottom_left = []
+    close_to_bottom_right = []
+
+    for i in range(2, board_size):
+        # right
+        filters[index, 1, 0, 1:i] = 1
+        filters[index, 0, 0, i] = 1
+        filters[index, :, 0, 0] = -1
+        top_left_indices.append(index)
+        close_to_top_left.append(i)
+        index += 1
+        # left
+        filters[index, 1, -1, -i:-1] = 1
+        filters[index, 0, -1, -i-1] = 1
+        filters[index, :, -1, -1] = -1
+        bottom_right_indices.append(index)
+        close_to_bottom_right.append(i)
+        index += 1
+        # down
+        filters[index, 1, 1:i, 0] = 1
+        filters[index, 0, i, 0] = 1
+        filters[index, :, 0, 0] = -1
+        top_left_indices.append(index)
+        close_to_top_left.append(i)
+        index += 1
+        # up
+        filters[index, 1, -i:-1, -1] = 1
+        filters[index, 0, -i-1, -1] = 1
+        filters[index, :, -1, -1] = -1
+        bottom_right_indices.append(index)
+        close_to_bottom_right.append(i)
+        index += 1
+        # down right and up left
+        for j in range(1, i):
+            filters[index, 1, j, j] = 1 # down right
+            filters[index+1, 1, -j-1, j] = 1 # up right
+            filters[index+2, 1, -j-1, -j-1] = 1 # up left
+            filters[index+3, 1, j, -j-1] = 1 # down left
+
+        # down right
+        filters[index, 0, i, i] = 1 
+        filters[index, :, 0, 0] = -1
+        top_left_indices.append(index)
+        close_to_top_left.append(i)
+        index += 1
+        # up right
+        filters[index, 0, -1-i, i] = 1 
+        filters[index, :, -1, 0] = -1
+        bottom_right_indices.append(index)
+        close_to_bottom_right.append(i)
+        index += 1
+        # up left
+        filters[index, 0, -1-i, -1-i] = 1
+        filters[index, :, -1, -1] = -1
+        bottom_left_indices.append(index)
+        close_to_bottom_left.append(i)
+        index += 1
+        # down left
+        filters[index, 0, i, -1-i] = 1
+        filters[index, :, 0, -1] = -1
+        top_right_indices.append(index)
+        close_to_top_right.append(i)
+        index += 1
+    
+
+    return filters, \
+        torch.tensor(bottom_left_indices, device=device, requires_grad=False), \
+        torch.tensor(bottom_right_indices, device=device, requires_grad=False), \
+        torch.tensor(top_left_indices, device=device, requires_grad=False), \
+        torch.tensor(top_right_indices, device=device, requires_grad=False), \
+        torch.tensor(close_to_bottom_left, device=device, dtype=torch.float32, requires_grad=False).view(1, -1, 1, 1), \
+        torch.tensor(close_to_bottom_right, device=device, dtype=torch.float32, requires_grad=False).view(1, -1, 1, 1), \
+        torch.tensor(close_to_top_left, device=device, dtype=torch.float32, requires_grad=False).view(1, -1, 1, 1), \
+        torch.tensor(close_to_top_right, device=device, dtype=torch.float32, requires_grad=False).view(1, -1, 1, 1)
+
+
 def get_legal_actions(states, ray_tensor):
-    states_size = states.shape[-1]
-    index = 1
-    for i in range(2, states_size):
-        i_tensor = torch.tensor(i, device=states.device, dtype=torch.float32)
-        start, end = 0, states_size - i 
-        start_inv, end_inv = i, states_size
-        kernel_right = torch.zeros((1, 2, 1, i+1), device=states.device, requires_grad=False, dtype=torch.float32)
-        kernel_right[:, 1, :, 1:i] = 1
-        kernel_right[:, 0, :, i] = 1
-        kernel_right[:, :, :, 0] = -1
-        ray_tensor[:, index, :, start:end] = torch.nn.functional.conv2d(states, kernel_right, padding=0).squeeze(1).isclose(i_tensor, rtol=1e-2)
-        index += 1
-
-        kernel_down = torch.zeros((1, 2, i+1, 1), device=states.device, requires_grad=False, dtype=torch.float32)
-        kernel_down[:, 1, 1:i, :] = 1
-        kernel_down[:, 0, i, :] = 1
-        kernel_down[:, :, 0, :] = -1
-        ray_tensor[:, index, start:end, :] = torch.nn.functional.conv2d(states, kernel_down, padding=0).squeeze(1).isclose(i_tensor, rtol=1e-2)
-        index += 1
-
-        kernel_left = torch.zeros((1, 2, 1, i+1), device=states.device, requires_grad=False, dtype=torch.float32)
-        kernel_left[:, 1, :, 1:-1] = 1
-        kernel_left[:, 0, :, 0] = 1
-        kernel_left[:, :, :, -1] = -1
-        ray_tensor[:, index, :, start_inv:end_inv] = torch.nn.functional.conv2d(states, kernel_left, padding=0).squeeze(1).isclose(i_tensor, rtol=1e-2)
-        index += 1
-
-        kernel_up = torch.zeros((1, 2, i+1, 1), device=states.device, requires_grad=False, dtype=torch.float32)
-        kernel_up[:, 1, 1:-1, :] = 1
-        kernel_up[:, 0, 0, :] = 1
-        kernel_up[:, :, -1, :] = -1
-        ray_tensor[:, index, start_inv:end_inv, :] = torch.nn.functional.conv2d(states, kernel_up, padding=0).squeeze(1).isclose(i_tensor, rtol=1e-2)
-        index += 1
-
-        kernel_diag_right_down = torch.zeros((1, 2, i+1, i+1), device=states.device, requires_grad=False, dtype=torch.float32) 
-        for j in range(1, i):
-            kernel_diag_right_down[:, 1, j, j] = 1
-        kernel_diag_right_down[:, 0, i, i] = 1
-        kernel_diag_right_down[:, :, 0, 0] = -1
-        ray_tensor[:, index, start:end, start:end] = torch.nn.functional.conv2d(states, kernel_diag_right_down, padding=0).squeeze(1).isclose(i_tensor, rtol=1e-2)
-        index += 1
-
-        kernel_diag_left_down = torch.zeros((1, 2, i+1, i+1), device=states.device, requires_grad=False, dtype=torch.float32)
-        for j in range(1, i):
-            kernel_diag_left_down[:, 1, j, -j-1] = 1
-        kernel_diag_left_down[:, 0, i, 0] = 1
-        kernel_diag_left_down[:, :, 0, -1] = -1
-        ray_tensor[:, index, start:end, start_inv:end_inv] = torch.nn.functional.conv2d(states, kernel_diag_left_down, padding=0).squeeze(1).isclose(i_tensor, rtol=1e-2)
-        index += 1
-
-        kernel_diag_left_up = torch.zeros((1, 2, i+1, i+1), device=states.device, requires_grad=False, dtype=torch.float32)
-        for j in range(1, i):
-            kernel_diag_left_up[:, 1, j, j] = 1
-        kernel_diag_left_up[:, 0, 0, 0] = 1
-        kernel_diag_left_up[:, :, -1, -1] = -1
-        ray_tensor[:, index, start_inv:end_inv, start_inv:end_inv] = torch.nn.functional.conv2d(states, kernel_diag_left_up, padding=0).squeeze(1).isclose(i_tensor, rtol=1e-2)
-        index += 1
-
-        kernel_diag_right_up = torch.zeros((1, 2, i+1, i+1), device=states.device, requires_grad=False, dtype=torch.float32)
-        for j in range(1, i):
-            kernel_diag_right_up[:, 1, -j-1, j] = 1
-        kernel_diag_right_up[:, 0, 0, -1] = 1
-        kernel_diag_right_up[:, :, -1, 0] = -1
-        ray_tensor[:, index, start_inv:end_inv, start:end] = torch.nn.functional.conv2d(states, kernel_diag_right_up, padding=0).squeeze(1).isclose(i_tensor, rtol=1e-2)
-        index += 1
-
+    board_size = states.shape[-1]
+    filters, bl, br, tl, tr, cbl, cbr, ctl, ctr = build_filters(states.device, board_size)
+    close_to = torch.arange(board_size - 2, device=states.device, requires_grad=False, dtype=torch.long) + 2
+    close_to = close_to.float().view(1, 1, board_size-2)
+    conv_results = torch.nn.functional.conv2d(states, filters, padding=board_size-1)
+    ray_tensor[:, tl] = conv_results[:, tl, board_size-1:, board_size-1:].isclose(ctl, 1e-3).float()
+    ray_tensor[:, tr] = conv_results[:, tr, board_size-1:, :board_size].isclose(ctr, 1e-3).float()
+    ray_tensor[:, bl] = conv_results[:, bl, :board_size, board_size-1:].isclose(cbl, 1e-3).float()
+    ray_tensor[:, br] = conv_results[:, br, :board_size, :board_size].isclose(cbr, 1e-3).float()
+    
     return ray_tensor.any(dim=1).view(states.shape[0], -1)
 
 
