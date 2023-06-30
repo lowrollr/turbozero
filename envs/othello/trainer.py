@@ -107,6 +107,7 @@ class OthelloTrainer(Trainer):
         pass
 
     def evaluate_n_episodes(self, num_episodes):
+        self.test_collector.reset()
         # pits the current model against the previous best model
         split = num_episodes // 2
         completed_episodes = torch.zeros(num_episodes, dtype=torch.bool, device=self.device, requires_grad=False)
