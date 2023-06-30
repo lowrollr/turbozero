@@ -25,11 +25,11 @@ class Collector:
 
     def collect(self, model: torch.nn.Module, epsilon: float = 0.0, reset_terminal: bool = True):
         
-        terminated, info = self.collect_step(model, epsilon)
+        terminated = self.collect_step(model, epsilon)
 
         terminated_episodes = self.episode_memory.pop_terminated_episodes(terminated)
 
-        terminated_episodes = self.assign_rewards(terminated_episodes, terminated, info)
+        terminated_episodes = self.assign_rewards(terminated_episodes, terminated)
 
         if reset_terminal:
             self.evaluator.env.reset_terminated_states()
@@ -48,11 +48,11 @@ class Collector:
         actions = torch.argmax(visits, dim=1) * take_argmax
         actions += self.evaluator.env.fast_weighted_sample(visits) * (~take_argmax)
 
-        terminated, info = self.evaluator.env.step(actions)
+        terminated = self.evaluator.env.step(actions)
 
-        return terminated, info
+        return terminated
     
-    def assign_rewards(self, terminated_episodes, terminated, info):
+    def assign_rewards(self, terminated_episodes, terminated):
         raise NotImplementedError()
     
     def postprocess(self, terminated_episodes):

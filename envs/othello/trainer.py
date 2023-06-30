@@ -67,6 +67,7 @@ class OthelloTrainer(Trainer):
         self.best_model_optimizer_state_dict = deepcopy(optimizer.state_dict())
 
 
+
     def save_checkpoint(self, custom_name: Optional[str] = None) -> None:
         directory = f'./checkpoints/{self.run_tag}/'
         Path(directory).mkdir(parents=True, exist_ok=True)
@@ -94,7 +95,7 @@ class OthelloTrainer(Trainer):
             episode_metrics=[],
             eval_metrics=[],
             epoch_metrics=[
-                Metric(name='win_ratio', xlabel='Epoch', ylabel='Ratio', maximize=True, alert_on_best=self.log_results, proper_name='Win Ratio (Current Model vs. Best Model)'),
+                Metric(name='win_margin', xlabel='Epoch', ylabel='Margin (+/- games)', maximize=True, alert_on_best=False, proper_name='Win Margin (Current Model vs. Best Model)'),
             ]
         )
     
@@ -108,7 +109,7 @@ class OthelloTrainer(Trainer):
     def evaluate_n_episodes(self, num_episodes):
         # pits the current model against the previous best model
         split = num_episodes // 2
-        completed_episodes = torch.zeros(num_episodes, dtype=torch.bool, requires_grad=False)
+        completed_episodes = torch.zeros(num_episodes, dtype=torch.bool, device=self.device, requires_grad=False)
         scores = torch.zeros(num_episodes, dtype=torch.float32, requires_grad=False)
         self.test_collector.collect_step(self.model, epsilon=0.0)
         # hacky way to split the episodes into two sets (this environment cannot terminate on the first step)
@@ -118,29 +119,36 @@ class OthelloTrainer(Trainer):
         while not completed_episodes.all():
             model = self.best_model if use_best_model else self.model
             # we don't need to collect the episodes into episode memory/replay buffer, so we can call collect_step directly
-            terminated, info = self.test_collector.collect_step(model, epsilon=0.0)
-            if not use_best_model:
-                scores += info['rewards'] * terminated * ~completed_episodes
+            terminated = self.test_collector.collect_step(model, epsilon=0.0)
+
+            if use_best_model:
+                # rewards are from the perspective of the next player
+                scores += self.test_collector.evaluator.env.get_rewards() * terminated * ~completed_episodes
+            else:
+                scores += (1 - self.test_collector.evaluator.env.get_rewards()) * terminated * ~completed_episodes
 
             completed_episodes |= terminated
             use_best_model = not use_best_model
 
-        score_sum = scores.sum()
-        ratio = score_sum / (num_episodes - score_sum)
+        wins = (scores == 1).sum()
+        draws = (scores == 0.5).sum()
+        losses = (scores == 0).sum()
+        win_margin = wins - losses
 
-        new_best = ratio >= self.hypers.improvement_threshold
+        new_best = win_margin >= self.hypers.improvement_threshold
 
         if new_best:
             self.best_model.load_state_dict(self.model.state_dict())
             self.best_model_optimizer_state_dict = deepcopy(self.optimizer.state_dict())
-            logging.info(f'Epoch {self.history.cur_epoch} - New best model, win ratio {ratio}')
+            logging.info('************ NEW BEST MODEL ************')
+            logging.info(f'Epoch {self.history.cur_epoch} - W/L/D: {wins}/{losses}/{draws}')
         else:
             self.model.load_state_dict(self.best_model.state_dict())
             self.optimizer.load_state_dict(self.best_model_optimizer_state_dict)
-            logging.info(f'Epoch {self.history.cur_epoch} - No new best model, win ratio {ratio}')
+            logging.info(f'Epoch {self.history.cur_epoch} - W/L/D: {wins}/{losses}/{draws}')
         self.add_evaluation_metrics([])
         self.history.add_epoch_data({
-            'win_ratio': ratio,
+            'win_margin': win_margin,
         }, log=self.log_results)
         
 

@@ -119,7 +119,6 @@ class Trainer:
     def selfplay_step(self):
         episode_fraction = (self.history.cur_train_episode % self.hypers.episodes_per_epoch) / self.hypers.episodes_per_epoch
         epsilon = max(self.hypers.epsilon_start - (self.hypers.epsilon_decay_per_epoch * (self.history.cur_epoch + episode_fraction)), self.hypers.epsilon_end)
-        
         finished_episodes, _ = self.train_collector.collect(self.model, epsilon=epsilon)
         if finished_episodes:
             for episode in finished_episodes:
@@ -147,7 +146,7 @@ class Trainer:
 
     def training_loop(self, epochs: Optional[int] = None):
         while self.history.cur_epoch < epochs if epochs is not None else True:
-            while self.history.cur_train_episode < self.hypers.episodes_per_epoch * (self.history.cur_epoch+1):
+            while self.history.cur_train_step < self.hypers.episodes_per_epoch * (self.history.cur_epoch+1):
                 self.selfplay_step()
             
             self.evaluate_n_episodes(self.hypers.eval_episodes_per_epoch)

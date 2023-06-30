@@ -142,8 +142,8 @@ def push_actions(states, ray_tensor, actions, flips):
 
     flips_to_apply = flips[activated_rays.long(), action_ys.unsqueeze(1), action_xs.unsqueeze(1)].amax(dim=1)
 
-    not_pass = ~states[state_indices, :, action_ys, action_xs].any(dim=1).view(-1, 1, 1)
-    states[:, 0, :, :].logical_or_(flips_to_apply * not_pass)
-    states[:, 1, :, :] *= torch.logical_not(flips_to_apply * not_pass)
-    states[state_indices, 0, action_ys, action_xs] = not_pass.view(-1).float()
-    return states
+    any_rays = ray_tensor.view(num_states, -1).any(dim=1)
+    states[:, 0, :, :].logical_or_(flips_to_apply)
+    states[:, 1, :, :] *= torch.logical_not(flips_to_apply)
+    states[state_indices, 0, action_ys, action_xs] += any_rays.float()
+    return states, ~any_rays

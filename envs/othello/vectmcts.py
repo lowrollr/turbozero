@@ -14,22 +14,25 @@ class OthelloLazyMCTS(VectorizedLazyMCTS):
 
     def explore_for_iters(self, model: torch.nn.Module, iters: int, search_depth: int) -> torch.Tensor:
         legal_actions = self.env.get_legal_actions()
-        env_ray_tensor = self.env.ray_tensor.clone()
+        env_ray_tensor, consecutive, initial_state, cur_player = self.env.ray_tensor.clone(), self.env.consecutive_passes.clone(), self.env.states.clone(), self.env.cur_player.clone()
         with torch.no_grad():
             policy_logits, _ = model(self.env.states)
         policy_logits = torch.nn.functional.softmax(policy_logits, dim=1)
-        initial_state = self.env.states.clone()
 
         for _ in range(iters):
             actions = self.choose_action_with_puct(policy_logits, legal_actions)    
-            _, info = self.env.step(actions)
+            self.env.step(actions)
+            rewards = self.env.get_rewards()
             self.visit_counts[self.env.env_indices, actions] += 1
-            value = self.iterate(model, search_depth, info['rewards'])
-            if search_depth % 2 == 1:
+            
+            value = self.iterate(model, search_depth, rewards)
+            if search_depth % 2:
                 value = 1 - value
             self.action_scores[self.env.env_indices, actions] += value
             self.env.states = initial_state.clone()
             self.env.ray_tensor = env_ray_tensor.clone()
+            self.env.consecutive_passes = consecutive.clone()
+            self.env.cur_player = cur_player.clone()
             self.env.update_terminated()
 
         

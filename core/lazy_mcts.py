@@ -63,6 +63,7 @@ class VectorizedLazyMCTS:
                 policy_logits, values = model(self.env.states)            
             depth -= 1
             if depth == 0:
+                rewards = self.env.get_rewards()
                 final_values = values.squeeze(1) * torch.logical_not(self.env.terminated)
                 final_values += rewards * self.env.terminated
                 return final_values
@@ -70,8 +71,7 @@ class VectorizedLazyMCTS:
                 legal_actions = self.env.get_legal_actions()
                 distribution = torch.nn.functional.softmax(policy_logits, dim=1) * legal_actions
                 next_actions = self.env.fast_weighted_sample(distribution)
-                _, info = self.env.step(next_actions)
-                rewards = info['rewards']
+                self.env.step(next_actions)
 
     def explore_for_iters(self, model: torch.nn.Module,iters: int, search_depth: int) -> torch.Tensor:
         legal_actions = self.env.get_legal_actions()
@@ -82,9 +82,10 @@ class VectorizedLazyMCTS:
 
         for _ in range(iters):
             actions = self.choose_action_with_puct(policy_logits, legal_actions)    
-            _, info = self.env.step(actions)
+            self.env.step(actions)
+            rewards = self.env.get_rewards()
             self.visit_counts[self.env.env_indices, actions] += 1
-            self.action_scores[self.env.env_indices, actions] += self.iterate(model, search_depth, info['rewards'])
+            self.action_scores[self.env.env_indices, actions] += self.iterate(model, search_depth, rewards)
             self.env.states = initial_state.clone()
             self.env.update_terminated()
 

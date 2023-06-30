@@ -22,9 +22,13 @@ class OthelloVectEnv(VectEnv):
         self.ray_tensor = torch.zeros((num_parallel_envs, num_rays, self.board_size, self.board_size), dtype=torch.float32, device=device, requires_grad=False)
         self.cur_player = torch.zeros((num_parallel_envs, ), dtype=torch.long, device=device, requires_grad=False)
         
-        self.reset()
+        
         self.filters_and_indices = build_filters(device, board_size)
         self.flips = build_flips(num_rays, board_size, device)
+
+        self.consecutive_passes = torch.zeros((num_parallel_envs, ), dtype=torch.long, device=device, requires_grad=False)
+
+        self.reset()
 
         if debug:
             self.get_legal_actions_traced = get_legal_actions
@@ -38,7 +42,9 @@ class OthelloVectEnv(VectEnv):
         return self.get_legal_actions_traced(self.states, self.ray_tensor, *self.filters_and_indices)
     
     def push_actions(self, actions):
-        self.push_actions_traced(self.states, self.ray_tensor, actions, self.flips)
+        _, passes = self.push_actions_traced(self.states, self.ray_tensor, actions, self.flips)
+        self.consecutive_passes += passes
+        self.consecutive_passes *= passes
     
     def next_turn(self):
         self.states = torch.roll(self.states, 1, dims=1)
@@ -53,19 +59,17 @@ class OthelloVectEnv(VectEnv):
         self.rewards.zero_()
         self.terminated.zero_()
         self.cur_player.zero_()
+        self.consecutive_passes.zero_()
         self.states[:, 0, 3, 3] = 1
         self.states[:, 1, 3, 4] = 1
         self.states[:, 1, 4, 3] = 1
         self.states[:, 0, 4, 4] = 1
 
     def is_terminal(self):
-        return self.states.sum(dim=(1, 2, 3)) == (self.board_size ** 2)
+        return (self.states.sum(dim=(1, 2, 3)) == (self.board_size ** 2)) | self.consecutive_passes >= 2
     
     def update_terminated(self):
         super().update_terminated()
-        # ensures that cur_player will match with last reward when accessing reward for a terminal state
-        self.cur_player -= 1 * self.terminated
-        self.cur_player %= 2
     
     def get_rewards(self):
         self.rewards.zero_()
@@ -78,6 +82,7 @@ class OthelloVectEnv(VectEnv):
     def reset_terminated_states(self):
         self.states *= 1 * ~self.terminated.view(-1, 1, 1, 1)
         self.cur_player *= 1 * ~self.terminated
+        self.consecutive_passes *= 1 * ~self.terminated
         mask = 1 * self.terminated
         self.states[:, 0, 3, 3] += mask
         self.states[:, 1, 3, 4] += mask

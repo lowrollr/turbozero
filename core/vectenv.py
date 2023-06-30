@@ -34,12 +34,11 @@ class VectEnv:
     def reset(self, seed=None):
         raise NotImplementedError()
     
-    def step(self, actions) -> Tuple[torch.Tensor, dict]:
+    def step(self, actions) -> torch.Tensor:
         self.push_actions(actions)
-        info = {'rewards': self.get_rewards()}
         self.next_turn()
         self.update_terminated()
-        return self.terminated, info
+        return self.terminated
     
     def update_terminated(self):
         self.terminated = self.is_terminal()
