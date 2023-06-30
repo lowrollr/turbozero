@@ -88,14 +88,8 @@ def build_filters(device: torch.device, board_size: int):
         torch.tensor(close_to_top_right, device=device, dtype=torch.float32, requires_grad=False).view(1, -1, 1, 1)
 
 
-def get_legal_actions(states, ray_tensor):
+def get_legal_actions(states, ray_tensor, filters, bl, br, tl, tr, cbl, cbr, ctl, ctr):
     board_size = int(states.shape[-1]) # need to wrap in int() for tracing
-
-    # these all become constants after tracing
-    filters, bl, br, tl, tr, cbl, cbr, ctl, ctr = build_filters(states.device, board_size)
-
-    close_to = torch.arange(board_size - 2, device=states.device, requires_grad=False, dtype=torch.long) + 2
-    close_to = close_to.float().view(1, 1, board_size-2)
     conv_results = torch.nn.functional.conv2d(states, filters, padding=board_size-1)
     ray_tensor[:, tl] = conv_results[:, tl, board_size-1:, board_size-1:].isclose(ctl, 1e-3).float()
     ray_tensor[:, tr] = conv_results[:, tr, board_size-1:, :board_size].isclose(ctr, 1e-3).float()
