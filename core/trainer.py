@@ -72,7 +72,7 @@ class Trainer:
         if num_steps > 0:
             self.model.train()
             memory_size = self.replay_memory.size()
-            if memory_size > self.hypers.replay_memory_min_size:
+            if memory_size >= self.hypers.replay_memory_min_size:
                 for _ in range(num_steps):
                     minibatch_value_loss = 0.0
                     minibatch_policy_loss = 0.0
