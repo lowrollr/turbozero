@@ -29,7 +29,8 @@ class OthelloLazyMCTS(VectorizedLazyMCTS):
                 value = 1 - value
             self.action_scores[self.env.env_indices, actions] += value
             self.env.states = initial_state.clone()
+            self.env.ray_tensor = env_ray_tensor.clone()
             self.env.update_terminated()
 
-        self.env.ray_tensor = env_ray_tensor
+        
         return self.visit_counts
