@@ -110,7 +110,7 @@ class OthelloTrainer(Trainer):
         # pits the current model against the previous best model
         split = num_episodes // 2
         completed_episodes = torch.zeros(num_episodes, dtype=torch.bool, device=self.device, requires_grad=False)
-        scores = torch.zeros(num_episodes, dtype=torch.float32, requires_grad=False)
+        scores = torch.zeros(num_episodes, dtype=torch.float32, device=self.device, requires_grad=False)
         self.test_collector.collect_step(self.model, epsilon=0.0)
         # hacky way to split the episodes into two sets (this environment cannot terminate on the first step)
         self.test_collector.evaluator.env.terminated[:split] = True
