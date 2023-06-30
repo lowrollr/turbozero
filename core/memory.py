@@ -45,11 +45,10 @@ class EpisodeMemory:
 
     def pop_terminated_episodes(self, terminated: torch.Tensor):
         episodes = []
-        for i in range(self.num_parallel_envs):
-            if terminated[i]:
-                episode = self.memory[i]
-                episodes.append(episode)
-                self.memory[i] = []
+        for i in terminated.nonzero().flatten():
+            episode = self.memory[i]
+            episodes.append(episode)
+            self.memory[i] = []
         return episodes
     
 
