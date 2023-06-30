@@ -64,6 +64,7 @@ class OthelloTrainer(Trainer):
         )
 
         self.best_model = deepcopy(model)
+        self.random_baseline = deepcopy(model)
         self.best_model_optimizer_state_dict = deepcopy(optimizer.state_dict())
 
 
@@ -95,7 +96,8 @@ class OthelloTrainer(Trainer):
             episode_metrics=[],
             eval_metrics=[],
             epoch_metrics=[
-                Metric(name='win_margin', xlabel='Epoch', ylabel='Margin (+/- games)', maximize=True, alert_on_best=False, proper_name='Win Margin (Current Model vs. Best Model)'),
+                Metric(name='win_margin_vs_best', xlabel='Epoch', ylabel='Margin (+/- games)', maximize=True, alert_on_best=False, proper_name='Win Margin (Current Model vs. Best Model)'),
+                Metric(name='win_margin_vs_random', xlabel='Epoch', ylabel='Margin (+/- games)', maximize=True, alert_on_best=False, proper_name='Win Margin (Current Model vs. Random Model)'),
             ]
         )
     
@@ -106,9 +108,8 @@ class OthelloTrainer(Trainer):
     def add_epoch_metrics(self):
         pass
 
-    def evaluate_n_episodes(self, num_episodes):
+    def evaluate_against(self, num_episodes, other_model):
         self.test_collector.reset()
-        # pits the current model against the previous best model
         split = num_episodes // 2
         completed_episodes = torch.zeros(num_episodes, dtype=torch.bool, device=self.device, requires_grad=False)
         scores = torch.zeros(num_episodes, dtype=torch.float32, device=self.device, requires_grad=False)
@@ -116,42 +117,57 @@ class OthelloTrainer(Trainer):
         # hacky way to split the episodes into two sets (this environment cannot terminate on the first step)
         self.test_collector.evaluator.env.terminated[:split] = True
         self.test_collector.evaluator.env.reset_terminated_states()
-        use_best_model = True
+        use_other_model = True
         while not completed_episodes.all():
-            model = self.best_model if use_best_model else self.model
+            model = other_model if use_other_model else self.model
             # we don't need to collect the episodes into episode memory/replay buffer, so we can call collect_step directly
             terminated = self.test_collector.collect_step(model, epsilon=0.0)
 
-            if use_best_model:
+            if use_other_model:
                 # rewards are from the perspective of the next player
                 scores += self.test_collector.evaluator.env.get_rewards() * terminated * ~completed_episodes
             else:
                 scores += (1 - self.test_collector.evaluator.env.get_rewards()) * terminated * ~completed_episodes
 
             completed_episodes |= terminated
-            use_best_model = not use_best_model
+            use_other_model = not use_other_model
 
         wins = (scores == 1).sum().cpu().clone()
         draws = (scores == 0.5).sum().cpu().clone()
         losses = (scores == 0).sum().cpu().clone()
         win_margin = wins - losses
 
-        new_best = win_margin >= self.hypers.improvement_threshold
+        return wins, draws, losses
 
+
+    def evaluate_n_episodes(self, num_episodes):
+        
+        wins, draws, losses = self.evaluate_against(num_episodes, self.best_model)
+        win_margin_vs_best = wins - losses
+        new_best = win_margin_vs_best >= self.hypers.improvement_threshold
+        logging.info(f'Epoch {self.history.cur_epoch} Current vs. Best:')
         if new_best:
             self.best_model.load_state_dict(self.model.state_dict())
             self.best_model_optimizer_state_dict = deepcopy(self.optimizer.state_dict())
             logging.info('************ NEW BEST MODEL ************')
-            logging.info(f'Epoch {self.history.cur_epoch} - W/L/D: {wins}/{losses}/{draws}')
         else:
             self.model.load_state_dict(self.best_model.state_dict())
             self.optimizer.load_state_dict(self.best_model_optimizer_state_dict)
-            logging.info(f'Epoch {self.history.cur_epoch} - W/L/D: {wins}/{losses}/{draws}')
-        self.add_evaluation_metrics([])
-        self.history.add_epoch_data({
-            'win_margin': win_margin,
-        }, log=self.log_results)
+        logging.info(f'W/L/D: {wins}/{losses}/{draws}')
         
+        
+        
+        wins, draws, losses = self.evaluate_against(num_episodes, self.random_baseline)
+        win_margin_vs_random = wins - losses
+        logging.info(f'Epoch {self.history.cur_epoch} Current vs. Random:')
+        logging.info(f'W/L/D: {wins}/{losses}/{draws}')
+        self.history.add_epoch_data({
+            'win_margin_vs_best': win_margin_vs_best,
+            'win_margin_vs_random': win_margin_vs_random,
+        }, log=self.log_results)
+        self.add_evaluation_metrics([])
+
+
 
 def init_2048_trainer_from_checkpoint(
     num_parallel_envs: int,
