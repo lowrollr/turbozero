@@ -87,25 +87,8 @@ def build_filters(device: torch.device, board_size: int):
         torch.tensor(close_to_top_left, device=device, dtype=torch.float32, requires_grad=False).view(1, -1, 1, 1), \
         torch.tensor(close_to_top_right, device=device, dtype=torch.float32, requires_grad=False).view(1, -1, 1, 1)
 
-
-def get_legal_actions(states, ray_tensor, filters, bl, br, tl, tr, cbl, cbr, ctl, ctr):
-    board_size = int(states.shape[-1]) # need to wrap in int() for tracing
-    conv_results = torch.nn.functional.conv2d(states, filters, padding=board_size-1)
-    ray_tensor[:, tl] = conv_results[:, tl, board_size-1:, board_size-1:].isclose(ctl, 1e-3).float()
-    ray_tensor[:, tr] = conv_results[:, tr, board_size-1:, :board_size].isclose(ctr, 1e-3).float()
-    ray_tensor[:, bl] = conv_results[:, bl, :board_size, board_size-1:].isclose(cbl, 1e-3).float()
-    ray_tensor[:, br] = conv_results[:, br, :board_size, :board_size].isclose(cbr, 1e-3).float()
-    
-    return ray_tensor.any(dim=1).view(states.shape[0], -1)
-
-
-def push_actions(states, ray_tensor, actions):
-    num_rays = ray_tensor.shape[1]
-    states_size = states.shape[-1]
-    num_states = states.shape[0]
-    state_indices = torch.arange(num_states, device=states.device, requires_grad=False, dtype=torch.long)
-
-    flips = torch.zeros((num_rays, states_size, states_size, states_size, states_size), device=states.device, requires_grad=False, dtype=torch.float32)
+def build_flips(num_rays, states_size, device):
+    flips = torch.zeros((num_rays, states_size, states_size, states_size, states_size), device=device, requires_grad=False, dtype=torch.float32)
     f_index = 0
     for i in range(2, states_size):
         for x in range(states_size):
@@ -131,7 +114,27 @@ def push_actions(states, ray_tensor, actions):
                         if x+j < states_size:
                             flips[f_index+7, y, x, y-j, x+j] = 1
         f_index += 8
+    return flips
 
+
+def get_legal_actions(states, ray_tensor, filters, bl, br, tl, tr, cbl, cbr, ctl, ctr):
+    board_size = int(states.shape[-1]) # need to wrap in int() for tracing
+    conv_results = torch.nn.functional.conv2d(states, filters, padding=board_size-1)
+    ray_tensor[:, tl] = conv_results[:, tl, board_size-1:, board_size-1:].isclose(ctl, 1e-3).float()
+    ray_tensor[:, tr] = conv_results[:, tr, board_size-1:, :board_size].isclose(ctr, 1e-3).float()
+    ray_tensor[:, bl] = conv_results[:, bl, :board_size, board_size-1:].isclose(cbl, 1e-3).float()
+    ray_tensor[:, br] = conv_results[:, br, :board_size, :board_size].isclose(cbr, 1e-3).float()
+    
+    return ray_tensor.any(dim=1).view(states.shape[0], -1)
+
+
+def push_actions(states, ray_tensor, actions, flips):
+    num_rays = ray_tensor.shape[1]
+    states_size = states.shape[-1]
+    num_states = states.shape[0]
+    state_indices = torch.arange(num_states, device=states.device, requires_grad=False, dtype=torch.long)
+
+    
     action_ys, action_xs = actions // states_size, actions % states_size
 
     activated_rays = ray_tensor[state_indices, :, action_ys, action_xs] * (torch.arange(num_rays, device=states.device, requires_grad=False).unsqueeze(0))

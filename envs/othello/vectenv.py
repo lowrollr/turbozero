@@ -3,7 +3,7 @@ import torch
 
 from core import GLOB_FLOAT_TYPE
 from core.vectenv import VectEnv
-from .torchscripts import get_legal_actions, push_actions, build_filters
+from .torchscripts import get_legal_actions, push_actions, build_filters, build_flips
 
 class OthelloVectEnv(VectEnv):
     def __init__(self, 
@@ -24,20 +24,21 @@ class OthelloVectEnv(VectEnv):
         
         self.reset()
         self.filters_and_indices = build_filters(device, board_size)
+        self.flips = build_flips(num_rays, board_size, device)
 
         if debug:
             self.get_legal_actions_traced = get_legal_actions
             self.push_actions_traced = push_actions
         else:
             self.get_legal_actions_traced = torch.jit.trace(get_legal_actions, (self.states, self.ray_tensor, *self.filters_and_indices))
-            self.push_actions_traced = torch.jit.trace(push_actions, (self.states, self.ray_tensor, torch.zeros((self.num_parallel_envs, ), dtype=torch.long, device=device)))
+            self.push_actions_traced = torch.jit.trace(push_actions, (self.states, self.ray_tensor, torch.zeros((self.num_parallel_envs, ), dtype=torch.long, device=device), self.flips))
 
     def get_legal_actions(self):
         # adjacent to enemy tiles
         return self.get_legal_actions_traced(self.states, self.ray_tensor, *self.filters_and_indices)
     
     def push_actions(self, actions):
-        self.push_actions_traced(self.states, self.ray_tensor, actions)
+        self.push_actions_traced(self.states, self.ray_tensor, actions, self.flips)
     
     def next_turn(self):
         self.states = torch.roll(self.states, 1, dims=1)
