@@ -130,9 +130,9 @@ class OthelloTrainer(Trainer):
             completed_episodes |= terminated
             use_best_model = not use_best_model
 
-        wins = (scores == 1).sum()
-        draws = (scores == 0.5).sum()
-        losses = (scores == 0).sum()
+        wins = (scores == 1).sum().cpu().clone()
+        draws = (scores == 0.5).sum().cpu().clone()
+        losses = (scores == 0).sum().cpu().clone()
         win_margin = wins - losses
 
         new_best = win_margin >= self.hypers.improvement_threshold

@@ -24,8 +24,8 @@ class OthelloCollector(Collector):
         
         if terminated.any():
             term_indices = terminated.nonzero(as_tuple=False).flatten()
-            rewards = self.evaluator.env.get_rewards().detach().cpu().numpy()
-            cur_players = self.evaluator.env.cur_player.detach().cpu().numpy()
+            rewards = self.evaluator.env.get_rewards().cpu().numpy()
+            cur_players = self.evaluator.env.cur_player.cpu().numpy()
             for i, episode in enumerate(terminated_episodes):
                 episode_with_rewards = []
                 ti = term_indices[i]
