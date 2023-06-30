@@ -111,8 +111,8 @@ def push_actions(states, ray_tensor, actions):
     num_states = states.shape[0]
     state_indices = torch.arange(num_states, device=states.device, requires_grad=False, dtype=torch.long)
 
-    flips = torch.zeros((num_rays+1, states_size, states_size, states_size, states_size), device=states.device, requires_grad=False, dtype=torch.float32)
-    f_index = 1
+    flips = torch.zeros((num_rays, states_size, states_size, states_size, states_size), device=states.device, requires_grad=False, dtype=torch.float32)
+    f_index = 0
     for i in range(2, states_size):
         for x in range(states_size):
             for y in range(states_size):
