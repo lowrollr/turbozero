@@ -56,6 +56,9 @@ class VectorizedMCTS:
 
     def reset(self, seed=None) -> None:
         self.env.reset(seed=seed)
+        self.reset_search()
+
+    def reset_search(self) -> None:
         self.depths.fill_(1)
         self.cur_nodes.fill_(1)
         self.visits.zero_()
@@ -120,6 +123,7 @@ class VectorizedMCTS:
         return torch.argmax(legal_puct_scores, dim=1)
 
     def explore(self, model: torch.nn.Module) -> torch.Tensor:
+        self.reset_search()
         # save the root node so that we can reset the environment to this state when we reach a leaf node
         self.env.save_node()
 
@@ -145,28 +149,23 @@ class VectorizedMCTS:
             next_indices = self.next_indices
             next_indices[self.env_indices, actions] = master_action_indices
             self.next_indices = next_indices
-
             # update the visits tensor to include the new node added to the path from the root
             self.visits[self.env_indices, self.depths] = master_action_indices.long()
             self.actions[self.env_indices, self.depths - 1] = actions
-
             # make a step in the environment with the chosen actions
             self.env.step(actions)
-
             # cur nodes should now reflect the taken actions
             self.cur_nodes = master_action_indices.long()
-            
             # get policy and values for the new states from the model
             with torch.no_grad():
                 policy_logits, values = model(self.env.states)
-            
             # store the policy, zeroing out illegal moves
             self.p_vals = torch.softmax(policy_logits, dim=1) * self.env.get_legal_actions()
-
             # propagate values and visit counts to nodes on the visited path (if the current node is a leaf)
-            self.nodes[self.env_indices_expnd, self.visits, self.actions + self.n_start] += (1 * self.is_leaf).view(-1, 1)
-            self.nodes[self.env_indices_expnd, self.visits, self.actions + self.w_start ] += (values * self.is_leaf.view(-1, 1))
-
+            # (we only want to increment actual node visits, filter on visits > 0)
+            valid = torch.roll(self.visits, -1, 1) > 0
+            self.nodes[self.env_indices_expnd, self.visits, self.actions + self.n_start] += (1 * valid * self.is_leaf.view(-1, 1))
+            self.nodes[self.env_indices_expnd, self.visits, self.actions + self.w_start ] += (values * valid * self.is_leaf.view(-1, 1))
             # update the depths tensor to reflect the current search depth for each environment
             self.depths *= (~self.is_leaf).long()
             self.depths += 1 
@@ -177,12 +176,9 @@ class VectorizedMCTS:
             self.env.load_node(self.env_indices * self.is_leaf)
             self.cur_nodes *= (~self.is_leaf).long()
             self.cur_nodes += self.is_leaf.long()
-            
-       
         # return to the root node
         self.cur_nodes.fill_(1)
         self.env.load_node(self.cur_nodes)
-
         # return visited counts at the root node
         return self.n_vals
             
