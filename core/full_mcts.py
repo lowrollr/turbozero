@@ -58,6 +58,8 @@ class VectorizedMCTS:
         self.subtree_next_index = torch.zeros((parallel_envs, policy_size), dtype=torch.int64, device=device, requires_grad=False)
         self.subtree_mappings = torch.zeros((parallel_envs, self.max_depth), dtype=torch.int64, device=device, requires_grad=False)
 
+        self.depth_indices = torch.arange(1, self.max_depth+1, dtype=torch.int64, device=device, requires_grad=False).view(1,-1)
+
     def reset(self, seed=None) -> None:
         self.env.reset(seed=seed)
         self.nodes.zero_()
@@ -130,7 +132,7 @@ class VectorizedMCTS:
 
     def explore(self, model: torch.nn.Module, prev_actions: Optional[torch.Tensor] = None) -> torch.Tensor:
         
-        self.env.save_node()
+        
         if prev_actions is not None:
             self.load_subtree(prev_actions)
         else:
@@ -142,58 +144,67 @@ class VectorizedMCTS:
 
             # set root node policy 
             self.p_vals = (torch.softmax(policy_logits, dim=1) * self.env.get_legal_actions())
+        self.env.save_node()
 
         for i in range(self.max_evals):
+            self.p_vals *= self.env.get_legal_actions()
             # choose next action with PUCT scores
             actions = self.choose_action()
             # look up master index for each child node
             master_action_indices = self.next_indices[self.env_indices, actions]
             # if the node doesn't have an index yet (0 is null), its a leaf node
             self.is_leaf = master_action_indices == 0
+
+            is_leaf_long = self.is_leaf.long()
+            not_is_leaf_long = (~self.is_leaf).long()
+            is_leaf_long_expnd = is_leaf_long.view(-1, 1)
+            not_is_leaf_long_expnd = not_is_leaf_long.view(-1, 1)
+
             # assign the leaf nodes the next empty index
-            master_action_indices += self.next_empty * self.is_leaf
+            master_action_indices += self.next_empty * is_leaf_long
+            master_action_indices_long = master_action_indices.long()
             # increment self.next_empty to reflect the new next empty index
-            self.next_empty += 1 * self.is_leaf
+            self.next_empty += is_leaf_long
             # update the null values in the indices to reflect any new assigned indices
             next_indices = self.next_indices
             next_indices[self.env_indices, actions] = master_action_indices
             self.next_indices = next_indices
             # update the visits tensor to include the new node added to the path from the root
-            self.visits[self.env_indices, self.depths] = master_action_indices.long()
+            self.visits[self.env_indices, self.depths] = master_action_indices_long
             self.actions[self.env_indices, self.depths - 1] = actions
             # make a step in the environment with the chosen actions
             self.env.step(actions)
             # cur nodes should now reflect the taken actions
-            self.cur_nodes = master_action_indices.long()
+            self.cur_nodes = master_action_indices_long
             # get policy and values for the new states from the model
             with torch.no_grad():
                 policy_logits, values = model(self.env.states)
             # store the policy, zeroing out illegal moves
-            self.p_vals = torch.softmax(policy_logits, dim=1) * self.env.get_legal_actions()
+            self.p_vals = torch.softmax(policy_logits, dim=1) 
             # propagate values and visit counts to nodes on the visited path (if the current node is a leaf)
             # (we only want to increment actual node visits, filter on visits > 0)
             valid = torch.roll(self.visits, -1, 1) > 0
-            self.nodes[self.env_indices_expnd, self.visits, self.actions + self.n_start] += (1 * valid * self.is_leaf.view(-1, 1))
-            self.nodes[self.env_indices_expnd, self.visits, self.actions + self.w_start ] += (values * valid * self.is_leaf.view(-1, 1))
+            self.nodes[self.env_indices_expnd, self.visits, self.actions + self.n_start] += (valid * is_leaf_long_expnd)
+            self.nodes[self.env_indices_expnd, self.visits, self.actions + self.w_start ] += (values * valid * is_leaf_long_expnd)
             # if we've moved from the root node, set the current subtree
-            self.cur_subtree *= (~(self.depths == 1)).long() 
-            self.cur_subtree += actions * (self.depths == 1).long() 
+            self.cur_subtree *= not_is_leaf_long
+            self.cur_subtree += actions * is_leaf_long
             # add node to current subtree
-            self.subtree_indices[self.env_indices, self.cur_subtree, self.subtree_next_index[self.env_indices, self.cur_subtree]] += master_action_indices.long() * self.is_leaf
-            self.subtree_next_index[self.env_indices, self.cur_subtree] += 1 * self.is_leaf
+            self.subtree_indices[self.env_indices, self.cur_subtree, self.subtree_next_index[self.env_indices, self.cur_subtree]] += master_action_indices_long * is_leaf_long
+            self.subtree_next_index[self.env_indices, self.cur_subtree] += is_leaf_long
             # update the depths tensor to reflect the current search depth for each environment
-            self.depths *= (~self.is_leaf).long()
+            self.depths *= not_is_leaf_long
             self.depths += 1 
             # zero out visits and actions if we've reached a leaf node
-            self.visits[:, 1:] *= 1 * (~self.is_leaf).view(-1, 1)
-            self.actions *= 1 * (~self.is_leaf).view(-1, 1)
+            self.visits[:, 1:] *= not_is_leaf_long_expnd
+            self.actions *= not_is_leaf_long_expnd
             # reset to root node if we've reached a leaf node
-            self.env.load_node(self.env_indices * self.is_leaf)
-            self.cur_nodes *= (~self.is_leaf).long()
-            self.cur_nodes += self.is_leaf.long()
+            self.env.load_node(self.is_leaf)
+            self.cur_nodes *= not_is_leaf_long
+            self.cur_nodes += is_leaf_long
         # return to the root node
         self.cur_nodes.fill_(1)
-        self.env.load_node(self.cur_nodes)
+        self.env.load_node(self.cur_nodes.bool())
         # return visited counts at the root node
         return self.n_vals
     
@@ -204,7 +215,7 @@ class VectorizedMCTS:
         self.nodes[:,1:-1] = self.nodes[self.env_indices_expnd, node_ids_in_subtree]
 
         self.subtree_mappings.zero_()
-        self.subtree_mappings[self.env_indices_expnd, node_ids_in_subtree] = torch.arange(1, self.max_depth+1).view(1, -1)
+        self.subtree_mappings[self.env_indices_expnd, node_ids_in_subtree] = self.depth_indices
         self.subtree_mappings[:, 0] = 0
         self.nodes[:, :, self.i_start:self.i_end] = self.subtree_mappings[self.env_indices.view(-1, 1, 1), self.nodes[:, :, self.i_start:self.i_end].long()]
         
