@@ -10,39 +10,32 @@ def build_filters(device: torch.device, board_size: int):
     top_right_indices = []
     bottom_left_indices = []
     bottom_right_indices = []
-    close_to_top_left = []
-    close_to_top_right = []
-    close_to_bottom_left = []
-    close_to_bottom_right = []
-
+    close_to = (torch.arange(-1, num_filters, dtype=torch.long, device=device) // 8) + 2
+    
     for i in range(2, board_size):
         # right
         filters[index, 1, 0, 1:i] = 1
         filters[index, 0, 0, i] = 1
         filters[index, :, 0, 0] = -1
         top_left_indices.append(index)
-        close_to_top_left.append(i)
         index += 1
         # left
         filters[index, 1, -1, -i:-1] = 1
         filters[index, 0, -1, -i-1] = 1
         filters[index, :, -1, -1] = -1
         bottom_right_indices.append(index)
-        close_to_bottom_right.append(i)
         index += 1
         # down
         filters[index, 1, 1:i, 0] = 1
         filters[index, 0, i, 0] = 1
         filters[index, :, 0, 0] = -1
         top_left_indices.append(index)
-        close_to_top_left.append(i)
         index += 1
         # up
         filters[index, 1, -i:-1, -1] = 1
         filters[index, 0, -i-1, -1] = 1
         filters[index, :, -1, -1] = -1
         bottom_right_indices.append(index)
-        close_to_bottom_right.append(i)
         index += 1
 
         for j in range(1, i):
@@ -55,25 +48,21 @@ def build_filters(device: torch.device, board_size: int):
         filters[index, 0, i, i] = 1 
         filters[index, :, 0, 0] = -1
         top_left_indices.append(index)
-        close_to_top_left.append(i)
         index += 1
         # up right
         filters[index, 0, -1-i, i] = 1 
         filters[index, :, -1, 0] = -1
         bottom_left_indices.append(index)
-        close_to_bottom_left.append(i)
         index += 1
         # up left
         filters[index, 0, -1-i, -1-i] = 1
         filters[index, :, -1, -1] = -1
         bottom_right_indices.append(index)
-        close_to_bottom_right.append(i)
         index += 1
         # down left
         filters[index, 0, i, -1-i] = 1
         filters[index, :, 0, -1] = -1
         top_right_indices.append(index)
-        close_to_top_right.append(i)
         index += 1
     
 
@@ -82,10 +71,7 @@ def build_filters(device: torch.device, board_size: int):
         torch.tensor(bottom_right_indices, device=device, requires_grad=False), \
         torch.tensor(top_left_indices, device=device, requires_grad=False), \
         torch.tensor(top_right_indices, device=device, requires_grad=False), \
-        torch.tensor(close_to_bottom_left, device=device, dtype=torch.float32, requires_grad=False).view(1, -1, 1, 1), \
-        torch.tensor(close_to_bottom_right, device=device, dtype=torch.float32, requires_grad=False).view(1, -1, 1, 1), \
-        torch.tensor(close_to_top_left, device=device, dtype=torch.float32, requires_grad=False).view(1, -1, 1, 1), \
-        torch.tensor(close_to_top_right, device=device, dtype=torch.float32, requires_grad=False).view(1, -1, 1, 1)
+        close_to.view(1, -1, 1, 1)
 
 def build_flips(num_rays, states_size, device):
     flips = torch.zeros((num_rays, states_size, states_size, states_size, states_size), device=device, requires_grad=False, dtype=torch.float32)
@@ -117,16 +103,16 @@ def build_flips(num_rays, states_size, device):
     return flips
 
 
-def get_legal_actions(states, ray_tensor, filters, bl, br, tl, tr, cbl, cbr, ctl, ctr):
+def get_legal_actions(states, ray_tensor, filters, bl_idx, br_idx, tl_idx, tr_idx, ct):
     board_size = int(states.shape[-1]) # need to wrap in int() for tracing
     conv_results = torch.nn.functional.conv2d(states, filters, padding=board_size-1, bias=None)
     ray_tensor.zero_()
-    ray_tensor[:, tl] = conv_results[:, tl, board_size-1:, board_size-1:].isclose(ctl, 1e-5).float()
-    ray_tensor[:, tr] = conv_results[:, tr, board_size-1:, :-(board_size-1)].isclose(ctr, 1e-5).float()
-    ray_tensor[:, bl] = conv_results[:, bl, :-(board_size-1), board_size-1:].isclose(cbl, 1e-5).float()
-    ray_tensor[:, br] = conv_results[:, br, :-(board_size-1), :-(board_size-1)].isclose(cbr, 1e-5).float()
-    
-    return ray_tensor.any(dim=1).view(states.shape[0], -1)
+    ray_tensor[:, tl_idx] = conv_results[:, tl_idx, board_size-1:, board_size-1:]
+    ray_tensor[:, tr_idx] = conv_results[:, tr_idx, board_size-1:, :-(board_size-1)]
+    ray_tensor[:, bl_idx] = conv_results[:, bl_idx, :-(board_size-1), board_size-1:]
+    ray_tensor[:, br_idx] = conv_results[:, br_idx, :-(board_size-1), :-(board_size-1)]
+    ray_tensor[:] = (ray_tensor.round() == ct).float()
+    return ray_tensor.any(dim=1).view(-1, board_size ** 2)
 
 
 def push_actions(states, ray_tensor, actions, flips):
