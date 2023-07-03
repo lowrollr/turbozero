@@ -22,13 +22,13 @@ class OthelloVectEnv(VectEnv):
         self.ray_tensor = torch.zeros((num_parallel_envs, num_rays, self.board_size, self.board_size), dtype=torch.float32, device=device, requires_grad=False)
         self.cur_player = torch.zeros((num_parallel_envs, ), dtype=torch.long, device=device, requires_grad=False)
         
-        
         self.filters_and_indices = build_filters(device, board_size)
         self.flips = build_flips(num_rays, board_size, device)
 
         self.consecutive_passes = torch.zeros((num_parallel_envs, ), dtype=torch.long, device=device, requires_grad=False)
 
         self.reset()
+        self.save_node()
 
         if debug:
             self.get_legal_actions_traced = get_legal_actions
@@ -89,5 +89,18 @@ class OthelloVectEnv(VectEnv):
         self.states[:, 1, 4, 3] += mask
         self.states[:, 0, 4, 4] += mask
         self.terminated.zero_()
+
+    def save_node(self):
+        self.saved = [
+            self.states.clone(),
+            self.cur_player.clone(),
+            self.consecutive_passes.clone(),
+            self.ray_tensor.clone()
+        ]
         
+    def load_node(self, envs):
+        self.states[envs] = self.saved[0][envs].clone()
+        self.cur_player[envs] = self.saved[1][envs].clone()
+        self.consecutive_passes[envs] = self.saved[2][envs].clone()
+        self.ray_tensor[envs] = self.saved[3][envs].clone()
 

@@ -79,3 +79,8 @@ class VectEnv:
     def next_turn(self):
         raise NotImplementedError()
     
+    def save_node(self):
+        raise NotImplementedError()
+    
+    def load_node(self, envs):
+        raise NotImplementedError()
