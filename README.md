@@ -1,5 +1,7 @@
 # LazyZero
 
+-- You can pretty much ignore everything you read below this, I'll be re-writing the readme (and re-naming the project) soon. I figured out how to vectorize non-naive AlphaZero and will be working on that going forward, expect updates soon -- 
+
 LazyZero is an approximate, GPU-accelerated, vectorized implementation of DeepMind's AlphaZero reinforcement learning algorithm. AlphaZero is an algorithm that utilizes Deep Neural Networks alongside Monte Carlo Tree Search to make decisions in perfect-information games, which has since been extended to other applications, such as video compression and code generation. 
 
 I speak a lot about AlphaZero and Monte Carlo Tree Search (MCTS) in this wiki, it would be useful to read the following atricle before jumping in if you aren't familiar with these concepts: https://web.stanford.edu/~surag/posts/alphazero.html. This article does a great job explaining the intuition behind AlphaZero and illustrating concepts with code.
