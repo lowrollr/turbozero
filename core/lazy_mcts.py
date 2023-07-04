@@ -73,6 +73,7 @@ class VectorizedLazyMCTS:
                 next_actions = self.env.fast_weighted_sample(distribution)
                 self.env.step(next_actions)
 
+
     def explore_for_iters(self, model: torch.nn.Module,iters: int, search_depth: int) -> torch.Tensor:
         legal_actions = self.env.get_legal_actions()
         with torch.no_grad():

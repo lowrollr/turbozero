@@ -103,6 +103,7 @@ def build_flips(num_rays, states_size, device):
     return flips
 
 
+
 def get_legal_actions(states, ray_tensor, filters, bl_idx, br_idx, tl_idx, tr_idx, ct):
     board_size = int(states.shape[-1]) # need to wrap in int() for tracing
     conv_results = torch.nn.functional.conv2d(states, filters, padding=board_size-1, bias=None)

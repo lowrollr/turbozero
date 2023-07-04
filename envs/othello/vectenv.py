@@ -27,6 +27,7 @@ class OthelloVectEnv(VectEnv):
 
         self.consecutive_passes = torch.zeros((num_parallel_envs, ), dtype=torch.long, device=device, requires_grad=False)
 
+        self.need_to_calculate_rays = True
         self.reset()
         self.save_node()
 
@@ -39,12 +40,20 @@ class OthelloVectEnv(VectEnv):
 
     def get_legal_actions(self):
         # adjacent to enemy tiles
-        return self.get_legal_actions_traced(self.states, self.ray_tensor, *self.filters_and_indices)
+        if self.need_to_calculate_rays:
+            self.need_to_calculate_rays = False
+            return self.get_legal_actions_traced(self.states, self.ray_tensor, *self.filters_and_indices)
+        else:
+            return self.ray_tensor.any(dim=1).view(-1, self.board_size ** 2)
     
     def push_actions(self, actions):
+        if self.need_to_calculate_rays:
+            self.need_to_calculate_rays = False
+            self.get_legal_actions_traced(self.states, self.ray_tensor, *self.filters_and_indices)
         _, passes = self.push_actions_traced(self.states, self.ray_tensor, actions, self.flips)
         self.consecutive_passes += passes
         self.consecutive_passes *= passes
+        self.need_to_calculate_rays = True
     
     def next_turn(self):
         self.states = torch.roll(self.states, 1, dims=1)
@@ -64,6 +73,7 @@ class OthelloVectEnv(VectEnv):
         self.states[:, 1, 3, 4] = 1
         self.states[:, 1, 4, 3] = 1
         self.states[:, 0, 4, 4] = 1
+        self.need_to_calculate_rays = True
 
     def is_terminal(self):
         return (self.states.sum(dim=(1, 2, 3)) == (self.board_size ** 2)) | self.consecutive_passes >= 2
@@ -89,18 +99,21 @@ class OthelloVectEnv(VectEnv):
         self.states[:, 1, 4, 3] += mask
         self.states[:, 0, 4, 4] += mask
         self.terminated.zero_()
+        self.need_to_calculate_rays = True
 
     def save_node(self):
         self.saved = [
             self.states.clone(),
             self.cur_player.clone(),
-            self.consecutive_passes.clone(),
-            self.ray_tensor.clone()
+            self.consecutive_passes.clone()
         ]
         
-    def load_node(self, envs):
-        self.states[envs] = self.saved[0][envs].clone()
-        self.cur_player[envs] = self.saved[1][envs].clone()
-        self.consecutive_passes[envs] = self.saved[2][envs].clone()
-        self.ray_tensor[envs] = self.saved[3][envs].clone()
+    def load_node(self, load_envs: torch.Tensor):
+        load_envs_expnd = load_envs.view(-1, 1, 1, 1)
+        self.states = self.saved[0].clone() * load_envs_expnd + self.states * (~load_envs_expnd)
+        self.cur_player = self.saved[1].clone() * load_envs + self.cur_player * (~load_envs)
+        self.consecutive_passes = self.saved[2].clone() * load_envs + self.consecutive_passes * (~load_envs)
+        self.need_to_calculate_rays = True
+        
+
 
