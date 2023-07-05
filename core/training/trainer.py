@@ -2,40 +2,48 @@ from typing import Optional
 import torch
 import logging
 from pathlib import Path
-from core.collector import Collector
-from core.history import Metric, TrainingMetrics
+from core.training.collector import Collector
+from core.utils.history import Metric, TrainingMetrics
 
-from core.hyperparameters import LZHyperparameters
-from core.memory import ReplayMemory
+from core.training.training_hypers import TurboZeroHypers
+from core.utils.memory import GameReplayMemory, ReplayMemory
 
 
 class Trainer:
     def __init__(self,
+        train_collector: Collector,
+        test_collector: Collector,
         num_parallel_envs: int,
         model: torch.nn.Module,
         optimizer: torch.optim.Optimizer,
-        hypers: LZHyperparameters,
+        hypers: TurboZeroHypers,
         device: torch.device,
-        episode_memory_device: torch.device = torch.device('cpu'),
         history: Optional[TrainingMetrics] = None,
         log_results: bool = True,
         interactive: bool = True,
         run_tag: str = 'model',
     ):
+        self.train_collector = train_collector
+        self.test_collector = test_collector
+        self.num_parallel_envs = num_parallel_envs
         self.model = model
         self.optimizer = optimizer
         self.hypers = hypers
         self.device = device
-        self.episode_memory_device = episode_memory_device
         self.log_results = log_results
         self.interactive = interactive
         self.run_tag = run_tag
 
         self.history = history if history else self.init_history()
 
-        self.train_collector: Collector
-        self.test_collector: Collector
-        self.replay_memory: ReplayMemory
+        if hypers.replay_memory_sample_games:
+            self.replay_memory = GameReplayMemory(
+                hypers.replay_memory_size
+            )
+        else:
+            self.replay_memory = ReplayMemory(
+                hypers.replay_memory_size,
+            )
 
 
     def init_history(self) -> TrainingMetrics:
@@ -117,7 +125,7 @@ class Trainer:
         return policy_loss.item(), value_loss.item(), policy_accuracy.item(), loss.item()
     
     def selfplay_step(self):
-        episode_fraction = (self.history.cur_train_episode % self.hypers.episodes_per_epoch) / self.hypers.episodes_per_epoch
+        episode_fraction = (self.history.cur_train_episode % self.hypers.train_episodes_per_epoch) / self.hypers.train_episodes_per_epoch
         epsilon = max(self.hypers.epsilon_start - (self.hypers.epsilon_decay_per_epoch * (self.history.cur_epoch + episode_fraction)), self.hypers.epsilon_end)
         finished_episodes, _ = self.train_collector.collect(self.model, epsilon=epsilon)
         if finished_episodes:
@@ -129,27 +137,27 @@ class Trainer:
         num_train_steps = len(finished_episodes)
         self.training_steps(num_train_steps)
 
-    def evaluation_step(self):
+    def test_step(self):
         episodes, termianted = self.test_collector.collect(self.model, epsilon=0.0)
         self.add_evaluation_metrics(episodes)
         return termianted
     
-    def evaluate_n_episodes(self, num_episodes: int):
+    def test_n_episodes(self, num_episodes: int):
         self.test_collector.reset()
         # we make a big assumption here that all evaluation episodes can be run in parallel
         # if the user wants to evaluate an obscene number of episodes this will become problematic
         # TODO: batch evaluation episodes where necessary
         completed_episodes = torch.zeros(num_episodes, dtype=torch.bool)
         while not completed_episodes.all():
-            termianted = self.evaluation_step()
+            termianted = self.test_step()
             completed_episodes &= termianted
 
     def training_loop(self, epochs: Optional[int] = None):
         while self.history.cur_epoch < epochs if epochs is not None else True:
-            while self.history.cur_train_step < self.hypers.episodes_per_epoch * (self.history.cur_epoch+1):
+            while self.history.cur_train_step < self.hypers.train_episodes_per_epoch * (self.history.cur_epoch+1):
                 self.selfplay_step()
             
-            self.evaluate_n_episodes(self.hypers.eval_episodes_per_epoch)
+            self.test_n_episodes(self.hypers.test_episodes_per_epoch)
             self.add_epoch_metrics()
 
             if self.interactive:
@@ -168,5 +176,7 @@ class Trainer:
             'optimizer_state_dict': self.optimizer.state_dict(),
             'hypers': self.hypers,
             'history': self.history,
-            'run_tag': self.run_tag
+            'run_tag': self.run_tag,
+            'train_collector': self.train_collector.get_details(),
+            'test_collector': self.test_collector.get_details() 
         }, filepath)

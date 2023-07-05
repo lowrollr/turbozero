@@ -1,63 +1,57 @@
 
 
 
-from typing import Optional
+from typing import Optional, Union
 import torch
 import numpy as np
-from core.history import Metric, TrainingMetrics
-from core.hyperparameters import LZHyperparameters
-from core.lz_resnet import LZResnet
-from core.memory import GameReplayMemory
-from core.trainer import Trainer
+from core.evaluation.lazy_mcts_hypers import LazyMCTSHypers
+from core.evaluation.mcts_hypers import MCTSHypers
+from core.resnet import TurboZeroResnet
+from core.utils.history import Metric, TrainingMetrics
+from core.training.training_hypers import TurboZeroHypers
+from core.utils.memory import GameReplayMemory
+from core.training.trainer import Trainer
 from envs._2048.collector import _2048Collector
-from envs._2048.utils import rotate_training_examples
-from envs._2048.vectmcts import _2048LazyMCTS
-
+from envs._2048.evaluator import _2048_EVALUATORS
 
 class _2048Trainer(Trainer):
     def __init__(self,
+        evaluator_train: _2048_EVALUATORS,
+        evaluator_test: _2048_EVALUATORS,
         num_parallel_envs: int,
+        device: torch.device,
+        episode_memory_device: torch.device,
         model: torch.nn.Module,
         optimizer: torch.optim.Optimizer,
-        hypers: LZHyperparameters,
-        device: torch.device,
-        episode_memory_device: torch.device = torch.device('cpu'),
+        hypers: TurboZeroHypers,
         history: Optional[TrainingMetrics] = None,
         log_results: bool = True,
         interactive: bool = True,
         run_tag: str = '2048',
     ):
+        train_collector = _2048Collector(
+            evaluator_train,
+            episode_memory_device,
+        )
+        test_collector = _2048Collector(
+            evaluator_test,
+            episode_memory_device,
+        )
+
         super().__init__(
-            num_parallel_envs,
-            model,
-            optimizer,
-            hypers,
-            device,
-            episode_memory_device,
-            history,
-            log_results,
-            interactive,
-            run_tag,
+            train_collector = train_collector,
+            test_collector = test_collector,
+            num_parallel_envs = num_parallel_envs,
+            model = model,
+            optimizer = optimizer,
+            hypers = hypers,
+            device = device,
+            history = history,
+            log_results = log_results,
+            interactive = interactive,
+            run_tag = run_tag
         )
-
-
-        self.train_collector = _2048Collector(
-            _2048LazyMCTS(num_parallel_envs, device, hypers.mcts_c_puct),
-            episode_memory_device,
-            hypers.num_iters_train,
-            hypers.iter_depth_train
-        )
-
-        self.test_collector = _2048Collector(
-            _2048LazyMCTS(hypers.eval_episodes_per_epoch, device, hypers.mcts_c_puct),
-            episode_memory_device,
-            hypers.num_iters_eval,
-            hypers.iter_depth_test
-        )
-
-        self.replay_memory = GameReplayMemory(
-            hypers.replay_memory_size
-        )
+        
 
     def init_history(self):
         return TrainingMetrics(
@@ -128,23 +122,20 @@ class _2048Trainer(Trainer):
         self.optimizer.step()
 
         return policy_loss.item(), value_loss.item(), policy_accuracy.item(), loss.item()
-
     
 
-
-    
-
-def init_2048_trainer_from_checkpoint(
+def load_checkpoint(
     num_parallel_envs: int,
     checkpoint_path: str,
     device: torch.device,
     episode_memory_device: torch.device = torch.device('cpu'),
     log_results = True,
-    interactive = True
+    interactive = True,
+    debug = False,
 ) -> _2048Trainer:
     checkpoint = torch.load(checkpoint_path, map_location=device)
-    hypers: LZHyperparameters = checkpoint['hypers']
-    model = LZResnet(checkpoint['model_arch_params'])
+    hypers: TurboZeroHypers = checkpoint['hypers']
+    model = TurboZeroResnet(checkpoint['model_arch_params'])
     model.load_state_dict(checkpoint['model_state_dict'])
     model.to(device)
 
@@ -154,16 +145,9 @@ def init_2048_trainer_from_checkpoint(
     history = checkpoint['history']
     history.reset_all_figs()
     run_tag = checkpoint['run_tag']
+    train_hypers = checkpoint['train_evaluator']['hypers']
+    train_evaluator: _2048_EVALUATORS = checkpoint['train_evaluator']['type'](num_parallel_envs, device, train_hypers, debug=debug)
+    test_hypers = checkpoint['test_evaluator']['hypers']
+    test_evaluator: _2048_EVALUATORS = checkpoint['test_evaluator']['type'](num_parallel_envs, device, test_hypers, debug=debug)
+    return _2048Trainer(train_evaluator, test_evaluator, num_parallel_envs, device, episode_memory_device, model, optimizer, hypers, history, log_results, interactive, run_tag)
 
-    return _2048Trainer(
-        num_parallel_envs = num_parallel_envs, 
-        model = model, 
-        optimizer = optimizer, 
-        hypers = hypers, 
-        device = device,  
-        episode_memory_device = episode_memory_device,
-        history = history, 
-        log_results = log_results, 
-        interactive = interactive, 
-        run_tag=run_tag
-    )

@@ -1,8 +1,11 @@
-from typing import Optional, Tuple
+from typing import Tuple
 import torch
 
-from core import GLOB_FLOAT_TYPE
-from core.torchscripts import fast_weighted_sample
+def fast_weighted_sample(weights, sampler):
+    torch.rand(sampler.shape, out=sampler) 
+    cum_weights = weights.cumsum(dim=1)
+    cum_weights.div_(cum_weights[:, -1:])
+    return (sampler < cum_weights).long().argmax(dim=1)
 
 class VectEnv:
     def __init__(self, 
@@ -10,26 +13,36 @@ class VectEnv:
             state_shape: torch.Size, 
             policy_shape: torch.Size, 
             value_shape: torch.Size, 
-            device: torch.device
+            device: torch.device,
+            num_players: int,
+            debug: bool = False,
+            very_positive_value: float = 1e8
     ):
         
         self.state_shape = state_shape
         self.policy_shape = policy_shape
         self.value_shape = value_shape
+        self.num_players = num_players
+        self.debug = debug
 
-        self.states = torch.zeros((num_parallel_envs, *state_shape), dtype=GLOB_FLOAT_TYPE, device=device, requires_grad=False)
+        self.states = torch.zeros((num_parallel_envs, *state_shape), dtype=torch.float32, device=device, requires_grad=False)
         self.terminated = torch.zeros(num_parallel_envs, dtype=torch.bool, device=device, requires_grad=False)
-        self.rewards = torch.zeros((num_parallel_envs, ), dtype=GLOB_FLOAT_TYPE, device=device, requires_grad=False)
+        self.rewards = torch.zeros((num_parallel_envs, ), dtype=torch.float32, device=device, requires_grad=False)
+        self.cur_players = torch.zeros((num_parallel_envs, ), dtype=torch.long, device=device, requires_grad=False)
 
         self.device = device
         self.num_parallel_envs = num_parallel_envs
 
+        self.very_positive_value = very_positive_value
 
         # Tensors we re-use for indexing and sampling
-        self.randn = torch.zeros((num_parallel_envs,1), dtype=GLOB_FLOAT_TYPE, device=device, requires_grad=False)
+        self.randn = torch.zeros((num_parallel_envs,1), dtype=torch.float32, device=device, requires_grad=False)
        
         self.env_indices = torch.arange(num_parallel_envs, device=device, requires_grad=False)
-        self.fws = torch.jit.trace(fast_weighted_sample, (torch.rand((num_parallel_envs, *policy_shape), device=device, requires_grad=False, dtype=GLOB_FLOAT_TYPE), self.randn), check_trace=False)
+        if self.debug:
+            self.fws = fast_weighted_sample
+        else:
+            self.fws = torch.jit.trace(fast_weighted_sample, (torch.rand((num_parallel_envs, *policy_shape), device=device, requires_grad=False, dtype=torch.float32), self.randn), check_trace=False) # type: ignore
         
     def reset(self, seed=None):
         raise NotImplementedError()
@@ -70,8 +83,11 @@ class VectEnv:
     def reset_terminated_states(self):
         raise NotImplementedError()
 
-    def fast_weighted_sample(self, weights): 
-        return self.fws(weights, self.randn)
+    def fast_weighted_sample(self, weights) -> torch.Tensor: 
+        return self.fws(weights, self.randn) # type: ignore
+    
+    def next_player(self):
+        self.cur_players = (self.cur_players + 1) % self.num_players
     
     def get_rewards(self):
         return self.rewards

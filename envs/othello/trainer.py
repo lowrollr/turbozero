@@ -8,66 +8,55 @@ from pathlib import Path
 from typing import Optional
 import torch
 import logging
-from core.history import Metric, TrainingMetrics
-from core.hyperparameters import LZHyperparameters
-from core.lz_resnet import LZResnet
-from core.memory import GameReplayMemory
-from core.trainer import Trainer
+from core.utils.history import Metric, TrainingMetrics
+from core.training.training_hypers import TurboZeroHypers
+from core.resnet import TurboZeroResnet
+from core.utils.memory import GameReplayMemory
+from core.training.trainer import Trainer
 from envs.othello.collector import OthelloCollector
-from envs.othello.vectmcts import OthelloLazyMCTS
+from envs.othello.evaluator import OTHELLO_EVALUATORS
 
 
 class OthelloTrainer(Trainer):
     def __init__(self,
+        evaluator_train: OTHELLO_EVALUATORS,
+        evaluator_test: OTHELLO_EVALUATORS,
         num_parallel_envs: int,
+        device: torch.device,
+        episode_memory_device: torch.device,
         model: torch.nn.Module,
         optimizer: torch.optim.Optimizer,
-        hypers: LZHyperparameters,
-        device: torch.device,
-        episode_memory_device: torch.device = torch.device('cpu'),
+        hypers: TurboZeroHypers,
         history: Optional[TrainingMetrics] = None,
         log_results: bool = True,
         interactive: bool = True,
-        run_tag: str = 'othello',
-        board_size: int = 8,
-        debug = False
+        run_tag: str = 'othello'
     ):
+        train_collector = OthelloCollector(
+            evaluator_train,
+            episode_memory_device,
+        )
+        test_collector = OthelloCollector(
+            evaluator_test,
+            episode_memory_device,
+        )
         super().__init__(
-            num_parallel_envs,
-            model,
-            optimizer,
-            hypers,
-            device,
-            episode_memory_device,
-            history,
-            log_results,
-            interactive,
-            run_tag,
-        )
-
-        self.train_collector = OthelloCollector(
-            OthelloLazyMCTS(num_parallel_envs, device, board_size, hypers.mcts_c_puct, debug=debug),
-            episode_memory_device,
-            hypers.num_iters_train,
-            hypers.iter_depth_train
-        )
-
-        self.test_collector = OthelloCollector(
-            OthelloLazyMCTS(hypers.eval_episodes_per_epoch, device, board_size, hypers.mcts_c_puct, debug=debug),
-            episode_memory_device,
-            hypers.num_iters_eval,
-            hypers.iter_depth_test
-        )
-
-        self.replay_memory = GameReplayMemory(
-            hypers.replay_memory_size
+            train_collector = train_collector,
+            test_collector = test_collector,
+            num_parallel_envs = num_parallel_envs,
+            model = model,
+            optimizer = optimizer,
+            hypers = hypers,
+            device = device,
+            history = history,
+            log_results = log_results,
+            interactive = interactive,
+            run_tag = run_tag
         )
 
         self.best_model = deepcopy(model)
         self.random_baseline = deepcopy(model)
         self.best_model_optimizer_state_dict = deepcopy(optimizer.state_dict())
-
-
 
     def save_checkpoint(self, custom_name: Optional[str] = None) -> None:
         directory = f'./checkpoints/{self.run_tag}/'
@@ -135,7 +124,6 @@ class OthelloTrainer(Trainer):
         wins = (scores == 1).sum().cpu().clone()
         draws = (scores == 0.5).sum().cpu().clone()
         losses = (scores == 0).sum().cpu().clone()
-        win_margin = wins - losses
 
         return wins, draws, losses
 
@@ -144,7 +132,7 @@ class OthelloTrainer(Trainer):
         
         wins, draws, losses = self.evaluate_against(num_episodes, self.best_model)
         win_margin_vs_best = wins - losses
-        new_best = win_margin_vs_best >= self.hypers.improvement_threshold
+        new_best = win_margin_vs_best >= self.hypers.test_improvement_threshold
         logging.info(f'Epoch {self.history.cur_epoch} Current vs. Best:')
         if new_best:
             self.best_model.load_state_dict(self.model.state_dict())
@@ -169,18 +157,18 @@ class OthelloTrainer(Trainer):
 
 
 
-def init_2048_trainer_from_checkpoint(
+def load_checkpoint(
     num_parallel_envs: int,
     checkpoint_path: str,
     device: torch.device,
     episode_memory_device: torch.device = torch.device('cpu'),
     log_results = True,
     interactive = True,
-    board_size: int = 8
+    debug = False,
 ) -> OthelloTrainer:
     checkpoint = torch.load(checkpoint_path, map_location=device)
-    hypers: LZHyperparameters = checkpoint['hypers']
-    model = LZResnet(checkpoint['model_arch_params'])
+    hypers: TurboZeroHypers = checkpoint['hypers']
+    model = TurboZeroResnet(checkpoint['model_arch_params'])
     model.load_state_dict(checkpoint['model_state_dict'])
     model.to(device)
 
@@ -190,19 +178,11 @@ def init_2048_trainer_from_checkpoint(
     history = checkpoint['history']
     history.reset_all_figs()
     run_tag = checkpoint['run_tag']
+    train_hypers = checkpoint['train_evaluator']['hypers']
+    train_evaluator: OTHELLO_EVALUATORS = checkpoint['train_evaluator']['type'](num_parallel_envs, device, 8, train_hypers, debug=debug)
+    test_hypers = checkpoint['test_evaluator']['hypers']
+    test_evaluator: OTHELLO_EVALUATORS = checkpoint['test_evaluator']['type'](num_parallel_envs, device, 8, test_hypers, debug=debug)
+    return OthelloTrainer(train_evaluator, test_evaluator, num_parallel_envs, device, episode_memory_device, model, optimizer, hypers, history, log_results, interactive, run_tag)
 
-    return OthelloTrainer(
-        num_parallel_envs = num_parallel_envs, 
-        model = model, 
-        optimizer = optimizer, 
-        hypers = hypers, 
-        device = device,  
-        episode_memory_device = episode_memory_device,
-        history = history, 
-        log_results = log_results, 
-        interactive = interactive, 
-        run_tag = run_tag,
-        board_size = board_size
-    )
 
-    
+

@@ -2,19 +2,17 @@
 
 
 import torch
-from core.collector import Collector
-from envs.othello.vectmcts import OthelloLazyMCTS
+from core.training.collector import Collector
+from envs.othello.evaluator import OTHELLO_EVALUATORS
+from envs.othello.vectenv import OthelloVectEnv
 
 
 class OthelloCollector(Collector):
     def __init__(self,
-        evaluator: OthelloLazyMCTS,
-        episode_memory_device: torch.device,
-        search_iters: int,
-        search_depth: int
+        evaluator: OTHELLO_EVALUATORS,
+        episode_memory_device: torch.device
     ) -> None:
-        super().__init__(evaluator, episode_memory_device, search_iters, search_depth)
-        self.evaluator: OthelloLazyMCTS
+        super().__init__(evaluator, episode_memory_device)
         board_size = self.evaluator.env.board_size
         ids = torch.arange(self.evaluator.env.policy_shape[0])
         self.rotated_action_ids = torch.rot90(ids.reshape(board_size, board_size), k=1, dims=(0, 1)).flatten()
@@ -25,7 +23,7 @@ class OthelloCollector(Collector):
         if terminated.any():
             term_indices = terminated.nonzero(as_tuple=False).flatten()
             rewards = self.evaluator.env.get_rewards().cpu().numpy()
-            cur_players = self.evaluator.env.cur_player.cpu().numpy()
+            cur_players = self.evaluator.env.cur_players.cpu().numpy()
             for i, episode in enumerate(terminated_episodes):
                 episode_with_rewards = []
                 ti = term_indices[i]

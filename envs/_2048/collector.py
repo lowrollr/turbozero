@@ -3,20 +3,18 @@
 
 
 import torch
-from core.collector import Collector
-from envs._2048.vectmcts import _2048LazyMCTS
-
+from core.training.collector import Collector
+from core.evaluation.evaluator import Evaluator
+from .evaluator import _2048_EVALUATORS
 
 class _2048Collector(Collector):
     def __init__(self,
-        evaluator: _2048LazyMCTS,
-        episode_memory_device: torch.device,
-        search_iters: int,
-        search_depth: int
+        evaluator: _2048_EVALUATORS,
+        episode_memory_device: torch.device
     ) -> None:
-        super().__init__(evaluator, episode_memory_device, search_iters, search_depth)
+        super().__init__(evaluator, episode_memory_device)
 
-    def assign_rewards(self, terminated_episodes, terminated, info):
+    def assign_rewards(self, terminated_episodes, terminated):
         episodes = []
         for episode in terminated_episodes:
             episode_with_rewards = []
@@ -28,6 +26,7 @@ class _2048Collector(Collector):
         return episodes
 
     def postprocess(self, terminated_episodes):
+        # TODO: too many lists
         inputs, probs, rewards = zip(*terminated_episodes)
         rotated_inputs = []
         for i in inputs:

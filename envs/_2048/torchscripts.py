@@ -1,7 +1,6 @@
 
 from typing import Tuple
 import torch
-from core import GLOB_FLOAT_TYPE
 
 def collapse(rankt, bs_flat) -> torch.Tensor: 
     non_zero_mask = (bs_flat != 0)

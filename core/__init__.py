@@ -1,2 +1,2 @@
 import torch
-GLOB_FLOAT_TYPE = torch.float32
+torch.float32 = torch.float32

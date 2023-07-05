@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 
 @dataclass
-class LZArchitectureParameters:
+class TurboZeroArchParams:
     input_size: torch.Size
     policy_size: int
     res_channels: int
@@ -48,8 +48,8 @@ class ResidualBlock(nn.Module):
         torch.quantization.fuse_modules(self.conv2, ['0', '1'], inplace=True)
 
 
-class LZResnet(nn.Module):
-    def __init__(self, arch_params: LZArchitectureParameters) -> None:
+class TurboZeroResnet(nn.Module):
+    def __init__(self, arch_params: TurboZeroArchParams) -> None:
         super().__init__()
         assert len(arch_params.input_size) == 3  # (channels, height, width)
         self.input_channels, self.input_height, self.input_width = arch_params.input_size
