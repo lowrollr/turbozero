@@ -57,7 +57,10 @@ class _2048Env(VectEnv):
         return torch.amax(self.states, dim=(1, 2, 3))
         
     def update_terminated(self) -> None:
-        self.terminated = (self.get_legal_actions().sum(dim=1, keepdim=True) == 0).flatten()
+        self.terminated = self.is_terminal()
+    
+    def is_terminal(self):
+        return (self.get_legal_actions().sum(dim=1, keepdim=True) == 0).flatten()
 
     def get_legal_actions(self) -> torch.Tensor:
         return self.get_legal_actions_ts(self.states) # type: ignore
