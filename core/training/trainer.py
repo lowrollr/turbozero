@@ -130,7 +130,7 @@ class Trainer:
             for episode in finished_episodes:
                 episode = self.train_collector.postprocess(episode)
                 self.replay_memory.insert(episode)
-                self.add_collection_metrics(episode)
+        self.add_collection_metrics(finished_episodes)
         
         num_train_steps = len(finished_episodes)
         self.training_steps(num_train_steps)

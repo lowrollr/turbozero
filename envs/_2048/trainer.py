@@ -80,22 +80,22 @@ class _2048Trainer(Trainer):
     def add_collection_metrics(self, episodes):
         for episode in episodes:
             moves = len(episode)
-            last_state = episodes[-1][0]
+            last_state = episode[-1][0]
             high_square = int(last_state.max().item())
             self.history.add_episode_data({
                 'reward': moves,
                 'log2_high_square': high_square,
-            })
+            }, log=self.log_results)
 
     def add_evaluation_metrics(self, episodes):
         for episode in episodes:
             moves = len(episode)
-            last_state = episodes[-1][0]
+            last_state = episode[-1][0]
             high_square = 2 ** int(last_state.max().item())
             self.history.add_evaluation_data({
                 'reward': moves,
                 'high_square': high_square,
-            })
+            }, log=self.log_results)
 
     def add_epoch_metrics(self):
         self.history.add_epoch_data({
