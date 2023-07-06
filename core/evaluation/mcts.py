@@ -20,7 +20,8 @@ class VectorizedMCTS(Evaluator):
         # a positive value outside of the reward domain (e.g. 1e8) used to initialize the W-values of newly expanded nodes while preserving exploration order according to P-values
         self.very_positive_value = env.very_positive_value
 
-        self.dirilecht_epsilon = 0.25
+        self.dirichlet_a = hypers.dirichlet_alpha
+        self.dirichlet_e = hypers.dirichlet_epsilon
 
         self.parallel_envs = self.env.num_parallel_envs
         self.policy_size = self.env.policy_shape[-1]
@@ -79,7 +80,7 @@ class VectorizedMCTS(Evaluator):
         self.is_leaf = torch.ones(
             (self.parallel_envs,), dtype=torch.bool, device=self.device, requires_grad=False)
         self.reward_indices = self.build_reward_indices(env.num_players)
-        self.dirilecht = torch.distributions.dirichlet.Dirichlet(torch.full((self.policy_size,), 0.03, device=self.device, dtype=torch.float32, requires_grad=False))
+        self.dirilecht = torch.distributions.dirichlet.Dirichlet(torch.full((self.policy_size,), self.dirichlet_a, device=self.device, dtype=torch.float32, requires_grad=False))
         # SUB-TREES
         # (after making an action, we'd like to save the data in the subtree rooted at that action's node)
         # stores the indices of each of the nodes included in the subtree rooted at each of the root node's children
@@ -121,8 +122,8 @@ class VectorizedMCTS(Evaluator):
             policy_logits, _ = model(self.env.states)
 
         # set root node policy, apply dirilecht noise
-        self.p_vals = (torch.softmax(policy_logits, dim=1) * (1 - self.dirilecht_epsilon)) \
-                + self.dirilecht.rsample(torch.Size((self.parallel_envs,))) * self.dirilecht_epsilon # type: ignore
+        self.p_vals = (torch.softmax(policy_logits, dim=1) * (1 - self.dirichlet_e)) \
+                + self.dirilecht.rsample(torch.Size((self.parallel_envs,))) * self.dirichlet_e # type: ignore
         
 
         self.env.save_node()

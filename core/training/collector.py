@@ -3,6 +3,7 @@
 
 
 
+from typing import Optional
 import torch
 from core.utils.memory import EpisodeMemory
 from core.evaluation.evaluator import Evaluator
@@ -11,17 +12,19 @@ from core.evaluation.evaluator import Evaluator
 class Collector:
     def __init__(self, 
         evaluator: Evaluator, 
-        episode_memory_device: torch.device
+        episode_memory_device: torch.device,
+        temperature: Optional[float] = None
     ) -> None:
         num_parallel_envs = evaluator.env.num_parallel_envs
         self.evaluator = evaluator
         self.evaluator.reset()
         self.episode_memory = EpisodeMemory(num_parallel_envs, episode_memory_device)
-        self.epsilon_sampler = torch.zeros((num_parallel_envs,), dtype=torch.float32, device=evaluator.env.device, requires_grad=False)
+        self.temperature = temperature
 
-    def collect(self, model: torch.nn.Module, epsilon: float = 0.0, reset_terminal: bool = True):
+
+    def collect(self, model: torch.nn.Module, reset_terminal: bool = True):
         
-        terminated = self.collect_step(model, epsilon)
+        terminated = self.collect_step(model)
 
         terminated_episodes = self.episode_memory.pop_terminated_episodes(terminated)
 
@@ -32,19 +35,17 @@ class Collector:
 
         return terminated_episodes, terminated
     
-    def collect_step(self, model: torch.nn.Module, epsilon: float = 0.0):
+    def collect_step(self, model: torch.nn.Module):
         model.eval()
 
         visits = self.evaluator.evaluate(model)
         self.episode_memory.insert(self.evaluator.env.states, visits)
-
-        torch.rand(self.epsilon_sampler.shape, out=self.epsilon_sampler)
-        take_argmax = self.epsilon_sampler >= epsilon
-        actions = torch.argmax(visits, dim=1) * take_argmax
-        actions += self.evaluator.env.fast_weighted_sample(visits) * (~take_argmax)
+        if self.temperature is not None:
+            actions = self.evaluator.env.fast_weighted_sample(torch.pow(visits, 1/self.temperature))
+        else:
+            actions = torch.argmax(visits, dim=1)
 
         terminated = self.evaluator.step_env(actions)
-
         return terminated
     
     def assign_rewards(self, terminated_episodes, terminated):

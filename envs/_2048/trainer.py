@@ -32,10 +32,12 @@ class _2048Trainer(Trainer):
         train_collector = _2048Collector(
             evaluator_train,
             episode_memory_device,
+            hypers.temperature_train
         )
         test_collector = _2048Collector(
             evaluator_test,
             episode_memory_device,
+            hypers.temperature_test
         )
 
         super().__init__(

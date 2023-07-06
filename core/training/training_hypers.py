@@ -12,9 +12,8 @@ class TurboZeroHypers:
     train_episodes_per_epoch: int = 5
     test_episodes_per_epoch: int = 5
     test_improvement_threshold: float = 0.0
-    epsilon_decay_per_epoch: float = 0.0000
-    epsilon_start: float = 0.0
-    epsilon_end: float = 0.0
+    temperature_train: float = 0.8
+    temperature_test: float = 0.2
     
 
 

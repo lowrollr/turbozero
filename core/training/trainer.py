@@ -125,9 +125,7 @@ class Trainer:
         return policy_loss.item(), value_loss.item(), policy_accuracy.item(), loss.item()
     
     def selfplay_step(self):
-        episode_fraction = (self.history.cur_train_episode % self.hypers.train_episodes_per_epoch) / self.hypers.train_episodes_per_epoch
-        epsilon = max(self.hypers.epsilon_start - (self.hypers.epsilon_decay_per_epoch * (self.history.cur_epoch + episode_fraction)), self.hypers.epsilon_end)
-        finished_episodes, _ = self.train_collector.collect(self.model, epsilon=epsilon)
+        finished_episodes, _ = self.train_collector.collect(self.model)
         if finished_episodes:
             for episode in finished_episodes:
                 episode = self.train_collector.postprocess(episode)
@@ -138,7 +136,7 @@ class Trainer:
         self.training_steps(num_train_steps)
 
     def test_step(self):
-        episodes, termianted = self.test_collector.collect(self.model, epsilon=0.0)
+        episodes, termianted = self.test_collector.collect(self.model)
         self.add_evaluation_metrics(episodes)
         return termianted
     

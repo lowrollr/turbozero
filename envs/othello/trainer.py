@@ -35,10 +35,12 @@ class OthelloTrainer(Trainer):
         train_collector = OthelloCollector(
             evaluator_train,
             episode_memory_device,
+            hypers.temperature_train
         )
         test_collector = OthelloCollector(
             evaluator_test,
             episode_memory_device,
+            hypers.temperature_test
         )
         super().__init__(
             train_collector = train_collector,
@@ -102,7 +104,7 @@ class OthelloTrainer(Trainer):
         split = num_episodes // 2
         completed_episodes = torch.zeros(num_episodes, dtype=torch.bool, device=self.device, requires_grad=False)
         scores = torch.zeros(num_episodes, dtype=torch.float32, device=self.device, requires_grad=False)
-        self.test_collector.collect_step(self.model, epsilon=0.0)
+        self.test_collector.collect_step(self.model)
         # hacky way to split the episodes into two sets (this environment cannot terminate on the first step)
         self.test_collector.evaluator.env.terminated[:split] = True
         self.test_collector.evaluator.env.reset_terminated_states()
@@ -110,7 +112,7 @@ class OthelloTrainer(Trainer):
         while not completed_episodes.all():
             model = other_model if use_other_model else self.model
             # we don't need to collect the episodes into episode memory/replay buffer, so we can call collect_step directly
-            terminated = self.test_collector.collect_step(model, epsilon=0.0)
+            terminated = self.test_collector.collect_step(model)
 
             if use_other_model:
                 # rewards are from the perspective of the next player
@@ -138,9 +140,6 @@ class OthelloTrainer(Trainer):
             self.best_model.load_state_dict(self.model.state_dict())
             self.best_model_optimizer_state_dict = deepcopy(self.optimizer.state_dict())
             logging.info('************ NEW BEST MODEL ************')
-        else:
-            self.model.load_state_dict(self.best_model.state_dict())
-            self.optimizer.load_state_dict(self.best_model_optimizer_state_dict)
         logging.info(f'W/L/D: {wins}/{losses}/{draws}')
         
         
@@ -154,7 +153,6 @@ class OthelloTrainer(Trainer):
             'win_margin_vs_random': win_margin_vs_random,
         }, log=self.log_results)
         self.add_evaluation_metrics([])
-
 
 
 def load_checkpoint(

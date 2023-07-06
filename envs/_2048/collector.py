@@ -2,6 +2,7 @@
 
 
 
+from typing import Optional
 import torch
 from core.training.collector import Collector
 from core.evaluation.evaluator import Evaluator
@@ -10,9 +11,10 @@ from .evaluator import _2048_EVALUATORS
 class _2048Collector(Collector):
     def __init__(self,
         evaluator: _2048_EVALUATORS,
-        episode_memory_device: torch.device
+        episode_memory_device: torch.device,
+        temperature: Optional[float] = None
     ) -> None:
-        super().__init__(evaluator, episode_memory_device)
+        super().__init__(evaluator, episode_memory_device, temperature)
 
     def assign_rewards(self, terminated_episodes, terminated):
         episodes = []
