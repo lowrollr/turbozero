@@ -93,9 +93,11 @@ class OthelloTrainer(Trainer):
         )
     
     def add_collection_metrics(self, episodes):
-        self.history.add_episode_data({}, log=self.log_results)
+        for _ in episodes:
+            self.history.add_episode_data({}, log=self.log_results)
     def add_evaluation_metrics(self, episodes):
-        self.history.add_evaluation_data({}, log=self.log_results)
+        for _ in episodes:
+            self.history.add_evaluation_data({}, log=self.log_results)
     def add_epoch_metrics(self):
         pass
 
