@@ -150,7 +150,7 @@ class Trainer:
         completed_episodes = torch.zeros(num_episodes, dtype=torch.bool)
         while not completed_episodes.all():
             termianted = self.test_step()
-            completed_episodes &= termianted
+            completed_episodes |= termianted
 
     def training_loop(self, epochs: Optional[int] = None):
         while self.history.cur_epoch < epochs if epochs is not None else True:

@@ -32,7 +32,8 @@ class OthelloCollector(Collector):
                 r1, r2 = reward, 1 - reward
                 p1_reward, p2_reward = (r2, r1) if cur_player else (r1, r2)
                 for ei, (inputs, visits) in enumerate(episode):
-                    episode_with_rewards.append((inputs, visits, torch.tensor(p2_reward if ei%2 else p1_reward, dtype=torch.float32, requires_grad=False, device=inputs.device)))
+                    if visits.sum(): # only append states where a move was possible
+                        episode_with_rewards.append((inputs, visits, torch.tensor(p2_reward if ei%2 else p1_reward, dtype=torch.float32, requires_grad=False, device=inputs.device)))
                 episodes.append(episode_with_rewards)
         return episodes
     

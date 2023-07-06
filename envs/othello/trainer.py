@@ -128,7 +128,7 @@ class OthelloTrainer(Trainer):
         return wins, draws, losses
 
 
-    def evaluate_n_episodes(self, num_episodes):
+    def test_n_episodes(self, num_episodes):
         
         wins, draws, losses = self.evaluate_against(num_episodes, self.best_model)
         win_margin_vs_best = wins - losses
