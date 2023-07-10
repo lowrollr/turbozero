@@ -15,6 +15,7 @@ from core.utils.memory import GameReplayMemory
 from core.training.trainer import Trainer
 from envs.othello.collector import OthelloCollector
 from envs.othello.evaluator import OTHELLO_EVALUATORS
+from core.resnet import reset_model_weights
 
 
 class OthelloTrainer(Trainer):
@@ -58,6 +59,7 @@ class OthelloTrainer(Trainer):
 
         self.best_model = deepcopy(model)
         self.random_baseline = deepcopy(model)
+        reset_model_weights(self.random_baseline)
         self.best_model_optimizer_state_dict = deepcopy(optimizer.state_dict())
 
     def save_checkpoint(self, custom_name: Optional[str] = None) -> None:

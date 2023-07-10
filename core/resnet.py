@@ -20,7 +20,11 @@ class TurboZeroArchParams:
     policy_fc_size: int = 32
     value_fc_size: int = 32
     value_output_activation: Optional[torch.nn.Module] = None
-
+    
+def reset_model_weights(model):
+    for layer in model.children():
+        if hasattr(layer, 'reset_parameters'):
+            layer.reset_parameters()
 
 class ResidualBlock(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, stride = 1):
