@@ -85,7 +85,7 @@ class VectorizedMCTS(Evaluator):
         self.cur_subtree = torch.zeros((self.parallel_envs,), dtype=torch.long, device=self.device, requires_grad=False)
 
     def build_reward_indices(self, num_players: int) -> torch.Tensor:
-        base_block = torch.tensor([0] * (num_players - 1) + [1], dtype=torch.bool, device=self.device)
+        base_block = torch.tensor([1] + [0] * (num_players - 1), dtype=torch.bool, device=self.device)
         reward_indices = torch.zeros((num_players, self.max_depth), dtype=torch.bool, device=self.device)
         for i in range(num_players):
             rolled = torch.roll(base_block, i)
