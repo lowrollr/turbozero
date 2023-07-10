@@ -1,7 +1,7 @@
 
 
 
-
+import dill
 
 from copy import deepcopy
 from pathlib import Path
@@ -73,7 +73,9 @@ class OthelloTrainer(Trainer):
             'best_model_optimizer_state_dict': self.best_model_optimizer_state_dict,
             'hypers': self.hypers,
             'history': self.history,
-            'run_tag': self.run_tag
+            'run_tag': self.run_tag,
+            'train_collector': self.train_collector.get_details(),
+            'test_collector': self.test_collector.get_details() 
         }, filepath)
 
     def init_history(self):
@@ -121,7 +123,6 @@ class OthelloTrainer(Trainer):
                 scores += self.test_collector.evaluator.env.get_rewards() * terminated * ~completed_episodes
             else:
                 scores += (1 - self.test_collector.evaluator.env.get_rewards()) * terminated * ~completed_episodes
-
             completed_episodes |= terminated
             use_other_model = not use_other_model
 
@@ -178,11 +179,11 @@ def load_checkpoint(
     history = checkpoint['history']
     history.reset_all_figs()
     run_tag = checkpoint['run_tag']
-    train_hypers = checkpoint['train_evaluator']['hypers']
-    train_evaluator: OTHELLO_EVALUATORS = checkpoint['train_evaluator']['type'](num_parallel_envs, device, 8, train_hypers, debug=debug)
-    test_hypers = checkpoint['test_evaluator']['hypers']
-    test_evaluator: OTHELLO_EVALUATORS = checkpoint['test_evaluator']['type'](num_parallel_envs, device, 8, test_hypers, debug=debug)
+    train_hypers = checkpoint['train_collector']['hypers']
+    train_evaluator: OTHELLO_EVALUATORS = checkpoint['train_collector']['type'](num_parallel_envs, device, 8, train_hypers, debug=debug)
+    test_hypers = checkpoint['test_collector']['hypers']
+    test_evaluator: OTHELLO_EVALUATORS = checkpoint['test_collector']['type'](num_parallel_envs, device, 8, test_hypers, debug=debug)
     return OthelloTrainer(train_evaluator, test_evaluator, num_parallel_envs, device, episode_memory_device, model, optimizer, hypers, history, log_results, interactive, run_tag)
 
 
-
+ 
