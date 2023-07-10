@@ -81,9 +81,11 @@ class VectorizedMCTS(Evaluator):
             (self.parallel_envs,), dtype=torch.bool, device=self.device, requires_grad=False)
         self.reward_indices = self.build_reward_indices(env.num_players)
         self.dirilecht = torch.distributions.dirichlet.Dirichlet(torch.full((self.policy_size,), self.dirichlet_a, device=self.device, dtype=torch.float32, requires_grad=False))
+        self.subtrees = torch.zeros((self.parallel_envs, self.max_depth), dtype=torch.long, device=self.device, requires_grad=False)
+        self.cur_subtree = torch.zeros((self.parallel_envs,), dtype=torch.long, device=self.device, requires_grad=False)
 
     def build_reward_indices(self, num_players: int) -> torch.Tensor:
-        base_block = torch.tensor([1] + [0] * (num_players - 1), dtype=torch.bool, device=self.device)
+        base_block = torch.tensor([0] * (num_players - 1) + [1], dtype=torch.bool, device=self.device)
         reward_indices = torch.zeros((num_players, self.max_depth), dtype=torch.bool, device=self.device)
         for i in range(num_players):
             rolled = torch.roll(base_block, i)
@@ -161,10 +163,12 @@ class VectorizedMCTS(Evaluator):
             valid = torch.roll(self.visits, -1, 1) > 0
             leaf_inc = valid * is_leaf_long_expnd
             self.nodes[self.env_indices_expnd, self.visits, self.actions + self.n_start] += leaf_inc
-            self.nodes[self.env_indices_expnd, self.visits, self.actions + self.w_start] += (values * leaf_inc * reward_indices) + ((1-values) * leaf_inc * ~reward_indices)
+            self.nodes[self.env_indices_expnd, self.visits, self.actions + self.w_start] += \
+                (values * leaf_inc * reward_indices) + ((1-values) * leaf_inc * ~reward_indices)
             
             reset_to_root = terminated | self.is_leaf
             # update the depths tensor to reflect the current search depth for each environment
+
             self.depths *= ~reset_to_root
             self.depths += 1
             # zero out visits and actions if we've reached a leaf node
@@ -174,6 +178,12 @@ class VectorizedMCTS(Evaluator):
             self.env.load_node(reset_to_root)
             self.cur_nodes *= ~reset_to_root
             self.cur_nodes += reset_to_root
+
+            # is_subtree_root = self.depths == 2
+            # self.cur_subtree *= (~is_subtree_root).long()
+            # self.cur_subtree += actions * is_subtree_root.long()
+            # self.subtrees[self.env_indices, self.cur_nodes] = self.cur_subtree
+            
         # return to the root node
         self.cur_nodes.fill_(1)
         self.env.load_node(self.cur_nodes.bool())
@@ -243,3 +253,31 @@ class VectorizedMCTS(Evaluator):
             (self.very_positive_value * (~legal_actions))
 
         return torch.argmax(legal_puct_scores, dim=1)
+    
+
+    # def load_subtree(self, actions: torch.Tensor):
+    #     node_ids_in_subtree = self.subtree_indices[self.env_indices, actions]
+    #     self.nodes[:, 0].zero_()
+    #     self.nodes[:, 1:-1] = self.nodes[self.env_indices_expnd, node_ids_in_subtree]
+
+    #     self.subtree_mappings.zero_()
+    #     self.subtree_mappings[self.env_indices_expnd, node_ids_in_subtree] = self.depth_indices
+    #     self.subtree_mappings[:, 0] = 0
+    #     self.nodes[:, :, self.i_start:self.i_end] = self.subtree_mappings[self.env_indices.view(-1, 1, 1), self.nodes[:, :, self.i_start:self.i_end].long()]
+
+    #     next_subtree_index = self.subtree_next_index[self.env_indices, actions]
+    #     # map old indices in self.nodes to new indices
+
+    #     self.next_empty = next_subtree_index
+    #     self.subtree_next_index.zero_()
+    #     self.subtree_indices.zero_()
+    #     self.cur_subtree.zero_()
+
+    #     self.depths.fill_(1)
+    #     self.cur_nodes.fill_(1)
+    #     self.visits.zero_()
+    #     self.visits[:, 0] = 1
+
+    #     self.is_leaf = self.n_vals.sum(dim=1) == 0
+    #     self.actions.zero_()
+

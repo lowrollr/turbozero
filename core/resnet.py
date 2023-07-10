@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 
 from dataclasses import dataclass
-
+from typing import Callable
 
 @dataclass
 class TurboZeroArchParams:
@@ -19,7 +19,7 @@ class TurboZeroArchParams:
     kernel_size: int
     policy_fc_size: int = 32
     value_fc_size: int = 32
-    value_output_activation: Optional[nn.Module] = None
+    value_output_activation: Optional[torch.nn.Module] = None
 
 
 class ResidualBlock(nn.Module):
@@ -85,8 +85,7 @@ class TurboZeroResnet(nn.Module):
             nn.ReLU(),
             nn.Linear(arch_params.value_fc_size, 1)
         )
-        if arch_params.value_output_activation is not None:
-            self.value_head.append(arch_params.value_output_activation)
+        self.value_head_activation = arch_params.value_output_activation
 
         self.arch_params = arch_params
 
@@ -95,7 +94,7 @@ class TurboZeroResnet(nn.Module):
         x = self.res_blocks(x)
         policy = self.policy_head(x)
         value = self.value_head(x)
-        return policy, value
+        return policy, self.value_head_activation(value) if self.value_head_activation is not None else value
     
     def fuse(self):
         torch.quantization.fuse_modules(self.input_block, ['0', '1', '2'], inplace=True)
