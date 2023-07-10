@@ -72,7 +72,7 @@ class OthelloVectEnv(VectEnv):
         self.need_to_calculate_rays = True
 
     def is_terminal(self):
-        return (self.states.sum(dim=(1, 2, 3)) == (self.board_size ** 2)) | self.consecutive_passes >= 2
+        return (self.states.sum(dim=(1, 2, 3)) == (self.board_size ** 2)) | (self.consecutive_passes >= 2)
     
     def update_terminated(self):
         super().update_terminated()
