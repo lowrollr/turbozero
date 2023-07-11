@@ -98,10 +98,14 @@ class _2048Trainer(Trainer):
             }, log=self.log_results)
 
     def add_epoch_metrics(self):
-        self.history.add_epoch_data({
-            'avg_reward': np.mean(self.history.eval_metrics['reward'][-1].data),
-            'avg_log2_high_square': np.log2(np.mean(self.history.eval_metrics['high_square'][-1].data))
-        }, log=self.log_results)
+        if self.history.eval_metrics['reward'][-1].data:
+            self.history.add_epoch_data({
+                'avg_reward': np.mean(self.history.eval_metrics['reward'][-1].data)
+            }, log=self.log_results)
+        if self.history.eval_metrics['high_square'][-1].data:
+            self.history.add_epoch_data({
+                'avg_log2_high_square': np.mean(self.history.eval_metrics['high_square'][-1].data)
+            }, log=self.log_results)
     
     def training_step(self):
         inputs, target_policy, target_value = zip(*self.replay_memory.sample(self.hypers.minibatch_size))
@@ -147,9 +151,9 @@ def load_checkpoint(
     history = checkpoint['history']
     history.reset_all_figs()
     run_tag = checkpoint['run_tag']
-    train_hypers = checkpoint['train_evaluator']['hypers']
-    train_evaluator: _2048_EVALUATORS = checkpoint['train_evaluator']['type'](num_parallel_envs, device, train_hypers, debug=debug)
-    test_hypers = checkpoint['test_evaluator']['hypers']
-    test_evaluator: _2048_EVALUATORS = checkpoint['test_evaluator']['type'](num_parallel_envs, device, test_hypers, debug=debug)
+    train_hypers = checkpoint['train_collector']['hypers']
+    train_evaluator: _2048_EVALUATORS = checkpoint['train_collector']['type'](num_parallel_envs, device, train_hypers, debug=debug)
+    test_hypers = checkpoint['test_collector']['hypers']
+    test_evaluator: _2048_EVALUATORS = checkpoint['test_collector']['type'](num_parallel_envs, device, test_hypers, debug=debug)
     return _2048Trainer(train_evaluator, test_evaluator, num_parallel_envs, device, episode_memory_device, model, optimizer, hypers, history, log_results, interactive, run_tag)
 

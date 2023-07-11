@@ -158,12 +158,16 @@ class TrainingMetrics:
     def generate_plots(self):
         display.clear_output(wait=False)
         for metric in self.episode_metrics.values():
-            metric.generate_plot()
+            if metric.data:
+                metric.generate_plot()
         for metric in self.train_metrics.values():
-            metric.generate_plot()
+            if metric.data:
+                metric.generate_plot()
         for metrics_list in self.eval_metrics.values():
             if metrics_list:
-                metrics_list[-1].generate_plot()
+                if metrics_list[-1].data:
+                    metrics_list[-1].generate_plot()
         for metric in self.epoch_metrics.values():
-            metric.generate_plot()
+            if metric.data:
+                metric.generate_plot()
         
