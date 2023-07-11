@@ -2,6 +2,7 @@
 
 from typing import Optional
 import torch
+import math
 from core.evaluation.evaluator import Evaluator
 
 from core.vectenv import VectEnv
@@ -85,14 +86,9 @@ class VectorizedMCTS(Evaluator):
         self.cur_subtree = torch.zeros((self.parallel_envs,), dtype=torch.long, device=self.device, requires_grad=False)
 
     def build_reward_indices(self, num_players: int) -> torch.Tensor:
-        base_block = torch.tensor([1] + [0] * (num_players - 1), dtype=torch.bool, device=self.device)
-        reward_indices = torch.zeros((num_players, self.max_depth), dtype=torch.bool, device=self.device)
-        for i in range(num_players):
-            rolled = torch.roll(base_block, i)
-            repeated = rolled.repeat((self.max_depth // num_players) + 1)
-            reward_indices[i] = repeated[:self.max_depth]
-        return reward_indices
-
+        num_repeats = math.ceil(self.max_depth / num_players)
+        return torch.tensor([1] + [0] * (num_players - 1), dtype=torch.bool, device=self.device).repeat(num_repeats).view(1, -1)
+        
     def reset(self, seed=None) -> None:
         self.env.reset(seed=seed)
         self.nodes.zero_()
@@ -113,6 +109,7 @@ class VectorizedMCTS(Evaluator):
         
 
         self.env.save_node()
+        cur_players = self.env.cur_players.clone()
 
         for _ in range(self.iters):
             # choose next action with PUCT scores
@@ -137,8 +134,7 @@ class VectorizedMCTS(Evaluator):
             self.visits[self.env_indices, self.depths] = master_action_indices_long
             self.actions[self.env_indices, self.depths - 1] = actions
 
-            reward_indices = self.reward_indices[self.env.cur_players]
-
+            
             # make a step in the environment with the chosen actions
             self.env.step(actions)
 
@@ -153,16 +149,19 @@ class VectorizedMCTS(Evaluator):
             self.p_vals = torch.softmax(policy_logits, dim=1)
 
             terminated = self.env.is_terminal()
-            values = (self.env.get_rewards() * terminated) + (values.view(-1) * ~terminated)
-            values.unsqueeze_(1)
             is_leaf = (unvisited | terminated).bool()
+
+            rewards = (self.env.get_rewards() * terminated) + (values.view(-1) * ~terminated)
+            rewards = (rewards * (cur_players == self.env.cur_players)) + ((1-rewards) * (cur_players != self.env.cur_players))
+            rewards.unsqueeze_(1)
+            
             # propagate values and visit counts to nodes on the visited path (if the current node is a leaf)
             # (we only want to increment actual node visits, filter on visits > 0)
             valid = torch.roll(self.visits, -1, 1) > 0
             leaf_inc = valid * is_leaf.long().view(-1, 1)
             self.nodes[self.env_indices_expnd, self.visits, self.actions + self.n_start] += leaf_inc
             self.nodes[self.env_indices_expnd, self.visits, self.actions + self.w_start] += \
-                (values * leaf_inc * reward_indices) + ((1-values) * leaf_inc * ~reward_indices)
+                (rewards * leaf_inc * self.reward_indices) + ((1-rewards) * leaf_inc * ~self.reward_indices)
             
             # update the depths tensor to reflect the current search depth for each environment
 

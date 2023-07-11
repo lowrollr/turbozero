@@ -79,8 +79,8 @@ class OthelloVectEnv(VectEnv):
     
     def get_rewards(self):
         self.rewards.zero_()
-        p1_sum = self.states[self.env_indices, self.cur_players].sum(dim=(1, 2))
-        p2_sum = self.states[self.env_indices, (self.cur_players + 1) % 2].sum(dim=(1, 2))
+        p1_sum = self.states[self.env_indices, 0].sum(dim=(1, 2))
+        p2_sum = self.states[self.env_indices, 1].sum(dim=(1, 2))
         self.rewards += 1 * (p1_sum > p2_sum)
         self.rewards += 0.5 * (p1_sum == p2_sum)
         return self.rewards
