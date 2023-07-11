@@ -114,17 +114,21 @@ class OthelloTrainer(Trainer):
         # hacky way to split the episodes into two sets (this environment cannot terminate on the first step)
         self.test_collector.evaluator.env.terminated[:split] = True
         self.test_collector.evaluator.env.reset_terminated_states()
+        
+
+        new_model_is_p1 = torch.ones(num_episodes, dtype=torch.bool, device=self.device, requires_grad=False)
+        new_model_is_p1[:split] = False
+
         use_other_model = True
         while not completed_episodes.all():
             model = other_model if use_other_model else self.model
             # we don't need to collect the episodes into episode memory/replay buffer, so we can call collect_step directly
             terminated = self.test_collector.collect_step(model)
-
+            rewards = self.test_collector.evaluator.env.get_rewards()
             if use_other_model:
-                # rewards are from the perspective of the next player
-                scores += self.test_collector.evaluator.env.get_rewards() * terminated * ~completed_episodes
+                scores += rewards * terminated * ~completed_episodes
             else:
-                scores += (1 - self.test_collector.evaluator.env.get_rewards()) * terminated * ~completed_episodes
+                scores += (1 - rewards) * terminated * ~completed_episodes
             completed_episodes |= terminated
             use_other_model = not use_other_model
 
