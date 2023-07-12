@@ -73,26 +73,47 @@ class VectorizedMCTS(Evaluator):
         # stores the index (in self.nodes) of the current node for each env
         self.cur_nodes = torch.ones(
             (self.parallel_envs,), dtype=torch.int64, device=self.device, requires_grad=False)
-        # stores the indices of each node's children
+        # stores the indices of each node visited since leaving the root node
         self.visits = torch.zeros((self.parallel_envs, self.max_depth),
                                   dtype=torch.int64, device=self.device, requires_grad=False)
         self.visits[:, 0] = 1
-        # tracks whether each env is currently at a leaf node
-        self.is_leaf = torch.ones(
-            (self.parallel_envs,), dtype=torch.bool, device=self.device, requires_grad=False)
+
         self.reward_indices = self.build_reward_indices(env.num_players)
         self.dirilecht = torch.distributions.dirichlet.Dirichlet(torch.full((self.policy_size,), self.dirichlet_a, device=self.device, dtype=torch.float32, requires_grad=False))
-        self.subtrees = torch.zeros((self.parallel_envs, self.max_depth), dtype=torch.long, device=self.device, requires_grad=False)
+        
+        
+        # stores the subtree 
+        self.subtrees = torch.zeros((self.parallel_envs, self.max_depth), dtype=torch.long, device=self.device, requires_grad=False) # index by master id
         self.cur_subtree = torch.zeros((self.parallel_envs,), dtype=torch.long, device=self.device, requires_grad=False)
+        self.subtree_next_empty = torch.full((self.parallel_envs, self.max_depth), 1, dtype=torch.int64, device=self.device, requires_grad=False) # index by action id
+        self.depths_arranged = torch.arange(self.max_depth, dtype=torch.int64, device=self.device, requires_grad=False)
 
     def build_reward_indices(self, num_players: int) -> torch.Tensor:
         num_repeats = math.ceil(self.max_depth / num_players)
         return torch.tensor([1] + [0] * (num_players - 1), dtype=torch.bool, device=self.device).repeat(num_repeats).view(1, -1)
-        
+    
+    def step_env(self, actions) -> torch.Tensor:
+        self.load_subtree(actions)
+        terminated = super().step_env(actions)
+        self.reset_terminated_envs(terminated)
+        return terminated
+
+    def reset_terminated_envs(self, terminated: torch.Tensor) -> None:
+        self.nodes[terminated].zero_()
+        self.next_empty[terminated] = 2
+
     def reset(self, seed=None) -> None:
         self.env.reset(seed=seed)
         self.nodes.zero_()
         self.reset_search()
+
+    def reset_search(self) -> None:
+        self.depths.fill_(1)
+        self.cur_nodes.fill_(1)
+        self.visits.zero_()
+        self.visits[:, 0] = 1
+        self.actions.zero_()
+
 
     def evaluate(self, model: torch.nn.Module) -> torch.Tensor:
 
@@ -163,22 +184,28 @@ class VectorizedMCTS(Evaluator):
             self.nodes[self.env_indices_expnd, self.visits, self.actions + self.w_start] += \
                 (rewards * leaf_inc * self.reward_indices) + ((1-rewards) * leaf_inc * ~self.reward_indices)
             
-            # update the depths tensor to reflect the current search depth for each environment
+            is_subtree_root = self.depths == 1
+            self.cur_subtree *= (~is_subtree_root).long()
+            self.cur_subtree += master_action_indices_long * is_subtree_root.long()
+            self.subtrees[self.env_indices, self.cur_nodes] = self.cur_subtree
+            self.subtree_next_empty[self.env_indices, self.cur_subtree] += unvisited
 
+
+            # update the depths tensor to reflect the current search depth for each environment   
             self.depths *= ~is_leaf
             self.depths += 1
             # zero out visits and actions if we've reached a leaf node
             self.visits[:, 1:] *= ~is_leaf.view(-1, 1)
             self.actions *= ~is_leaf.view(-1, 1)
+
+            
+
             # reset to root node if we've reached a leaf node
             self.env.load_node(is_leaf)
             self.cur_nodes *= ~is_leaf
             self.cur_nodes += is_leaf
 
-            # is_subtree_root = self.depths == 2
-            # self.cur_subtree *= (~is_subtree_root).long()
-            # self.cur_subtree += actions * is_subtree_root.long()
-            # self.subtrees[self.env_indices, self.cur_nodes] = self.cur_subtree
+            
             
         # return to the root node
         self.cur_nodes.fill_(1)
@@ -186,15 +213,7 @@ class VectorizedMCTS(Evaluator):
         # return visited counts at the root node
         return self.n_vals
 
-    def reset_search(self) -> None:
-        self.depths.fill_(1)
-        self.cur_nodes.fill_(1)
-        self.visits.zero_()
-        self.visits[:, 0] = 1
-        self.is_leaf.fill_(True)
-        self.next_empty.fill_(2)
-        self.actions.zero_()
-        self.nodes.zero_()
+  
     
     @property
     def next_indices(self) -> torch.Tensor:
@@ -250,3 +269,25 @@ class VectorizedMCTS(Evaluator):
 
         return torch.argmax(legal_puct_scores, dim=1)
     
+    def load_subtree(self, actions: torch.Tensor):
+        # convert actions to master indices (N,)
+        subtree_master_indices = self.nodes[self.env_indices, 1, self.i_start + actions]
+
+        new_nodes = (self.subtrees == subtree_master_indices.view(-1, 1))
+
+        # get master indices that belong to subtreee (others are zeroed out) (N, D)
+        translation = new_nodes * new_nodes.long().cumsum(dim=1)
+        nodes_copy = self.nodes.clone()
+        self.nodes.zero_()
+        # replace node indices with new indices (N, D)
+        self.nodes[self.env_indices_expnd, translation] = nodes_copy[self.env_indices_expnd, self.depths_arranged * new_nodes]
+        self.nodes[self.env_indices, :, self.i_start:self.i_end] = \
+            translation[self.env_indices.view(-1, 1, 1), self.nodes[self.env_indices, :, self.i_start:self.i_end].long()].float()
+        
+        
+        self.next_empty = self.subtree_next_empty[self.env_indices, subtree_master_indices.long()]
+
+        
+        self.subtrees.zero_()
+        self.subtree_next_empty.fill_(1)
+        self.cur_subtree.zero_()
