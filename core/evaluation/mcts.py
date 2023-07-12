@@ -85,7 +85,6 @@ class VectorizedMCTS(Evaluator):
         # stores the subtree 
         self.subtrees = torch.zeros((self.parallel_envs, self.max_depth), dtype=torch.long, device=self.device, requires_grad=False) # index by master id
         self.cur_subtree = torch.zeros((self.parallel_envs,), dtype=torch.long, device=self.device, requires_grad=False)
-        self.subtree_next_empty = torch.full((self.parallel_envs, self.max_depth), 1, dtype=torch.int64, device=self.device, requires_grad=False) # index by action id
         self.depths_arranged = torch.arange(self.max_depth, dtype=torch.int64, device=self.device, requires_grad=False)
 
     def build_reward_indices(self, num_players: int) -> torch.Tensor:
@@ -188,7 +187,6 @@ class VectorizedMCTS(Evaluator):
             self.cur_subtree *= (~is_subtree_root).long()
             self.cur_subtree += master_action_indices_long * is_subtree_root.long()
             self.subtrees[self.env_indices, self.cur_nodes] = self.cur_subtree
-            self.subtree_next_empty[self.env_indices, self.cur_subtree] += unvisited
 
 
             # update the depths tensor to reflect the current search depth for each environment   
@@ -283,11 +281,9 @@ class VectorizedMCTS(Evaluator):
         self.nodes[self.env_indices_expnd, translation] = nodes_copy[self.env_indices_expnd, self.depths_arranged * new_nodes]
         self.nodes[self.env_indices, :, self.i_start:self.i_end] = \
             translation[self.env_indices.view(-1, 1, 1), self.nodes[self.env_indices, :, self.i_start:self.i_end].long()].float()
-        
-        
-        self.next_empty = self.subtree_next_empty[self.env_indices, subtree_master_indices.long()]
+        self.nodes[self.env_indices, :, self.n_start:self.n_end] *= self.nodes[self.env_indices, :, self.i_start:self.i_end] > 0
+        self.next_empty = torch.amax(translation, dim=1) + 1
 
         
         self.subtrees.zero_()
-        self.subtree_next_empty.fill_(1)
         self.cur_subtree.zero_()

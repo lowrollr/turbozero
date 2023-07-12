@@ -139,17 +139,17 @@ class OthelloTrainer(Trainer):
         return wins, draws, losses
 
 
-    def test_n_episodes(self, num_episodes):
-        
-        wins, draws, losses = self.evaluate_against(num_episodes, self.best_model)
-        win_margin_vs_best = wins - losses
-        new_best = win_margin_vs_best >= self.hypers.test_improvement_threshold
-        logging.info(f'Epoch {self.history.cur_epoch} Current vs. Best:')
-        if new_best:
-            self.best_model.load_state_dict(self.model.state_dict())
-            self.best_model_optimizer_state_dict = deepcopy(self.optimizer.state_dict())
-            logging.info('************ NEW BEST MODEL ************')
-        logging.info(f'W/L/D: {wins}/{losses}/{draws}')
+    def test_n_episodes(self, num_episodes, test_against_best = True):
+        if test_against_best:
+            wins, draws, losses = self.evaluate_against(num_episodes, self.best_model)
+            win_margin_vs_best = wins - losses
+            new_best = win_margin_vs_best >= self.hypers.test_improvement_threshold
+            logging.info(f'Epoch {self.history.cur_epoch} Current vs. Best:')
+            if new_best:
+                self.best_model.load_state_dict(self.model.state_dict())
+                self.best_model_optimizer_state_dict = deepcopy(self.optimizer.state_dict())
+                logging.info('************ NEW BEST MODEL ************')
+            logging.info(f'W/L/D: {wins}/{losses}/{draws}')
         
         
         
@@ -157,11 +157,30 @@ class OthelloTrainer(Trainer):
         win_margin_vs_random = wins - losses
         logging.info(f'Epoch {self.history.cur_epoch} Current vs. Random:')
         logging.info(f'W/L/D: {wins}/{losses}/{draws}')
-        self.history.add_epoch_data({
-            'win_margin_vs_best': win_margin_vs_best,
-            'win_margin_vs_random': win_margin_vs_random,
-        }, log=self.log_results)
+
+        if test_against_best:
+            self.history.add_epoch_data({
+                'win_margin_vs_best': win_margin_vs_best,
+                'win_margin_vs_random': win_margin_vs_random,
+            }, log=self.log_results)
+        else:
+            self.history.add_epoch_data({
+                'win_margin_vs_random': win_margin_vs_random,
+            }, log=self.log_results)
         self.add_evaluation_metrics([])
+
+    def training_loop(self, epochs: Optional[int] = None):
+        self.test_n_episodes(self.hypers.test_episodes_per_epoch, test_against_best=False)
+        while self.history.cur_epoch < epochs if epochs is not None else True:
+            while self.history.cur_train_step < self.hypers.train_episodes_per_epoch * (self.history.cur_epoch+1):
+                self.selfplay_step()
+            self.history.start_new_epoch()
+            self.test_n_episodes(self.hypers.test_episodes_per_epoch)
+            self.add_epoch_metrics()
+            if self.interactive:
+                self.history.generate_plots()
+            self.save_checkpoint()
+
 
 
 def load_checkpoint(

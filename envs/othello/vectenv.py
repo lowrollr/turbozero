@@ -12,7 +12,7 @@ class OthelloVectEnv(VectEnv):
         debug=False
     ) -> None:
         state_shape = torch.Size((2, board_size, board_size))
-        policy_shape = torch.Size((64,))
+        policy_shape = torch.Size(((board_size ** 2) + 1,))
         value_shape = torch.Size((2, ))
         super().__init__(num_parallel_envs, state_shape, policy_shape, value_shape, device, num_players=2, debug=debug)
 
@@ -24,29 +24,30 @@ class OthelloVectEnv(VectEnv):
         self.flips = build_flips(num_rays, board_size, device)
 
         self.consecutive_passes = torch.zeros((num_parallel_envs, ), dtype=torch.long, device=device, requires_grad=False)
+        self.legal_actions = torch.zeros((num_parallel_envs, (board_size ** 2) + 1), dtype=torch.bool, device=device, requires_grad=False)
 
         self.need_to_calculate_rays = True
         self.reset()
         self.save_node()
+        
 
         if self.debug:
             self.get_legal_actions_traced = get_legal_actions
             self.push_actions_traced = push_actions
         else:
-            self.get_legal_actions_traced = torch.jit.trace(get_legal_actions, (self.states, self.ray_tensor, *self.filters_and_indices)) # type: ignore
+            self.get_legal_actions_traced = torch.jit.trace(get_legal_actions, (self.states, self.ray_tensor, self.legal_actions, *self.filters_and_indices)) # type: ignore
             self.push_actions_traced = torch.jit.trace(push_actions, (self.states, self.ray_tensor, torch.zeros((self.num_parallel_envs, ), dtype=torch.long, device=device), self.flips)) # type: ignore
 
     def get_legal_actions(self):
-        # adjacent to enemy tiles
         if self.need_to_calculate_rays:
             self.need_to_calculate_rays = False
-            return self.get_legal_actions_traced(self.states, self.ray_tensor, *self.filters_and_indices) # type: ignore
+            return self.get_legal_actions_traced(self.states, self.ray_tensor, self.legal_actions, *self.filters_and_indices) # type: ignore
         else:
-            return self.ray_tensor.any(dim=1).view(-1, self.board_size ** 2)
+            return self.legal_actions
     
     def push_actions(self, actions):
         if self.need_to_calculate_rays:
-            self.get_legal_actions()
+            self.get_legal_actions() # updates ray tensor
         _, passes = self.push_actions_traced(self.states, self.ray_tensor, actions, self.flips) # type: ignore
         self.consecutive_passes += passes
         self.consecutive_passes *= passes
@@ -65,6 +66,7 @@ class OthelloVectEnv(VectEnv):
         self.terminated.zero_()
         self.cur_players.zero_()
         self.consecutive_passes.zero_()
+        self.legal_actions.zero_()
         self.states[:, 0, 3, 3] = 1
         self.states[:, 1, 3, 4] = 1
         self.states[:, 1, 4, 3] = 1

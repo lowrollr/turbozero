@@ -104,7 +104,7 @@ def build_flips(num_rays, states_size, device):
 
 
 
-def get_legal_actions(states, ray_tensor, filters, bl_idx, br_idx, tl_idx, tr_idx, ct):
+def get_legal_actions(states, ray_tensor, legal_actions, filters, bl_idx, br_idx, tl_idx, tr_idx, ct):
     board_size = int(states.shape[-1]) # need to wrap in int() for tracing
     conv_results = torch.nn.functional.conv2d(states, filters, padding=board_size-1, bias=None)
     ray_tensor.zero_()
@@ -113,7 +113,10 @@ def get_legal_actions(states, ray_tensor, filters, bl_idx, br_idx, tl_idx, tr_id
     ray_tensor[:, bl_idx] = conv_results[:, bl_idx, :-(board_size-1), board_size-1:]
     ray_tensor[:, br_idx] = conv_results[:, br_idx, :-(board_size-1), :-(board_size-1)]
     ray_tensor[:] = (ray_tensor.round() == ct).float()
-    return ray_tensor.any(dim=1).view(-1, board_size ** 2)
+    legal_actions.zero_()
+    legal_actions[:,:board_size**2] = ray_tensor.any(dim=1).view(-1, board_size ** 2)
+    legal_actions[:,board_size**2] = ~(legal_actions.any(dim=1))
+    return legal_actions
 
 
 def push_actions(states, ray_tensor, actions, flips):
@@ -122,15 +125,15 @@ def push_actions(states, ray_tensor, actions, flips):
     num_states = states.shape[0]
     state_indices = torch.arange(num_states, device=states.device, requires_grad=False, dtype=torch.long)
 
-    
+    is_not_null = actions != states_size ** 2
     action_ys, action_xs = actions // states_size, actions % states_size
+    action_ys *= is_not_null # puts null action in-bounds
+    action_xs *= is_not_null
+    activated_rays = ray_tensor[state_indices, :, action_ys, action_xs] * (torch.arange(num_rays, device=states.device, requires_grad=False).unsqueeze(0)) * is_not_null.view(-1, 1)
 
-    activated_rays = ray_tensor[state_indices, :, action_ys, action_xs] * (torch.arange(num_rays, device=states.device, requires_grad=False).unsqueeze(0))
+    flips_to_apply = flips[activated_rays.long(), action_ys.unsqueeze(1), action_xs.unsqueeze(1)].amax(dim=1) * is_not_null.view(-1, 1, 1)
 
-    flips_to_apply = flips[activated_rays.long(), action_ys.unsqueeze(1), action_xs.unsqueeze(1)].amax(dim=1)
-
-    any_rays = ray_tensor.view(num_states, -1).any(dim=1)
     states[:, 0, :, :].logical_or_(flips_to_apply)
     states[:, 1, :, :] *= torch.logical_not(flips_to_apply)
-    states[state_indices, 0, action_ys, action_xs] += any_rays.float()
-    return states, ~any_rays
+    states[state_indices, 0, action_ys, action_xs] += is_not_null.float()
+    return states, ~is_not_null
