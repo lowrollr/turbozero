@@ -16,8 +16,10 @@ class OthelloCollector(Collector):
     ) -> None:
         super().__init__(evaluator, episode_memory_device, temperature)
         board_size = self.evaluator.env.board_size
-        ids = torch.arange(self.evaluator.env.policy_shape[0])
-        self.rotated_action_ids = torch.rot90(ids.reshape(board_size, board_size), k=1, dims=(0, 1)).flatten()
+        ids = torch.arange(self.evaluator.env.policy_shape[0]-1, device=episode_memory_device)
+        self.rotated_action_ids = torch.zeros((board_size**2)+1, dtype=torch.long, requires_grad=False, device=ids.device)
+        self.rotated_action_ids[:board_size**2] = torch.rot90(ids.reshape(board_size, board_size), k=1, dims=(0, 1)).flatten()
+        self.rotated_action_ids[board_size**2] = board_size**2
 
     def assign_rewards(self, terminated_episodes, terminated):
         episodes = []
