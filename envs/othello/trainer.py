@@ -59,7 +59,7 @@ class OthelloTrainer(Trainer):
 
         self.best_model = deepcopy(model)
         self.random_baseline = deepcopy(model)
-        reset_model_weights(self.random_baseline)
+        self.random_baseline.apply(reset_model_weights)
         self.best_model_optimizer_state_dict = deepcopy(optimizer.state_dict())
 
     def save_checkpoint(self, custom_name: Optional[str] = None) -> None:
@@ -194,9 +194,8 @@ def load_checkpoint(
 ) -> OthelloTrainer:
     checkpoint = torch.load(checkpoint_path, map_location=device)
     hypers: TurboZeroHypers = checkpoint['hypers']
-    model = TurboZeroResnet(checkpoint['model_arch_params'])
+    model = TurboZeroResnet(checkpoint['model_arch_params']).to(device)
     model.load_state_dict(checkpoint['model_state_dict'])
-    model.to(device)
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=hypers.learning_rate)
     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
@@ -207,7 +206,7 @@ def load_checkpoint(
     train_hypers = checkpoint['train_collector']['hypers']
     train_evaluator: OTHELLO_EVALUATORS = checkpoint['train_collector']['type'](num_parallel_envs, device, 8, train_hypers, debug=debug)
     test_hypers = checkpoint['test_collector']['hypers']
-    test_evaluator: OTHELLO_EVALUATORS = checkpoint['test_collector']['type'](num_parallel_envs, device, 8, test_hypers, debug=debug)
+    test_evaluator: OTHELLO_EVALUATORS = checkpoint['test_collector']['type'](hypers.test_episodes_per_epoch, device, 8, test_hypers, debug=debug)
     return OthelloTrainer(train_evaluator, test_evaluator, num_parallel_envs, device, episode_memory_device, model, optimizer, hypers, history, log_results, interactive, run_tag)
 
 
