@@ -134,29 +134,38 @@ class VectorizedMCTS(Evaluator):
         for _ in range(self.iters):
             # choose next action with PUCT scores
             actions = self.choose_action()
+        
+            # make a step in the environment with the chosen actions
+            self.env.step(actions)
+
+            # check if the env is terminal
+            terminated = self.env.is_terminal()
+
+            
+
             # look up master index for each child node
             master_action_indices = self.next_indices[self.env_indices, actions]
-            # if the node doesn't have an index yet (0 is null), its a leaf node
+
+            # if the node doesn't have an index yet (0 is null), a new node will be created
             unvisited = (master_action_indices == 0).long()
 
+            # check if the next node will go out of bounds
+            in_bounds = ~(((self.next_empty >= self.max_depth) * unvisited).bool())
 
-            # assign the leaf nodes the next empty index
-            master_action_indices += self.next_empty * unvisited
+            # assign the leaf nodes the next empty indices (if there is room to expand the tree)
+            master_action_indices += self.next_empty * in_bounds * unvisited
+
             master_action_indices_long = master_action_indices.long()
-            # increment self.next_empty to reflect the new next empty index
-            self.next_empty += unvisited
+
+            # increment self.next_empty to reflect the new next empty index (if there is room to expand the tree)
+            self.next_empty += in_bounds * unvisited
+
             # update the null values in the indices to reflect any new assigned indices
-            next_indices = self.next_indices
-            next_indices[self.env_indices, actions] = master_action_indices
-            self.next_indices = next_indices
+            self.nodes[self.env_indices, self.cur_nodes, self.i_start + actions] = master_action_indices
 
             # update the visits tensor to include the new node added to the path from the root
             self.visits[self.env_indices, self.depths] = master_action_indices_long
             self.actions[self.env_indices, self.depths - 1] = actions
-
-            
-            # make a step in the environment with the chosen actions
-            self.env.step(actions)
 
             # cur nodes should now reflect the taken actions
             self.cur_nodes = master_action_indices_long
@@ -168,8 +177,7 @@ class VectorizedMCTS(Evaluator):
             # store the policy
             self.p_vals = torch.softmax(policy_logits, dim=1)
 
-            terminated = self.env.is_terminal()
-            is_leaf = (unvisited | terminated).bool()
+            is_leaf = (unvisited | (~in_bounds) | terminated ).bool()
 
             rewards = (self.env.get_rewards() * terminated) + (values.view(-1) * ~terminated)
             rewards = (rewards * (cur_players == self.env.cur_players)) + ((1-rewards) * (cur_players != self.env.cur_players))
@@ -186,8 +194,7 @@ class VectorizedMCTS(Evaluator):
             is_subtree_root = self.depths == 1
             self.cur_subtree *= (~is_subtree_root).long()
             self.cur_subtree += master_action_indices_long * is_subtree_root.long()
-            self.subtrees[self.env_indices, self.cur_nodes] = self.cur_subtree
-
+            self.subtrees[self.env_indices, self.cur_nodes] = self.cur_subtree * in_bounds
 
             # update the depths tensor to reflect the current search depth for each environment   
             self.depths *= ~is_leaf
@@ -195,8 +202,6 @@ class VectorizedMCTS(Evaluator):
             # zero out visits and actions if we've reached a leaf node
             self.visits[:, 1:] *= ~is_leaf.view(-1, 1)
             self.actions *= ~is_leaf.view(-1, 1)
-
-            
 
             # reset to root node if we've reached a leaf node
             self.env.load_node(is_leaf)
