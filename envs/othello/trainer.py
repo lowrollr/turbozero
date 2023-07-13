@@ -207,7 +207,6 @@ class OthelloTrainer(Trainer):
                 raise NotImplementedError('unrecognized baseline', baseline)
 
     def training_loop(self, epochs: Optional[int] = None):
-        self.test_n_episodes(self.hypers.test_episodes_per_epoch, test_against_best=False)
         while self.history.cur_epoch < epochs if epochs is not None else True:
             while self.history.cur_train_step < self.hypers.train_episodes_per_epoch * (self.history.cur_epoch+1):
                 self.selfplay_step()
