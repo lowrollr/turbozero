@@ -160,8 +160,9 @@ class Trainer:
 
             if self.interactive:
                 self.history.generate_plots()
-            self.save_checkpoint()
             self.history.start_new_epoch()
+            self.save_checkpoint()
+            
 
     def save_checkpoint(self, custom_name: Optional[str] = None) -> None:
         directory = f'./checkpoints/{self.run_tag}/'
