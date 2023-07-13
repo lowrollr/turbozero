@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import List, Optional, Type
 import torch
 import logging
 from pathlib import Path
@@ -33,6 +33,7 @@ class Trainer:
         self.log_results = log_results
         self.interactive = interactive
         self.run_tag = run_tag
+        
 
         self.history = history if history else self.init_history()
 

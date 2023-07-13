@@ -13,7 +13,7 @@ class Evaluator:
     def reset(self, seed=None) -> None:
         self.env.reset(seed=seed)
 
-    def evaluate(self, model: torch.nn.Module, *args, **kwargs) -> torch.Tensor:
+    def evaluate(self, *args, **kwargs) -> torch.Tensor:
         raise NotImplementedError()
 
     def step_env(self, actions) -> torch.Tensor:
