@@ -44,7 +44,7 @@ class VectorizedMCTS(Evaluator):
         (to make operations cleaner we use node index 0 as a 'garbage' index, and node index 1 as the root node)
         '''
         self.nodes = torch.zeros(
-            (self.parallel_envs, 2 + self.iters, (4*self.policy_size)),
+            (self.parallel_envs, 2 + self.max_depth, (4*self.policy_size)),
             dtype=torch.float32,
             device=self.device,
             requires_grad=False
