@@ -1,12 +1,6 @@
 from typing import Tuple
 import torch
 
-def fast_weighted_sample(weights, sampler):
-    torch.rand(sampler.shape, out=sampler) 
-    cum_weights = weights.cumsum(dim=1)
-    cum_weights.div_(cum_weights[:, -1:])
-    return (sampler < cum_weights).long().argmax(dim=1)
-
 class VectEnv:
     def __init__(self, 
             num_parallel_envs: int, 
@@ -39,10 +33,6 @@ class VectEnv:
         self.randn = torch.zeros((num_parallel_envs,1), dtype=torch.float32, device=device, requires_grad=False)
        
         self.env_indices = torch.arange(num_parallel_envs, device=device, requires_grad=False)
-        if self.debug:
-            self.fws = fast_weighted_sample
-        else:
-            self.fws = torch.jit.trace(fast_weighted_sample, (torch.rand((num_parallel_envs, *policy_shape), device=device, requires_grad=False, dtype=torch.float32), self.randn), check_trace=False) # type: ignore
         
     def reset(self, seed=None):
         raise NotImplementedError()
@@ -67,7 +57,7 @@ class VectEnv:
 
     def apply_stochastic_progressions(self, mask=None) -> None:
         progs, probs = self.get_stochastic_progressions()
-        indices = self.fast_weighted_sample(probs)
+        indices = torch.multinomial(probs, 1, replacement=True).flatten()
 
         new_states = progs[(self.env_indices, indices)].unsqueeze(1)
 
@@ -82,9 +72,6 @@ class VectEnv:
     
     def reset_terminated_states(self):
         raise NotImplementedError()
-
-    def fast_weighted_sample(self, weights) -> torch.Tensor: 
-        return self.fws(weights, self.randn) # type: ignore
     
     def next_player(self):
         self.cur_players = (self.cur_players + 1) % self.num_players

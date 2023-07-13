@@ -41,7 +41,7 @@ class Collector:
         visits = self.evaluator.evaluate(model)
         self.episode_memory.insert(self.evaluator.env.states, visits)
         if self.temperature is not None:
-            actions = self.evaluator.env.fast_weighted_sample(torch.pow(visits, 1/self.temperature))
+            actions = torch.multinomial(torch.pow(visits, 1/self.temperature), 1, replacement=True).flatten()
         else:
             actions = torch.argmax(visits, dim=1)
 
