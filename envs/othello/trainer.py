@@ -228,7 +228,7 @@ def load_checkpoint(
     interactive = True,
     debug = False,
 ) -> OthelloTrainer:
-    checkpoint = torch.load(checkpoint_path, map_location=device)
+    checkpoint = torch.load(checkpoint_path, map_location=torch.device('cpu'))
     hypers: TurboZeroHypers = checkpoint['hypers']
     model = TurboZeroResnet(checkpoint['model_arch_params']).to(device)
     model.load_state_dict(checkpoint['model_state_dict'])
@@ -244,7 +244,7 @@ def load_checkpoint(
     test_hypers = checkpoint['test_collector']['hypers']
     test_evaluator: OTHELLO_EVALUATORS = checkpoint['test_collector']['type'](hypers.test_episodes_per_epoch, device, 8, test_hypers, debug=debug)
 
-    return OthelloTrainer(train_evaluator, test_evaluator, num_parallel_envs, device, episode_memory_device, model, optimizer, hypers, history, baselines, log_results, interactive, run_tag)
+    return OthelloTrainer(train_evaluator, test_evaluator, num_parallel_envs, device, episode_memory_device, model, optimizer, hypers, baselines, history, log_results, interactive, run_tag)
 
 
  
