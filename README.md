@@ -30,7 +30,7 @@ While LazyZero shows promise, it is still just a hypothesis rather than a proven
 If you'd like to collaborate on these ideas with me, please reach out! 
 
 ## Implementation Details
-### VectEnv
+### Env
 In order to take advantage of GPU parallelism, environments must be implemented as a stacked set of states that operations can be applied to in parallel. In the case of *2048* this looks something like this:
 ![image](./misc/2048env.png)
 
@@ -64,7 +64,7 @@ horizontal_zeros = torch.logical_and(horizontal_diff == 0, states[:, :, :, 1:] !
 
 Notice that in this example code we are operating on 4 dimensions, because these are vectorized operations across many 1x4x4 environments. With some help from our GPU we can simulataneously compute the legal actions across N boards!
 
-All LazyZero environments inherit from the VectEnv base class. Much like gymnasium, this class implements step(action) and reset():
+All LazyZero environments inherit from the Env base class. Much like gymnasium, this class implements step(action) and reset():
 
 However, certain details make this implementation incompatible with other aspects of gymnasium, so for the time being these environments are not compatible with gymnasium tooling.
 

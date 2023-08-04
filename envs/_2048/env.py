@@ -1,18 +1,27 @@
 
+from dataclasses import dataclass
 from typing import Optional, Tuple
 import torch
-from core.vectenv import VectEnv
+from core.env import Env, EnvConfig
 from .torchscripts import get_stochastic_progressions, push_actions, get_legal_actions
 
-class _2048Env(VectEnv):
-    def __init__(self, num_parallel_envs, device, debug=False):
+@dataclass
+class _2048EnvConfig(EnvConfig):
+    pass
+
+class _2048Env(Env):
+    def __init__(self,
+        config: _2048EnvConfig, 
+        device: torch.device,
+        debug=False
+    ) -> None:
         super().__init__(
-            num_parallel_envs=num_parallel_envs,
+            config=config,
+            device=device,
+            num_players=1,
             state_shape=torch.Size([1, 4, 4]),
             policy_shape=torch.Size([4]),
             value_shape=torch.Size([1]),
-            device=device,
-            num_players=1,
             debug=debug
         )
                 
@@ -31,7 +40,7 @@ class _2048Env(VectEnv):
 
             self.push_actions_ts = torch.jit.trace(push_actions, ( # type: ignore
                 self.states,
-                torch.zeros((self.num_parallel_envs, ), dtype=torch.int64, device=device)
+                torch.zeros((self.parallel_envs, ), dtype=torch.int64, device=device)
             ))
 
         self.saved_states = self.states.clone()
@@ -45,7 +54,7 @@ class _2048Env(VectEnv):
         self.apply_stochastic_progressions()
     
     def reset_terminated_states(self):
-        self.states *= torch.logical_not(self.terminated).view(self.num_parallel_envs, 1, 1, 1)
+        self.states *= torch.logical_not(self.terminated).view(self.parallel_envs, 1, 1, 1)
         self.apply_stochastic_progressions(self.terminated)
         self.apply_stochastic_progressions(self.terminated)
         self.terminated.zero_()
@@ -75,6 +84,6 @@ class _2048Env(VectEnv):
         self.saved_states = self.states.clone()
     
     def load_node(self, envs):
-        load_envs_expnd = envs.view(self.num_parallel_envs, 1, 1, 1)
+        load_envs_expnd = envs.view(self.parallel_envs, 1, 1, 1)
         self.states = self.saved_states.clone() * load_envs_expnd + self.states * (~load_envs_expnd)
         self.update_terminated()

@@ -1,17 +1,25 @@
 
+from dataclasses import dataclass
+from typing import Optional, Tuple
 import torch
 
-from core.evaluation.evaluator import Evaluator
-from core.evaluation.lazy_mcts_hypers import LazyMCTSHypers
-from ..vectenv import VectEnv
+from core.algorithms.evaluator import Evaluator, EvaluatorConfig
+from ..env import Env
 
 
-class VectorizedLazyMCTS(Evaluator):
-    def __init__(self, env: VectEnv, hypers: LazyMCTSHypers) -> None:
-        super().__init__(env, env.device, hypers)
+@dataclass 
+class LazyMCTSConfig(EvaluatorConfig):
+    num_policy_rollouts: int # number of policy rollouts to run per evaluation call
+    rollout_depth: int # depth of each policy rollout, once this depth is reached, return the network's evaluation (value head) of the state
+    puct_coeff: float # C-value in PUCT formula
+
+
+class LazyMCTS(Evaluator):
+    def __init__(self, env: Env, config: LazyMCTSConfig) -> None:
+        super().__init__(env, env.device, config)
 
         self.action_scores = torch.zeros(
-            (self.env.num_parallel_envs, *self.env.policy_shape),
+            (self.env.parallel_envs, *self.env.policy_shape),
             dtype=torch.float32,
             device=self.env.device,
             requires_grad=False
@@ -24,15 +32,15 @@ class VectorizedLazyMCTS(Evaluator):
             requires_grad=False
         )
 
-        self.puct_coeff = hypers.puct_coeff
-        self.policy_rollouts = hypers.num_policy_rollouts
-        self.rollout_depth = hypers.rollout_depth
+        self.puct_coeff = config.puct_coeff
+        self.policy_rollouts = config.num_policy_rollouts
+        self.rollout_depth = config.rollout_depth
 
         # TODO: this is not an elegant solution at all but we need a large, positive, non-infinite value
         # this requires implementations to think carefully about choosing this value, which should be unnecessary
         self.very_positive_value = env.very_positive_value
 
-        self.all_nodes = torch.ones(env.num_parallel_envs, dtype=torch.bool, device=self.device)
+        self.all_nodes = torch.ones(env.parallel_envs, dtype=torch.bool, device=self.device)
 
     def reset(self, seed=None) -> None:
         self.env.reset(seed=seed)
@@ -42,10 +50,10 @@ class VectorizedLazyMCTS(Evaluator):
         self.action_scores.zero_()
         self.visit_counts.zero_()
 
-    def evaluate(self, model: torch.nn.Module) -> torch.Tensor:
+    def evaluate(self, model: torch.nn.Module) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         self.reset_puct()
 
-        return self.explore_for_iters(model, self.policy_rollouts, self.rollout_depth)
+        return self.explore_for_iters(model, self.policy_rollouts, self.rollout_depth), None
 
     def choose_action_with_puct(self, probs: torch.Tensor, legal_actions: torch.Tensor) -> torch.Tensor:
         n_sum = torch.sum(self.visit_counts, dim=1, keepdim=True)
@@ -79,7 +87,7 @@ class VectorizedLazyMCTS(Evaluator):
                 legal_actions = self.env.get_legal_actions()
                 distribution = torch.nn.functional.softmax(
                     policy_logits, dim=1) * legal_actions
-                next_actions = torch.multinomial(distribution, 1, replacement=True).flatten()
+                next_actions = torch.multinomial(distribution + self.env.is_terminal().unsqueeze(1), 1, replacement=True).flatten()
                 self.env.step(next_actions)
 
     def explore_for_iters(self, model: torch.nn.Module, iters: int, search_depth: int) -> torch.Tensor:

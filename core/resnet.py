@@ -1,14 +1,17 @@
 
-from typing import Optional
+from typing import List, Optional, Tuple
 import torch
 import torch.nn as nn
 
 from dataclasses import dataclass
 from typing import Callable
 
+from core.utils.custom_activations import load_activation
+
+
 @dataclass
-class TurboZeroArchParams:
-    input_size: torch.Size
+class ResNetConfig:
+    input_size: List[int]
     policy_size: int
     res_channels: int
     res_blocks: int
@@ -19,7 +22,7 @@ class TurboZeroArchParams:
     kernel_size: int
     policy_fc_size: int = 32
     value_fc_size: int = 32
-    value_output_activation: Optional[torch.nn.Module] = None
+    value_output_activation: str = ''
     
 def reset_model_weights(m):
     reset_parameters = getattr(m, "reset_parameters", None)
@@ -53,45 +56,45 @@ class ResidualBlock(nn.Module):
 
 
 class TurboZeroResnet(nn.Module):
-    def __init__(self, arch_params: TurboZeroArchParams) -> None:
+    def __init__(self, config: ResNetConfig) -> None:
         super().__init__()
-        assert len(arch_params.input_size) == 3  # (channels, height, width)
-        self.input_channels, self.input_height, self.input_width = arch_params.input_size
+        assert len(config.input_size) == 3  # (channels, height, width)
+        self.value_head_activation: Optional[torch.nn.Module] = load_activation(config.value_output_activation)
+        self.input_channels, self.input_height, self.input_width = config.input_size
 
         self.input_block = nn.Sequential(
-            nn.Conv2d(self.input_channels, arch_params.res_channels, kernel_size = arch_params.kernel_size, stride = 1, padding = 'same', bias=False),
-            nn.BatchNorm2d(arch_params.res_channels),
+            nn.Conv2d(self.input_channels, config.res_channels, kernel_size = config.kernel_size, stride = 1, padding = 'same', bias=False),
+            nn.BatchNorm2d(config.res_channels),
             nn.ReLU()
         )
 
         self.res_blocks = nn.Sequential(
-            *[ResidualBlock(arch_params.res_channels, arch_params.res_channels, arch_params.kernel_size) \
-            for _ in range(arch_params.res_blocks)]
+            *[ResidualBlock(config.res_channels, config.res_channels, config.kernel_size) \
+            for _ in range(config.res_blocks)]
         )
 
         self.policy_head = nn.Sequential(
-            *[ResidualBlock(arch_params.res_channels, arch_params.policy_head_res_channels, arch_params.kernel_size) \
-            for _ in range(arch_params.policy_head_res_blocks)],
+            *[ResidualBlock(config.res_channels, config.policy_head_res_channels, config.kernel_size) \
+            for _ in range(config.policy_head_res_blocks)],
             nn.Flatten(start_dim=1),
-            nn.Linear(arch_params.policy_head_res_channels * self.input_height * self.input_width, arch_params.policy_fc_size, bias=False),
-            nn.BatchNorm1d(arch_params.policy_fc_size),
+            nn.Linear(config.policy_head_res_channels * self.input_height * self.input_width, config.policy_fc_size, bias=False),
+            nn.BatchNorm1d(config.policy_fc_size),
             nn.ReLU(),
-            nn.Linear(arch_params.policy_fc_size, arch_params.policy_size),
+            nn.Linear(config.policy_fc_size, config.policy_size),
             # we use cross entropy loss so no need for softmax
         )
 
         self.value_head = nn.Sequential(
-            *[ResidualBlock(arch_params.res_channels, arch_params.value_head_res_channels, arch_params.kernel_size) \
-            for _ in range(arch_params.value_head_res_blocks)],
+            *[ResidualBlock(config.res_channels, config.value_head_res_channels, config.kernel_size) \
+            for _ in range(config.value_head_res_blocks)],
             nn.Flatten(start_dim=1),
-            nn.Linear(arch_params.value_head_res_channels * self.input_height * self.input_width, arch_params.value_fc_size, bias=False),
-            nn.BatchNorm1d(arch_params.value_fc_size),
+            nn.Linear(config.value_head_res_channels * self.input_height * self.input_width, config.value_fc_size, bias=False),
+            nn.BatchNorm1d(config.value_fc_size),
             nn.ReLU(),
-            nn.Linear(arch_params.value_fc_size, 1)
+            nn.Linear(config.value_fc_size, 1)
         )
-        self.value_head_activation = arch_params.value_output_activation
 
-        self.arch_params = arch_params
+        self.config = config
 
     def forward(self, x):
         x = self.input_block(x)

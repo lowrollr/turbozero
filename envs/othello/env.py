@@ -1,30 +1,48 @@
 
+from dataclasses import dataclass
 import torch
 
-from core.vectenv import VectEnv
+from core.env import Env, EnvConfig
 from .torchscripts import get_legal_actions, push_actions, build_filters, build_flips
 
-class OthelloVectEnv(VectEnv):
+@dataclass
+class OthelloEnvConfig(EnvConfig):
+    board_size: int = 8
+
+
+
+
+
+class OthelloEnv(Env):
     def __init__(self, 
-        num_parallel_envs: int, 
+        config: OthelloEnvConfig,
         device: torch.device,
-        board_size: int = 8,
         debug=False
     ) -> None:
-        state_shape = torch.Size((2, board_size, board_size))
-        policy_shape = torch.Size(((board_size ** 2) + 1,))
+        self.board_size = config.board_size
+
+        state_shape = torch.Size((2, self.board_size, self.board_size))
+        policy_shape = torch.Size(((self.board_size ** 2) + 1,))
         value_shape = torch.Size((2, ))
-        super().__init__(num_parallel_envs, state_shape, policy_shape, value_shape, device, num_players=2, debug=debug)
 
-        self.board_size = board_size
+        super().__init__(
+            config = config,
+            device=device,
+            num_players=2, 
+            state_shape=state_shape, 
+            policy_shape=policy_shape, 
+            value_shape=value_shape, 
+            debug=debug
+        )
+
         num_rays = (8 * (self.board_size - 2)) + 1
-        self.ray_tensor = torch.zeros((num_parallel_envs, num_rays, self.board_size, self.board_size), dtype=torch.float32, device=device, requires_grad=False)
+        self.ray_tensor = torch.zeros((self.parallel_envs, num_rays, self.board_size, self.board_size), dtype=torch.float32, device=device, requires_grad=False)
         
-        self.filters_and_indices = build_filters(device, board_size)
-        self.flips = build_flips(num_rays, board_size, device)
+        self.filters_and_indices = build_filters(device, self.board_size)
+        self.flips = build_flips(num_rays, self.board_size, device)
 
-        self.consecutive_passes = torch.zeros((num_parallel_envs, ), dtype=torch.long, device=device, requires_grad=False)
-        self.legal_actions = torch.zeros((num_parallel_envs, (board_size ** 2) + 1), dtype=torch.bool, device=device, requires_grad=False)
+        self.consecutive_passes = torch.zeros((self.parallel_envs, ), dtype=torch.long, device=device, requires_grad=False)
+        self.legal_actions = torch.zeros((self.parallel_envs, (self.board_size ** 2) + 1), dtype=torch.bool, device=device, requires_grad=False)
 
         self.need_to_calculate_rays = True
         self.reset()
@@ -36,7 +54,7 @@ class OthelloVectEnv(VectEnv):
             self.push_actions_traced = push_actions
         else:
             self.get_legal_actions_traced = torch.jit.trace(get_legal_actions, (self.states, self.ray_tensor, self.legal_actions, *self.filters_and_indices)) # type: ignore
-            self.push_actions_traced = torch.jit.trace(push_actions, (self.states, self.ray_tensor, torch.zeros((self.num_parallel_envs, ), dtype=torch.long, device=device), self.flips)) # type: ignore
+            self.push_actions_traced = torch.jit.trace(push_actions, (self.states, self.ray_tensor, torch.zeros((self.parallel_envs, ), dtype=torch.long, device=device), self.flips)) # type: ignore
 
     def get_legal_actions(self):
         if self.need_to_calculate_rays:

@@ -6,24 +6,21 @@
 from typing import Optional
 import torch
 from core.utils.memory import EpisodeMemory
-from core.evaluation.evaluator import Evaluator
+from core.algorithms.evaluator import Evaluator
 
 
 class Collector:
     def __init__(self, 
         evaluator: Evaluator, 
-        episode_memory_device: torch.device,
-        temperature: Optional[float] = None
+        episode_memory_device: torch.device
     ) -> None:
-        num_parallel_envs = evaluator.env.num_parallel_envs
+        parallel_envs = evaluator.env.parallel_envs
         self.evaluator = evaluator
         self.evaluator.reset()
-        self.episode_memory = EpisodeMemory(num_parallel_envs, episode_memory_device)
-        self.temperature = temperature
+        self.episode_memory = EpisodeMemory(parallel_envs, episode_memory_device)
 
 
     def collect(self, model: torch.nn.Module, reset_terminal: bool = True):
-        
         terminated = self.collect_step(model)
 
         terminated_episodes = self.episode_memory.pop_terminated_episodes(terminated)
@@ -37,15 +34,8 @@ class Collector:
     
     def collect_step(self, model: torch.nn.Module):
         model.eval()
-
-        visits = self.evaluator.evaluate(model)
-        self.episode_memory.insert(self.evaluator.env.states, visits)
-        if self.temperature is not None:
-            actions = torch.multinomial(torch.pow(visits, 1/self.temperature), 1, replacement=True).flatten()
-        else:
-            actions = torch.argmax(visits, dim=1)
-
-        terminated = self.evaluator.step_env(actions)
+        initial_states, probs, _, _, terminated = self.evaluator.step(model)
+        self.episode_memory.insert(initial_states, probs)
         return terminated
     
     def assign_rewards(self, terminated_episodes, terminated):
@@ -55,11 +45,5 @@ class Collector:
         return terminated_episodes
     
     def reset(self):
-        self.episode_memory = EpisodeMemory(self.evaluator.env.num_parallel_envs, self.episode_memory.device)
+        self.episode_memory = EpisodeMemory(self.evaluator.env.parallel_envs, self.episode_memory.device)
         self.evaluator.reset()
-
-    def get_details(self):
-        return {
-            'type': type(self.evaluator),
-            'hypers': self.evaluator.hypers,
-        }

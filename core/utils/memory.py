@@ -31,16 +31,16 @@ class GameReplayMemory(ReplayMemory):
         return samples
     
 class EpisodeMemory:
-    def __init__(self, num_parallel_envs: int, device: torch.device) -> None:
-        self.memory = [[] for _ in range(num_parallel_envs)]
-        self.num_parallel_envs = num_parallel_envs
+    def __init__(self, parallel_envs: int, device: torch.device) -> None:
+        self.memory = [[] for _ in range(parallel_envs)]
+        self.parallel_envs = parallel_envs
         self.device = device
 
     def insert(self, inputs: torch.Tensor, action_visits: torch.Tensor):
         inputs = inputs.clone().to(device=self.device)
         action_visits = action_visits.clone().to(device=self.device)
 
-        for i in range(self.num_parallel_envs):
+        for i in range(self.parallel_envs):
             self.memory[i].append((inputs[i], action_visits[i]))
 
     def pop_terminated_episodes(self, terminated: torch.Tensor):

@@ -1,31 +1,45 @@
 
 
-from typing import Optional
+from dataclasses import dataclass
+from typing import Optional, Tuple
 import torch
 import math
-from core.evaluation.evaluator import Evaluator
+from core.algorithms.evaluator import Evaluator, EvaluatorConfig
 
-from core.vectenv import VectEnv
-from .mcts_hypers import MCTSHypers
+from core.env import Env
 
-class VectorizedMCTS(Evaluator):
-    def __init__(self, env: VectEnv, hypers: MCTSHypers) -> None:
-        super().__init__(env, env.device, hypers)
+
+@dataclass
+class MCTSConfig(EvaluatorConfig):
+    num_iters: int # number of MCTS iterations to run
+    max_nodes: Optional[int] # maximum number of expanded nodes
+    puct_coeff: float # C-value in PUCT formula
+    dirichlet_alpha: float # magnitude of dirichlet noise
+    dirichlet_epsilon: float # proportion of policy composed of dirichlet noise
+
+
+# For now, this implementation of MCTS assumes that a model is used to evaluate leaf nodes rather than support rollouts
+# TODO: implement a more general version that supports rollouts + other strategies
+class MCTS(Evaluator):
+    def __init__(self, env: Env, config: MCTSConfig) -> None:
+        super().__init__(env, env.device, config)
         # search parameters
         # each evaluation traverses an edge of the search tree
-        self.iters = hypers.num_iters
-        # maximum depth of the search tree, defaults to max_evals (essentially unbounded)
-        self.max_depth = hypers.max_depth if hypers.max_depth is not None else self.iters
+        self.iters = config.num_iters
+        # maximum nodes in the search tree, defaults to max_evals (essentially unbounded)
+        self.max_nodes = config.max_nodes if config.max_nodes is not None else self.iters
         # C in the PUCT formula, controls exploration vs exploitation
-        self.puct_coeff = hypers.puct_coeff
+        self.puct_coeff = config.puct_coeff
         # a positive value outside of the reward domain (e.g. 1e8) used to initialize the W-values of newly expanded nodes while preserving exploration order according to P-values
         self.very_positive_value = env.very_positive_value
 
-        self.dirichlet_a = hypers.dirichlet_alpha
-        self.dirichlet_e = hypers.dirichlet_epsilon
+        self.dirichlet_a = config.dirichlet_alpha
+        self.dirichlet_e = config.dirichlet_epsilon
 
-        self.parallel_envs = self.env.num_parallel_envs
+        self.parallel_envs = self.env.parallel_envs
         self.policy_size = self.env.policy_shape[-1]
+
+        
 
         '''
         self.nodes holds the state of the search tree 
@@ -44,7 +58,7 @@ class VectorizedMCTS(Evaluator):
         (to make operations cleaner we use node index 0 as a 'garbage' index, and node index 1 as the root node)
         '''
         self.nodes = torch.zeros(
-            (self.parallel_envs, 2 + self.max_depth, (4*self.policy_size)),
+            (self.parallel_envs, 2 + self.max_nodes, (4*self.policy_size)),
             dtype=torch.float32,
             device=self.device,
             requires_grad=False
@@ -63,7 +77,7 @@ class VectorizedMCTS(Evaluator):
         # MCTS
         # stores actions taken since leaving the root node, used for backpropagation
         self.actions = torch.zeros(
-            (self.parallel_envs, self.max_depth), dtype=torch.int64, device=self.device, requires_grad=False)
+            (self.parallel_envs, self.max_nodes), dtype=torch.int64, device=self.device, requires_grad=False)
         # stores the next empty node index for each env, used for expansion
         self.next_empty = torch.full_like(
             self.env_indices, 2, dtype=torch.int64, device=self.device, requires_grad=False)
@@ -74,7 +88,7 @@ class VectorizedMCTS(Evaluator):
         self.cur_nodes = torch.ones(
             (self.parallel_envs,), dtype=torch.int64, device=self.device, requires_grad=False)
         # stores the indices of each node visited since leaving the root node
-        self.visits = torch.zeros((self.parallel_envs, self.max_depth),
+        self.visits = torch.zeros((self.parallel_envs, self.max_nodes),
                                   dtype=torch.int64, device=self.device, requires_grad=False)
         self.visits[:, 0] = 1
 
@@ -83,12 +97,12 @@ class VectorizedMCTS(Evaluator):
         
         
         # stores the subtree 
-        self.subtrees = torch.zeros((self.parallel_envs, self.max_depth), dtype=torch.long, device=self.device, requires_grad=False) # index by master id
+        self.subtrees = torch.zeros((self.parallel_envs, self.max_nodes), dtype=torch.long, device=self.device, requires_grad=False) # index by master id
         self.cur_subtree = torch.zeros((self.parallel_envs,), dtype=torch.long, device=self.device, requires_grad=False)
-        self.depths_arranged = torch.arange(self.max_depth, dtype=torch.int64, device=self.device, requires_grad=False)
+        self.depths_arranged = torch.arange(self.max_nodes, dtype=torch.int64, device=self.device, requires_grad=False)
 
     def build_reward_indices(self, num_players: int) -> torch.Tensor:
-        num_repeats = math.ceil(self.max_depth / num_players)
+        num_repeats = math.ceil(self.max_nodes / num_players)
         return torch.tensor([1] + [0] * (num_players - 1), dtype=torch.bool, device=self.device).repeat(num_repeats).view(1, -1)
     
     def step_env(self, actions) -> torch.Tensor:
@@ -114,8 +128,7 @@ class VectorizedMCTS(Evaluator):
         self.actions.zero_()
 
 
-    def evaluate(self, model: torch.nn.Module) -> torch.Tensor:
-
+    def evaluate(self, model: torch.nn.Module) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         self.reset_search()
 
         # save the root node so that we can reset the environment to this state when we reach a leaf node
@@ -150,7 +163,7 @@ class VectorizedMCTS(Evaluator):
             unvisited = (master_action_indices == 0).long()
 
             # check if the next node will go out of bounds
-            in_bounds = ~(((self.next_empty >= self.max_depth) * unvisited).bool())
+            in_bounds = ~(((self.next_empty >= self.max_nodes) * unvisited).bool())
 
             # assign the leaf nodes the next empty indices (if there is room to expand the tree)
             master_action_indices += self.next_empty * in_bounds * unvisited
@@ -214,7 +227,7 @@ class VectorizedMCTS(Evaluator):
         self.cur_nodes.fill_(1)
         self.env.load_node(self.cur_nodes.bool())
         # return visited counts at the root node
-        return self.n_vals
+        return self.n_vals, None
 
   
     
@@ -288,7 +301,8 @@ class VectorizedMCTS(Evaluator):
             translation[self.env_indices.view(-1, 1, 1), self.nodes[self.env_indices, :, self.i_start:self.i_end].long()].float()
         self.nodes[self.env_indices, :, self.n_start:self.n_end] *= self.nodes[self.env_indices, :, self.i_start:self.i_end] > 0
         self.next_empty = torch.amax(translation, dim=1) + 1
-
+        self.next_empty.clamp_(min=2)
         
         self.subtrees.zero_()
         self.cur_subtree.zero_()
+    

@@ -1,4 +1,4 @@
-from typing import List
+from typing import Dict, List
 import bottleneck
 
 from collections import OrderedDict
@@ -81,16 +81,16 @@ class Metric:
 
 class TrainingMetrics:
     def __init__(self, train_metrics: List[Metric], episode_metrics: List[Metric], eval_metrics: List[Metric], epoch_metrics: List[Metric]) -> None:
-        self.train_metrics = {
+        self.train_metrics: Dict[str, Metric]  = {
             metric.name: metric for metric in train_metrics
         }
-        self.episode_metrics = {
+        self.episode_metrics: Dict[str, Metric]  = {
             metric.name: metric for metric in episode_metrics
         }
-        self.epoch_metrics = {
+        self.epoch_metrics: Dict[str, Metric] = {
             metric.name: metric for metric in epoch_metrics
         }
-        self.eval_metrics = {
+        self.eval_metrics: Dict[str, List[Metric]]  = {
             metric.name: [metric] for metric in eval_metrics
         }
         
