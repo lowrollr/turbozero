@@ -1,6 +1,7 @@
 run_tag: '2048'
-env_type: '2048'
+
 env_config: {
+  env_type: '2048'
 }
 model_config: { # overwritten if loading a checkpoint
   input_size: [1, 4, 4],
@@ -25,15 +26,15 @@ train_mode_config: {
     puct_coeff: 1.0 # C-value in PUCT formula
   },
   learning_rate: 0.0001,
-  replay_memory_max_size: 50000,
-  replay_memory_min_size: 50000,
+  replay_memory_max_size: 10000,
+  replay_memory_min_size: 10,
   parallel_envs: 8,
   policy_factor: 1.0,
   minibatch_size: 1024,
   minibatches_per_update: 1,
-  episodes_per_epoch: 10000,
+  episodes_per_epoch: 10,
   test_config: {
-    episodes_per_epoch: 100
+    episodes_per_epoch: 10
   }
 }
 

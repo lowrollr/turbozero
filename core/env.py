@@ -5,7 +5,7 @@ import torch
 
 @dataclass
 class EnvConfig:
-    pass
+    env_type: str
 
 
 class Env:

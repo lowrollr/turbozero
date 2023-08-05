@@ -4,6 +4,7 @@ import torch
 import logging
 from pathlib import Path
 from core.algorithms.evaluator import EvaluatorConfig
+from core.resnet import TurboZeroResnet
 from core.test.tester import TesterConfig, Tester
 from core.train.collector import Collector
 from core.utils.history import Metric, TrainingMetrics
@@ -174,7 +175,6 @@ class Trainer:
             self.history.start_new_epoch()
             self.save_checkpoint()
             
-
     def save_checkpoint(self, custom_name: Optional[str] = None) -> None:
         directory = f'./checkpoints/{self.run_tag}/'
         Path(directory).mkdir(parents=True, exist_ok=True)
@@ -189,5 +189,18 @@ class Trainer:
             'raw_train_config': self.raw_train_config,
             'raw_env_config': self.raw_env_config
         }, filepath)
+
+def load_checkpoint(checkpoint_file: str):
+    checkpoint = torch.load(checkpoint_file)
+    history = checkpoint['history']
+    run_tag = checkpoint['run_tag']
+    raw_train_config = checkpoint['raw_train_config']
+    raw_env_config = checkpoint['raw_env_config']
+    model = TurboZeroResnet(checkpoint['model_arch_params'])
+    model.load_state_dict(checkpoint['model_state_dict'])
+    raw_train_config = checkpoint['raw_train_config']
+    optimizer = torch.optim.AdamW(model.parameters(), raw_train_config['learning_rate'])
+    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    return model, optimizer, history, run_tag, raw_train_config, raw_env_config
 
 

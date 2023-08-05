@@ -38,20 +38,21 @@ class _2048Trainer(Trainer):
             interactive=interactive,
             run_tag=run_tag
         )
-        self.history.episode_metrics.update({
-            'reward': Metric(name='reward', xlabel='Episode', ylabel='Reward', addons={'running_mean': 100}, maximize=True, alert_on_best=self.log_results),
-            'log2_high_square': Metric(name='log2_high_square', xlabel='Episode', ylabel='High Tile', addons={'running_mean': 100}, maximize=True, alert_on_best=self.log_results, proper_name='High Tile (log2)'),
-        })
+        if self.history.cur_epoch == 0:
+            self.history.episode_metrics.update({
+                'reward': Metric(name='reward', xlabel='Episode', ylabel='Reward', addons={'running_mean': 100}, maximize=True, alert_on_best=self.log_results),
+                'log2_high_square': Metric(name='log2_high_square', xlabel='Episode', ylabel='High Tile', addons={'running_mean': 100}, maximize=True, alert_on_best=self.log_results, proper_name='High Tile (log2)'),
+            })
 
-        self.history.eval_metrics.update({
-            'reward': [Metric(name='reward', xlabel='Reward', ylabel='Frequency', pl_type='hist',  maximize=True, alert_on_best=False)],
-            'high_square': [Metric(name='high_square', xlabel='High Tile', ylabel='Frequency Tile', pl_type='bar', maximize=True, alert_on_best=False, proper_name='High Tile')]
-        })
-    
-        self.history.epoch_metrics.update({
-            'avg_reward': Metric(name='avg_reward', xlabel='Epoch', ylabel='Average Reward', maximize=True, alert_on_best=self.log_results, proper_name='Average Reward'),
-            'avg_log2_high_square': Metric(name='avg_log2_high_square', xlabel='Epoch', ylabel='Average High Tile', maximize=True, alert_on_best=self.log_results, proper_name='Average High Tile (log2)'),
-        })
+            self.history.eval_metrics.update({
+                'reward': [Metric(name='reward', xlabel='Reward', ylabel='Frequency', pl_type='hist',  maximize=True, alert_on_best=False)],
+                'high_square': [Metric(name='high_square', xlabel='High Tile', ylabel='Frequency Tile', pl_type='bar', maximize=True, alert_on_best=False, proper_name='High Tile')]
+            })
+        
+            self.history.epoch_metrics.update({
+                'avg_reward': Metric(name='avg_reward', xlabel='Epoch', ylabel='Average Reward', maximize=True, alert_on_best=self.log_results, proper_name='Average Reward'),
+                'avg_log2_high_square': Metric(name='avg_log2_high_square', xlabel='Epoch', ylabel='Average High Tile', maximize=True, alert_on_best=self.log_results, proper_name='Average High Tile (log2)'),
+            })
     
     def add_collection_metrics(self, episodes):
         for episode in episodes:

@@ -20,7 +20,8 @@ from envs.othello.trainer import OthelloTrainer
 from .othello.env import OthelloEnv, OthelloEnvConfig
 from ._2048.env import _2048Env, _2048EnvConfig
 
-def init_env(device: torch.device, parallel_envs: int, env_type: str, env_config: dict, debug: bool):
+def init_env(device: torch.device, parallel_envs: int, env_config: dict, debug: bool):
+    env_type = env_config['env_type']
     if env_type == 'othello':
         config = OthelloEnvConfig(**env_config)
         return OthelloEnv(parallel_envs, config, device, debug)
