@@ -12,19 +12,21 @@ from core.train.collector import Collector
 from core.train.trainer import Trainer, TrainerConfig
 from core.utils.history import TrainingMetrics
 from envs._2048.collector import _2048Collector
+from envs._2048.tester import _2048Tester
 from envs._2048.trainer import _2048Trainer
 from envs.othello.collector import OthelloCollector
+from envs.othello.tester import OthelloTester
 from envs.othello.trainer import OthelloTrainer
 from .othello.env import OthelloEnv, OthelloEnvConfig
 from ._2048.env import _2048Env, _2048EnvConfig
 
-def init_env(device: torch.device, env_type: str, env_config: dict, debug: bool):
+def init_env(device: torch.device, parallel_envs: int, env_type: str, env_config: dict, debug: bool):
     if env_type == 'othello':
         config = OthelloEnvConfig(**env_config)
-        return OthelloEnv(config, device, debug)
+        return OthelloEnv(parallel_envs, config, device, debug)
     elif env_type == '2048':
         config = _2048EnvConfig(**env_config)
-        return _2048Env(config, device, debug)
+        return _2048Env(parallel_envs, config, device, debug)
     else:
         raise NotImplementedError(f'Environment {env_type} not implemented')
     
@@ -51,7 +53,7 @@ def init_tester(
     log_results: bool
 ):
     if collector.evaluator.env.num_players == 2:
-        return TwoPlayerTester(
+        return OthelloTester(
             config=TwoPlayerTesterConfig(**test_config),
             collector=collector,
             model=model,
@@ -60,7 +62,7 @@ def init_tester(
             log_results=log_results
         )
     elif collector.evaluator.env.num_players == 1:
-        return Tester(
+        return _2048Tester(
             config=TesterConfig(**test_config),
             collector=collector,
             model=model,

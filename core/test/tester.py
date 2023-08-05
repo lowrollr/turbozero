@@ -34,7 +34,7 @@ class Tester:
         self.device = self.collector.evaluator.env.device
         self.history = history
         self.log_results = log_results
-    
+
     def add_evaluation_metrics(self, episodes):
         raise NotImplementedError()
 
@@ -45,13 +45,10 @@ class Tester:
         # TODO: batch evaluation episodes where necessary
         completed_episodes = torch.zeros(self.config.episodes_per_epoch, dtype=torch.bool, device=self.collector.evaluator.env.device)
         while not completed_episodes.all():
-            termianted = self.step()
+            episodes, termianted = self.collector.collect(self.model, inactive_mask=completed_episodes)
+            self.add_evaluation_metrics(episodes)
             completed_episodes |= termianted
-
-    def step(self):
-        episodes, termianted = self.collector.collect(self.model)
-        self.add_evaluation_metrics(episodes)
-        return termianted
+        
     
 @dataclass
 class TwoPlayerTesterConfig(TesterConfig):

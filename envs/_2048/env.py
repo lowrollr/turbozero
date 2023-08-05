@@ -11,11 +11,13 @@ class _2048EnvConfig(EnvConfig):
 
 class _2048Env(Env):
     def __init__(self,
+        parallel_envs: int,
         config: _2048EnvConfig, 
         device: torch.device,
         debug=False
     ) -> None:
         super().__init__(
+            parallel_envs=parallel_envs,
             config=config,
             device=device,
             num_players=1,

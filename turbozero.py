@@ -12,7 +12,25 @@ import yaml
 
 from envs.load import init_collector, init_env, init_tester, init_trainer
 
-def run(args, interactive: bool):
+def run_from_notebook(
+    config_file: str,
+    mode: str,
+    gpu: bool,
+    debug: bool,
+    logfile: str = '',
+    verbose_logging: bool = True
+): 
+    args = argparse.Namespace(
+        config=config_file,
+        mode=mode,
+        gpu=gpu,
+        debug=debug,
+        logfile=logfile,
+        verbose=verbose_logging
+    )
+    return run(args, interactive=True, start_immediately=False)
+
+def run(args, interactive: bool, start_immediately: bool = True):
     if not args.logfile:
         args.logfile = 'turbozero.log'
 
@@ -36,17 +54,24 @@ def run(args, interactive: bool):
     # load model checkpoint
     if mode == 'train':
         env_type = raw_config['env_type']
-        # hack
-        raw_config['env_config']['parallel_envs'] = raw_config['train_mode_config']['parallel_envs']
-        env = init_env(device, env_type, raw_config['env_config'], args.debug)
+        parallel_envs_train = raw_config['train_mode_config']['parallel_envs']
+        parallel_envs_test = raw_config['train_mode_config']['test_config']['episodes_per_epoch']
+        env_train = init_env(device, parallel_envs_train, env_type, raw_config['env_config'], args.debug)
+        env_test = init_env(device, parallel_envs_test, env_type, raw_config['env_config'], args.debug)
         model = TurboZeroResnet(ResNetConfig(**raw_config['model_config']))
         optimizer = torch.optim.AdamW(model.parameters(), lr=raw_config['train_mode_config']['learning_rate'])
-        evaluator = init_trainable_evaluator(raw_config['train_mode_config']['algo_type'], raw_config['train_mode_config']['algo_config'], env)
-        collector = init_collector(episode_memory_device, env_type, evaluator)
+        train_evaluator = init_trainable_evaluator(raw_config['train_mode_config']['algo_type'], raw_config['train_mode_config']['algo_config'], env_train)
+        train_collector = init_collector(episode_memory_device, env_type, train_evaluator)
+        test_evaluator = init_trainable_evaluator(raw_config['train_mode_config']['algo_type'], raw_config['train_mode_config']['algo_config'], env_test)
+        test_collector = init_collector(episode_memory_device, env_type, test_evaluator)
         history = init_history()
-        tester = init_tester(raw_config['train_mode_config']['test_config'], collector, model, optimizer, history, args.verbose)
-        trainer = init_trainer(device, env_type, collector, tester, model, optimizer, raw_config['train_mode_config'], raw_config['env_config'], history, args.verbose, interactive, raw_config.get('run_tag', ''))
-        trainer.training_loop()
+        tester = init_tester(raw_config['train_mode_config']['test_config'], test_collector, model, optimizer, history, args.verbose)
+        trainer = init_trainer(device, env_type, train_collector, tester, model, optimizer, raw_config['train_mode_config'], raw_config['env_config'], history, args.verbose, interactive, raw_config.get('run_tag', ''))
+        if start_immediately:
+            trainer.training_loop()
+            return trainer
+        else:
+            return trainer
 
     elif mode == 'evaluate':
         pass

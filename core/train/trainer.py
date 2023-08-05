@@ -181,7 +181,7 @@ class Trainer:
         filename = custom_name if custom_name is not None else str(self.history.cur_epoch)
         filepath = directory + f'{filename}.pt'
         torch.save({
-            'model_arch_params': self.model.arch_params,
+            'model_arch_params': self.model.config,
             'model_state_dict': self.model.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
             'history': self.history,

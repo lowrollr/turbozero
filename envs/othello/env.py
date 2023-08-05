@@ -15,6 +15,7 @@ class OthelloEnvConfig(EnvConfig):
 
 class OthelloEnv(Env):
     def __init__(self, 
+        parallel_envs: int,
         config: OthelloEnvConfig,
         device: torch.device,
         debug=False
@@ -26,6 +27,7 @@ class OthelloEnv(Env):
         value_shape = torch.Size((2, ))
 
         super().__init__(
+            parallel_envs = parallel_envs,
             config = config,
             device=device,
             num_players=2, 

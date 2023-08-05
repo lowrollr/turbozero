@@ -5,11 +5,12 @@ import torch
 
 @dataclass
 class EnvConfig:
-    parallel_envs: int
+    pass
 
 
 class Env:
     def __init__(self, 
+        parallel_envs: int,
         config: EnvConfig,
         device: torch.device,
         num_players: int,
@@ -20,7 +21,7 @@ class Env:
         very_positive_value: float = 1e8
     ):
         self.config = config
-        self.parallel_envs = config.parallel_envs
+        self.parallel_envs = parallel_envs
         self.state_shape = state_shape
         self.policy_shape = policy_shape
         self.value_shape = value_shape

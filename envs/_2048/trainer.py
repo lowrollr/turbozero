@@ -63,16 +63,6 @@ class _2048Trainer(Trainer):
                 'log2_high_square': high_square,
             }, log=self.log_results)
 
-    def add_evaluation_metrics(self, episodes):
-        for episode in episodes:
-            moves = len(episode)
-            last_state = episode[-1][0]
-            high_square = 2 ** int(last_state.max().item())
-            self.history.add_evaluation_data({
-                'reward': moves,
-                'high_square': high_square,
-            }, log=self.log_results)
-
     def add_epoch_metrics(self):
         if self.history.eval_metrics['reward'][-1].data:
             self.history.add_epoch_data({
@@ -80,7 +70,7 @@ class _2048Trainer(Trainer):
             }, log=self.log_results)
         if self.history.eval_metrics['high_square'][-1].data:
             self.history.add_epoch_data({
-                'avg_log2_high_square': np.mean(self.history.eval_metrics['high_square'][-1].data)
+                'avg_log2_high_square': np.log2(np.mean(self.history.eval_metrics['high_square'][-1].data))
             }, log=self.log_results)
     
     def value_transform(self, value):
