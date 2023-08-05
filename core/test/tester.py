@@ -23,8 +23,8 @@ class Tester:
         collector: Collector, 
         config: TesterConfig,
         model: torch.nn.Module,
+        history: TrainingMetrics,
         optimizer: Optional[torch.optim.Optimizer] = None,
-        history: Optional[TrainingMetrics] = None,
         log_results: bool = True,
     ):
         self.config = config
@@ -48,6 +48,9 @@ class Tester:
             episodes, termianted = self.collector.collect(self.model, inactive_mask=completed_episodes)
             self.add_evaluation_metrics(episodes)
             completed_episodes |= termianted
+    
+    def generate_plots(self):
+        self.history.generate_plots(categories=['eval'])
         
     
 @dataclass
@@ -61,11 +64,11 @@ class TwoPlayerTester(Tester):
         collector: Collector, 
         config: TwoPlayerTesterConfig,
         model: torch.nn.Module, 
+        history: TrainingMetrics,
         optimizer: Optional[torch.optim.Optimizer] = None,
-        history: Optional[TrainingMetrics] = None,
         log_results: bool = True
     ):
-        super().__init__(collector, config, model, optimizer, history, log_results)
+        super().__init__(collector, config, model, history, optimizer, log_results)
         self.config: TwoPlayerTesterConfig
         self.baselines = []
         for baseline_config in config.baselines:
@@ -116,6 +119,7 @@ class TwoPlayerTester(Tester):
             if self.history:
                 logging.info(f'Epoch {self.history.cur_epoch} Current vs. {baseline.proper_name}:')
                 logging.info(f'W/L/D: {wins}/{losses}/{draws}')
+
 
 
         

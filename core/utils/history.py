@@ -155,19 +155,23 @@ class TrainingMetrics:
             metric.reset_fig()
         
     
-    def generate_plots(self):
+    def generate_plots(self, categories=['train', 'eval', 'episode', 'epoch']):
         display.clear_output(wait=False)
-        for metric in self.episode_metrics.values():
-            if metric.data:
-                metric.generate_plot()
-        for metric in self.train_metrics.values():
-            if metric.data:
-                metric.generate_plot()
-        for metrics_list in self.eval_metrics.values():
-            if metrics_list:
-                if metrics_list[-1].data:
-                    metrics_list[-1].generate_plot()
-        for metric in self.epoch_metrics.values():
-            if metric.data:
-                metric.generate_plot()
+        if 'train' in categories:
+            for metric in self.train_metrics.values():
+                if metric.data:
+                    metric.generate_plot()
+        if 'eval' in categories:
+            for metrics_list in self.eval_metrics.values():
+                if metrics_list:
+                    if metrics_list[-1].data:
+                        metrics_list[-1].generate_plot()
+        if 'episode' in categories:
+            for metric in self.episode_metrics.values():
+                if metric.data:
+                    metric.generate_plot()
+        if 'epoch' in categories:
+            for metric in self.epoch_metrics.values():
+                if metric.data:
+                    metric.generate_plot()
         

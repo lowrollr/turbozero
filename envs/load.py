@@ -49,8 +49,8 @@ def init_tester(
     test_config: dict,
     collector: Collector,
     model: torch.nn.Module,
-    optimizer: torch.optim.Optimizer,
     history: TrainingMetrics,
+    optimizer: Optional[torch.optim.Optimizer],
     log_results: bool
 ):
     if collector.evaluator.env.num_players == 2:

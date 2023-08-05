@@ -37,6 +37,31 @@ def load_trainer_nb(
     logging.basicConfig(filename=args.logfile, filemode='a', level=logging.INFO, format='%(asctime)s %(message)s')
     return load_trainer(args, interactive=True)
 
+def load_tester_nb(
+    config_file: str,
+    mode: str,
+    gpu: bool,
+    debug: bool,
+    logfile: str = '',
+    verbose_logging: bool = True,
+    checkpoint: str = ''
+) -> Tester:
+    args = argparse.Namespace(
+        config=config_file,
+        mode=mode,
+        gpu=gpu,
+        debug=debug,
+        logfile=logfile,
+        verbose=verbose_logging,
+        checkpoint=checkpoint
+    )
+    
+    if not args.logfile:
+        args.logfile = 'turbozero.log'
+    logging.basicConfig(filename=args.logfile, filemode='a', level=logging.INFO, format='%(asctime)s %(message)s')
+    return load_tester(args, interactive=True)
+    
+
 def load_config(config_file: str) -> dict:
     if config_file:
         with open(config_file, "r") as stream:
@@ -78,9 +103,36 @@ def load_trainer(args, interactive: bool) -> Trainer:
     train_collector = init_collector(episode_memory_device, env_type, train_evaluator)
     test_evaluator = init_trainable_evaluator(train_config['algo_type'], train_config['algo_config'], env_test)
     test_collector = init_collector(episode_memory_device, env_type, test_evaluator)
-    tester = init_tester(train_config['test_config'], test_collector, model, optimizer, history, args.verbose)
+    tester = init_tester(train_config['test_config'], test_collector, model, history, optimizer, args.verbose)
     trainer = init_trainer(device, env_type, train_collector, tester, model, optimizer, train_config, env_config, history, args.verbose, interactive, run_tag)
     return trainer
+
+def load_tester(args, interactive: bool) -> Tester:
+    raw_config = load_config(args.config)
+    test_config = raw_config['test_mode_config']
+
+    if torch.cuda.is_available() and args.gpu:
+        device = torch.device('cuda')
+        torch.backends.cudnn.benchmark = True
+    else:
+        device = torch.device('cpu')
+    episode_memory_device = torch.device('cpu')
+
+    if args.checkpoint:
+        model, _, history, run_tag, train_config, env_config = load_checkpoint(args.checkpoint)
+        
+    else:
+        print('No checkpoint provided, please provide a checkpoint with --checkpoint')
+        exit(1)
+
+    parallel_envs = test_config['episodes_per_epoch']
+    model = model.to(device)
+    run_tag = raw_config.get('run_tag', run_tag)
+    env = init_env(device, parallel_envs, env_config, args.debug)
+    evaluator = init_trainable_evaluator(train_config['algo_type'], train_config['algo_config'], env)
+    collector = init_collector(episode_memory_device, env_config['env_type'], evaluator)
+    tester = init_tester(test_config, collector, model, history, None, args.verbose)
+    return tester
 
 
 if __name__ == '__main__':
