@@ -2,6 +2,7 @@
 
 from copy import deepcopy
 from dataclasses import dataclass
+from typing import Optional, Tuple
 import torch
 from core.algorithms.baselines.baseline import Baseline, BaselineConfig
 from core.algorithms.evaluator import Evaluator, EvaluatorConfig
@@ -31,8 +32,8 @@ class BestModelBaseline(Baseline):
         self.metrics_key = metrics_key
         self.proper_name = proper_name
 
-    def evaluate(self):
-        self.evaluator.evaluate(self.best_model)
+    def evaluate(self) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+        return self.evaluator.evaluate(self.best_model)
 
     
     

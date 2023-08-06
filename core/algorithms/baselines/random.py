@@ -3,6 +3,7 @@
 
 
 
+from typing import Optional, Tuple
 import torch
 from core.algorithms.baselines.baseline import Baseline, BaselineConfig
 from core.algorithms.evaluator import Evaluator
@@ -22,7 +23,8 @@ class RandomBaseline(Baseline):
         super().__init__(env, device, config)
         self.metrics_key = metrics_key
         self.proper_name = proper_name
+        self.sample = torch.zeros(self.env.parallel_envs, self.env.policy_shape[0], device=self.device, requires_grad=False, dtype=torch.float32)
 
-    def evaluate(self):
-        legal_actions = self.env.get_legal_actions().float()
-        return torch.multinomial(legal_actions, 1, replacement=True).flatten()
+    def evaluate(self) -> Tuple[torch.Tensor, Optional[torch.Tensor]]: 
+        self.sample.uniform_(0, 1)
+        return self.sample, None
