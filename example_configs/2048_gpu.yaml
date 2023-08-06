@@ -35,7 +35,7 @@ train_mode_config: {
   test_config: {
     algo_type: "lazyzero",
       algo_config: {
-      temperature: 0.001,
+      temperature: 0.0,
       num_policy_rollouts: 500, 
       rollout_depth: 3, 
       puct_coeff: 1.0 
@@ -46,7 +46,7 @@ train_mode_config: {
 test_mode_config: {
   algo_type: "lazyzero",
       algo_config: {
-      temperature: 0.001,
+      temperature: 0.0,
       num_policy_rollouts: 500, 
       rollout_depth: 3, 
       puct_coeff: 1.0 

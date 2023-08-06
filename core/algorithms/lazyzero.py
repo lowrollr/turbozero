@@ -20,4 +20,7 @@ class LazyZero(LazyMCTS):
 
     # all additional alphazero implementation details live in MCTS, for now
     def choose_actions(self, visits: torch.Tensor) -> torch.Tensor:
-        return torch.multinomial(torch.pow(visits, 1/self.config.temperature), 1, replacement=True).flatten()
+        if self.config.temperature > 0:
+            return torch.multinomial(torch.pow(visits, 1/self.config.temperature), 1, replacement=True).flatten()
+        else:
+            return torch.argmax(visits, dim=1).flatten()
