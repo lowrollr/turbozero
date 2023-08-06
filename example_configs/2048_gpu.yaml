@@ -1,0 +1,58 @@
+run_tag: '2048'
+env_config: {
+  env_type: '2048'
+}
+model_config: { # overwritten if loading a checkpoint
+  input_size: [1, 4, 4],
+  policy_size: 4,
+  res_channels: 16,
+  res_blocks: 6,
+  value_head_res_channels: 16,
+  value_head_res_blocks: 3,
+  policy_head_res_channels: 16,
+  policy_head_res_blocks: 3,
+  kernel_size: 3,
+  policy_fc_size: 32,
+  value_fc_size: 32,
+  value_output_activation: ""
+}
+train_mode_config: {
+  algo_type: "lazyzero",
+  algo_config: {
+    temperature: 1.0,
+    num_policy_rollouts: 500, 
+    rollout_depth: 3, 
+    puct_coeff: 1.0 
+  },
+  learning_rate: 0.0003,
+  replay_memory_max_size: 20000,
+  replay_memory_min_size: 20000,
+  parallel_envs: 8192,
+  policy_factor: 1.0,
+  minibatch_size: 4096,
+  minibatches_per_update: 1,
+  episodes_per_epoch: 20000,
+  test_config: {
+    algo_type: "lazyzero",
+      algo_config: {
+      temperature: 0.001,
+      num_policy_rollouts: 500, 
+      rollout_depth: 3, 
+      puct_coeff: 1.0 
+    },
+    episodes_per_epoch: 1000
+  }
+}
+test_mode_config: {
+  algo_type: "lazyzero",
+      algo_config: {
+      temperature: 0.001,
+      num_policy_rollouts: 500, 
+      rollout_depth: 3, 
+      puct_coeff: 1.0 
+    },
+  episodes_per_epoch: 1000
+}
+
+
+

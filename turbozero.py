@@ -101,7 +101,7 @@ def load_trainer(args, interactive: bool) -> Trainer:
     env_test = init_env(device, parallel_envs_test, env_config, args.debug)
     train_evaluator = init_trainable_evaluator(train_config['algo_type'], train_config['algo_config'], env_train)
     train_collector = init_collector(episode_memory_device, env_type, train_evaluator)
-    test_evaluator = init_trainable_evaluator(train_config['algo_type'], train_config['algo_config'], env_test)
+    test_evaluator = init_trainable_evaluator(train_config['algo_type'], train_config['test_config']['algo_config'], env_test)
     test_collector = init_collector(episode_memory_device, env_type, test_evaluator)
     tester = init_tester(train_config['test_config'], test_collector, model, history, optimizer, args.verbose)
     trainer = init_trainer(device, env_type, train_collector, tester, model, optimizer, train_config, env_config, history, args.verbose, interactive, run_tag)
@@ -119,7 +119,7 @@ def load_tester(args, interactive: bool) -> Tester:
     episode_memory_device = torch.device('cpu')
 
     if args.checkpoint:
-        model, _, history, run_tag, train_config, env_config = load_checkpoint(args.checkpoint)
+        model, _, history, run_tag, _, env_config = load_checkpoint(args.checkpoint)
         
     else:
         print('No checkpoint provided, please provide a checkpoint with --checkpoint')
@@ -129,7 +129,7 @@ def load_tester(args, interactive: bool) -> Tester:
     model = model.to(device)
     run_tag = raw_config.get('run_tag', run_tag)
     env = init_env(device, parallel_envs, env_config, args.debug)
-    evaluator = init_trainable_evaluator(train_config['algo_type'], train_config['algo_config'], env)
+    evaluator = init_trainable_evaluator(test_config['algo_type'], test_config['algo_config'], env)
     collector = init_collector(episode_memory_device, env_config['env_type'], evaluator)
     tester = init_tester(test_config, collector, model, history, None, args.verbose)
     return tester

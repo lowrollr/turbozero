@@ -16,6 +16,8 @@ from dataclasses import dataclass
 
 @dataclass
 class TesterConfig:
+    algo_type: str
+    algo_config: EvaluatorConfig
     episodes_per_epoch: int
 
 class Tester:
