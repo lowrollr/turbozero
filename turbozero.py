@@ -13,9 +13,9 @@ import yaml
 
 from envs.load import init_collector, init_env, init_tester, init_trainer
 
+
 def load_trainer_nb(
     config_file: str,
-    mode: str,
     gpu: bool,
     debug: bool,
     logfile: str = '',
@@ -24,7 +24,6 @@ def load_trainer_nb(
 ) -> Trainer: 
     args = argparse.Namespace(
         config=config_file,
-        mode=mode,
         gpu=gpu,
         debug=debug,
         logfile=logfile,
@@ -39,7 +38,6 @@ def load_trainer_nb(
 
 def load_tester_nb(
     config_file: str,
-    mode: str,
     gpu: bool,
     debug: bool,
     logfile: str = '',
