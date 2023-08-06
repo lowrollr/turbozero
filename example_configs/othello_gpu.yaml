@@ -45,7 +45,16 @@ train_mode_config: {
       dirichlet_alpha: 0.01,
       dirichlet_epsilon: 0.00
     },
-    episodes_per_epoch: 1000
+    episodes_per_epoch: 1000,
+    baselines: [
+      {
+        name: 'random'
+      },
+      {
+        name: 'best'
+      }
+    ],
+    improvement_threshold_pct: 0.5
   }
 }
 test_mode_config: {
@@ -58,7 +67,16 @@ test_mode_config: {
     dirichlet_alpha: 0.01,
     dirichlet_epsilon: 0.00
   },
-  episodes_per_epoch: 1000
+  episodes_per_epoch: 1000,
+  baselines: [
+    {
+      name: 'random'
+    },
+    {
+      name: 'best'
+    }
+  ],
+  improvement_threshold_pct: 0.5
 }
 
 
