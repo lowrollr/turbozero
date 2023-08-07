@@ -118,6 +118,7 @@ class TwoPlayerTester(Tester):
                     baseline.best_model_optimizer = deepcopy(self.optimizer.state_dict()) if self.optimizer is not None else None
                     logging.info('************ NEW BEST MODEL ************')
             if self.history:
+                baseline.add_metrics_data(win_pct, self.history, log=self.log_results)
                 logging.info(f'Epoch {self.history.cur_epoch} Current vs. {baseline.proper_name}:')
                 logging.info(f'W/L/D: {wins}/{losses}/{draws}')
 
