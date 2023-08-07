@@ -111,7 +111,7 @@ class TwoPlayerTester(Tester):
     def collect_test_batch(self):
         for baseline in self.baselines:
             wins, draws, losses = self.evaluate_against_baseline(baseline)
-            win_pct = wins / self.config
+            win_pct = wins / self.config.episodes_per_epoch
             if isinstance(baseline, BestModelBaseline):
                 if win_pct > self.config.improvement_threshold_pct:
                     baseline.best_model = deepcopy(self.model)
