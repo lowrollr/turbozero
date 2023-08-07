@@ -91,8 +91,7 @@ class TwoPlayerTester(Tester):
         use_other_evaluator = True
         while not completed_episodes.all():
             if use_other_evaluator:
-                actions = baseline.evaluate()
-                terminated = baseline.step_env(actions)
+                _, _, _, _, terminated = baseline.step()
             else:
                 terminated = self.collector.collect_step(self.model)
             rewards = self.collector.evaluator.env.get_rewards()
@@ -112,7 +111,7 @@ class TwoPlayerTester(Tester):
     def collect_test_batch(self):
         for baseline in self.baselines:
             wins, draws, losses = self.evaluate_against_baseline(baseline)
-            win_pct = wins / self.config.episodes_per_epoch
+            win_pct = wins / self.config
             if isinstance(baseline, BestModelBaseline):
                 if win_pct > self.config.improvement_threshold_pct:
                     baseline.best_model = deepcopy(self.model)
