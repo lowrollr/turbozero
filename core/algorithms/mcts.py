@@ -22,7 +22,7 @@ class MCTSConfig(EvaluatorConfig):
 # TODO: implement a more general version that supports rollouts + other strategies
 class MCTS(Evaluator):
     def __init__(self, env: Env, config: MCTSConfig) -> None:
-        super().__init__(env, env.device, config)
+        super().__init__(env, config)
         # search parameters
         # each evaluation traverses an edge of the search tree
         self.iters = config.num_iters

@@ -74,7 +74,7 @@ class TwoPlayerTester(Tester):
         self.config: TwoPlayerTesterConfig
         self.baselines = []
         for baseline_config in config.baselines:
-            baseline = load_baseline(baseline_config, collector.evaluator.env, collector.evaluator.env.device, evaluator=collector.evaluator, best_model=model, best_model_optimizer=optimizer)
+            baseline = load_baseline(baseline_config, collector.evaluator.env, evaluator=collector.evaluator, best_model=model, best_model_optimizer=optimizer)
             
             self.baselines.append(baseline)
             baseline.add_metrics(self.history)

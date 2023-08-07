@@ -12,8 +12,8 @@ class BaselineConfig(EvaluatorConfig):
 
 
 class Baseline(Evaluator):
-    def __init__(self, env, device, config):
-        super().__init__(env, device, config)
+    def __init__(self, env, config):
+        super().__init__(env, config)
         self.metrics_key = 'baseline'
         self.proper_name = 'Baseline'
 

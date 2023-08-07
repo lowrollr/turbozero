@@ -15,8 +15,7 @@ class BestModelBaselineConfig(BaselineConfig):
 
 class BestModelBaseline(Baseline):
     def __init__(self, 
-        env: Env, 
-        device: torch.device, 
+        env: Env,
         config: BestModelBaselineConfig, 
         evaluator: Evaluator, 
         best_model: torch.nn.Module,
@@ -25,10 +24,10 @@ class BestModelBaseline(Baseline):
         proper_name: str = 'Best Model',
         **kwargs
     ):
-        super().__init__(env, device, config)
+        super().__init__(env, config)
         self.best_model = deepcopy(best_model)
         self.best_model_optimizer = deepcopy(best_model_optimizer.state_dict()) if best_model_optimizer is not None else None
-        self.evaluator = evaluator
+        self.evaluator = evaluator.__class__(env, evaluator.config)
         self.metrics_key = metrics_key
         self.proper_name = proper_name
 

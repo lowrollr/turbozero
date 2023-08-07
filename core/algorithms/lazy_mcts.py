@@ -16,7 +16,7 @@ class LazyMCTSConfig(EvaluatorConfig):
 
 class LazyMCTS(Evaluator):
     def __init__(self, env: Env, config: LazyMCTSConfig) -> None:
-        super().__init__(env, env.device, config)
+        super().__init__(env, config)
 
         self.action_scores = torch.zeros(
             (self.env.parallel_envs, *self.env.policy_shape),

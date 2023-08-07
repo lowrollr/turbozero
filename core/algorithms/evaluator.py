@@ -10,8 +10,8 @@ class EvaluatorConfig:
     pass
 
 class Evaluator:
-    def __init__(self, env: Env, device: torch.device, config: EvaluatorConfig):
-        self.device = device
+    def __init__(self, env: Env, config: EvaluatorConfig):
+        self.device = env.device
         self.env = env
         self.env.reset()
         self.config = config
