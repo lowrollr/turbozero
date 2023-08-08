@@ -46,7 +46,6 @@ def load_tester_nb(
 ) -> Tester:
     args = argparse.Namespace(
         config=config_file,
-        mode=mode,
         gpu=gpu,
         debug=debug,
         logfile=logfile,
