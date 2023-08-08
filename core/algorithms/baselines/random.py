@@ -5,8 +5,8 @@
 
 from typing import Optional, Tuple
 import torch
-from core.algorithms.baselines.baseline import Baseline, BaselineConfig
-from core.algorithms.evaluator import Evaluator
+from core.algorithms.baselines.baseline import Baseline
+from core.algorithms.evaluator import Evaluator, EvaluatorConfig
 from core.env import Env
 from core.utils.history import Metric
 
@@ -14,7 +14,7 @@ from core.utils.history import Metric
 class RandomBaseline(Baseline):
     def __init__(self, 
         env: Env, 
-        config: BaselineConfig,
+        config: EvaluatorConfig,
         metrics_key: str = 'random',
         proper_name: str = 'Random',
         **kwargs

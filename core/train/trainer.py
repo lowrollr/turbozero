@@ -28,7 +28,6 @@ def init_history(log_results: bool = True):
 
 @dataclass
 class TrainerConfig:
-    algo_type: str
     algo_config: EvaluatorConfig
     episodes_per_epoch: int
     learning_rate: float
@@ -191,7 +190,7 @@ class Trainer:
         }, filepath)
 
 def load_checkpoint(checkpoint_file: str):
-    checkpoint = torch.load(checkpoint_file)
+    checkpoint = torch.load(checkpoint_file, map_location=torch.device('cpu'))
     history = checkpoint['history']
     run_tag = checkpoint['run_tag']
     raw_train_config = checkpoint['raw_train_config']

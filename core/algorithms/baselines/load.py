@@ -2,20 +2,28 @@
 
 
 
-import torch
 
+from core.algorithms.baselines.baseline import Baseline
+from core.algorithms.baselines.best import BestModelBaseline
+from core.algorithms.baselines.greedy_mcts import GreedyMCTS
+from core.algorithms.baselines.random import RandomBaseline
+from core.algorithms.evaluator import EvaluatorConfig
+from core.algorithms.mcts import MCTSConfig
+from core.demo.human import HumanEvaluator
 from core.env import Env
 
 
-def load_baseline(config: dict, env: Env, **kwargs):
-    if config['name'] == 'random':
-        from core.algorithms.baselines.random import RandomBaseline
-        from core.algorithms.baselines.baseline import BaselineConfig
-        baseline_config = BaselineConfig(**config)
-        return RandomBaseline(env, baseline_config, **kwargs)
-    elif config['name']== 'best':
-        from core.algorithms.baselines.best import BestModelBaseline, BestModelBaselineConfig
-        baseline_config = BestModelBaselineConfig(**config)
-        return BestModelBaseline(env, baseline_config, **kwargs)
+def init_baseline(evaluator_config: dict, env: Env, **kwargs) -> Baseline:
+    algo_type = evaluator_config['name']
+    
+    if algo_type == 'random':
+        config = EvaluatorConfig(**evaluator_config)
+        return RandomBaseline(env, config)
+    elif algo_type == 'best':
+        config = EvaluatorConfig(**evaluator_config)
+        return BestModelBaseline(env, config, kwargs['evaluator'], kwargs['best_model'], kwargs['best_model_optimizer'])
+    elif algo_type == 'greedy_mcts':
+        config = MCTSConfig(**evaluator_config)
+        return GreedyMCTS(env, config)
     else:
-        raise ValueError(f'Unknown baseline name: {config["name"]}')
+        raise NotImplementedError(f'Unknown evaluator type: {algo_type}')

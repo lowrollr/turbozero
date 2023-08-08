@@ -21,7 +21,7 @@ class OthelloEnv(Env):
         debug=False
     ) -> None:
         self.board_size = config.board_size
-
+        self.config: OthelloEnvConfig
         state_shape = torch.Size((2, self.board_size, self.board_size))
         policy_shape = torch.Size(((self.board_size ** 2) + 1,))
         value_shape = torch.Size((2, ))
@@ -133,5 +133,19 @@ class OthelloEnv(Env):
         self.consecutive_passes = self.saved[2].clone() * load_envs + self.consecutive_passes * (~load_envs)
         self.need_to_calculate_rays = True
         self.update_terminated()
+    
+    def get_greedy_rewards(self):
+        return self.states[:, 0].sum(dim=(1, 2)) - self.states[:, 1].sum(dim=(1, 2))
 
+    def __str__(self):
+        assert self.parallel_envs == 1
+        cur_player_is_o = self.cur_players[0] == 0
+        cur_player = 'O' if cur_player_is_o else 'X'
+        other_player = 'X' if cur_player_is_o else 'O'
+        print('+' + '-+' * (self.config.board_size - 1))
+        for i in range(self.config.board_size):
+            for j in range(self.config.board_size):
+                print('|' + f' {cur_player} ' if self.states[0,0,i,j] == 1 else '|   ', end='')
+            print('|')
+            print('+' + '-+' * (self.config.board_size - 1))
 

@@ -6,8 +6,7 @@ from core.env import Env
 
 @dataclass
 class EvaluatorConfig:
-    # nothing to see here
-    pass
+    name: str
 
 class Evaluator:
     def __init__(self, env: Env, config: EvaluatorConfig):

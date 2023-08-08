@@ -4,15 +4,12 @@ import logging
 
 from dataclasses import dataclass
 from core.algorithms.evaluator import Evaluator, EvaluatorConfig
+from core.env import Env
 from core.utils.history import Metric
-
-@dataclass
-class BaselineConfig(EvaluatorConfig):
-    name: str
 
 
 class Baseline(Evaluator):
-    def __init__(self, env, config):
+    def __init__(self, env: Env, config: EvaluatorConfig):
         super().__init__(env, config)
         self.metrics_key = 'baseline'
         self.proper_name = 'Baseline'

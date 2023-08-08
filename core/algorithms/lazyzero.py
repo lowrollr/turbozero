@@ -1,5 +1,6 @@
 
 from dataclasses import dataclass
+from typing import Optional, Tuple
 import torch
 
 
@@ -24,3 +25,7 @@ class LazyZero(LazyMCTS):
             return torch.multinomial(torch.pow(visits, 1/self.config.temperature), 1, replacement=True).flatten()
         else:
             return torch.argmax(visits, dim=1).flatten()
+    
+    def evaluate(self, model) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+        evaluation_fn = lambda env: model(env.states)
+        return super().evaluate(evaluation_fn)

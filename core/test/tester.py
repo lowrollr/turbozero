@@ -3,20 +3,20 @@
 from copy import deepcopy
 import torch
 from typing import List, Optional
-from core.algorithms.baselines.baseline import BaselineConfig
-from core.algorithms.baselines.best import BestModelBaseline, BestModelBaselineConfig
+from core.algorithms.baselines.baseline import Baseline
+from core.algorithms.baselines.best import BestModelBaseline
+from core.algorithms.baselines.load import init_baseline
 from core.algorithms.evaluator import Evaluator, EvaluatorConfig
 from core.algorithms.baselines.random import RandomBaseline
+from core.algorithms.load import init_evaluator
 from core.train.collector import Collector
 from core.utils.history import Metric, TrainingMetrics
-from core.algorithms.baselines.load import load_baseline
 import logging 
 
 from dataclasses import dataclass
 
 @dataclass
 class TesterConfig:
-    algo_type: str
     algo_config: EvaluatorConfig
     episodes_per_epoch: int
 
@@ -74,8 +74,7 @@ class TwoPlayerTester(Tester):
         self.config: TwoPlayerTesterConfig
         self.baselines = []
         for baseline_config in config.baselines:
-            baseline = load_baseline(baseline_config, collector.evaluator.env, evaluator=collector.evaluator, best_model=model, best_model_optimizer=optimizer)
-            
+            baseline: Baseline = init_baseline(baseline_config, collector.evaluator.env, evaluator=collector.evaluator, best_model=model, best_model_optimizer=optimizer)
             self.baselines.append(baseline)
             baseline.add_metrics(self.history)
 

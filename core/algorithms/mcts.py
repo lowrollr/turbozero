@@ -1,7 +1,7 @@
 
 
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import Callable, Optional, Tuple
 import torch
 import math
 from core.algorithms.evaluator import Evaluator, EvaluatorConfig
@@ -130,14 +130,13 @@ class MCTS(Evaluator):
         self.visits[:, 0] = 1
         self.actions.zero_()
 
-
-    def evaluate(self, model: torch.nn.Module) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+    def evaluate(self, evaluation_fn: Callable) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         self.reset_search()
 
         # save the root node so that we can reset the environment to this state when we reach a leaf node
         # get root node policy
         with torch.no_grad():
-            policy_logits, _ = model(self.env.states)
+            policy_logits, _ = evaluation_fn(self.env)
 
         # set root node policy, apply dirilecht noise
         self.p_vals = (torch.softmax(policy_logits, dim=1) * (1 - self.dirichlet_e)) \
@@ -156,8 +155,6 @@ class MCTS(Evaluator):
 
             # check if the env is terminal
             terminated = self.env.is_terminal()
-
-            
 
             # look up master index for each child node
             master_action_indices = self.next_indices[self.env_indices, actions]
@@ -189,7 +186,7 @@ class MCTS(Evaluator):
 
             # get policy and values for the new states from the model
             with torch.no_grad():
-                policy_logits, values = model(self.env.states)
+                policy_logits, values = evaluation_fn(self.env)
 
             # store the policy
             self.p_vals = torch.softmax(policy_logits, dim=1)

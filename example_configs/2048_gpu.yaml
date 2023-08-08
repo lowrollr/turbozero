@@ -17,8 +17,8 @@ model_config: { # overwritten if loading a checkpoint
   value_output_activation: ""
 }
 train_mode_config: {
-  algo_type: "lazyzero",
   algo_config: {
+    name: 'lazyzero',
     temperature: 1.0,
     num_policy_rollouts: 500, 
     rollout_depth: 3, 
@@ -27,14 +27,14 @@ train_mode_config: {
   learning_rate: 0.0003,
   replay_memory_max_size: 20000,
   replay_memory_min_size: 20000,
-  parallel_envs: 8192,
+  parallel_envs: 64,
   policy_factor: 1.0,
   minibatch_size: 4096,
   minibatches_per_update: 1,
   episodes_per_epoch: 20000,
   test_config: {
-    algo_type: "lazyzero",
       algo_config: {
+      name: 'lazyzero',
       temperature: 0.0,
       num_policy_rollouts: 500, 
       rollout_depth: 3, 
@@ -44,14 +44,14 @@ train_mode_config: {
   }
 }
 test_mode_config: {
-  algo_type: "lazyzero",
-      algo_config: {
+    algo_config: {
+      name: 'lazyzero',
       temperature: 0.0,
       num_policy_rollouts: 500, 
       rollout_depth: 3, 
       puct_coeff: 1.0 
     },
-  episodes_per_epoch: 1000
+  episodes_per_epoch: 64
 }
 
 

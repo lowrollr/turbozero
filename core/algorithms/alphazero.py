@@ -2,6 +2,7 @@
 
 
 from dataclasses import dataclass
+from typing import Callable, Optional, Tuple
 import torch
 from core.algorithms.evaluator import Evaluator, EvaluatorConfig
 from core.algorithms.mcts import MCTS, MCTSConfig
@@ -23,5 +24,9 @@ class AlphaZero(MCTS):
             return torch.multinomial(torch.pow(visits, 1/self.config.temperature), 1, replacement=True).flatten()
         else:
             return torch.argmax(visits, dim=1).flatten()
+        
+    def evaluate(self, model) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+        evaluation_fn = lambda env: model(env.states)
+        return super().evaluate(evaluation_fn)
     
 

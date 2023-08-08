@@ -37,7 +37,9 @@ class Env:
 
         self.device = device
         self.very_positive_value = very_positive_value
-        
+    
+    def __str__(self):
+        return str(self.states)
         
     def reset(self, seed=None):
         raise NotImplementedError()
@@ -94,4 +96,8 @@ class Env:
         raise NotImplementedError()
     
     def load_node(self, envs):
+        raise NotImplementedError()
+    
+    def get_greedy_rewards(self):
+        # returns instantaneous reward, used in greedy algorithms
         raise NotImplementedError()

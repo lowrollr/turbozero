@@ -1,6 +1,6 @@
 
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import Callable, Optional, Tuple
 import torch
 
 from core.algorithms.evaluator import Evaluator, EvaluatorConfig
@@ -50,10 +50,10 @@ class LazyMCTS(Evaluator):
         self.action_scores.zero_()
         self.visit_counts.zero_()
 
-    def evaluate(self, model: torch.nn.Module) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+    def evaluate(self, evaluation_fn: Callable) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         self.reset_puct()
 
-        return self.explore_for_iters(model, self.policy_rollouts, self.rollout_depth), None
+        return self.explore_for_iters(evaluation_fn, self.policy_rollouts, self.rollout_depth), None
 
     def choose_action_with_puct(self, probs: torch.Tensor, legal_actions: torch.Tensor) -> torch.Tensor:
         n_sum = torch.sum(self.visit_counts, dim=1, keepdim=True)
@@ -72,10 +72,10 @@ class LazyMCTS(Evaluator):
 
         return chosen_actions.squeeze(1)
 
-    def iterate(self, model: torch.nn.Module, depth: int, rewards: torch.Tensor) -> torch.Tensor:  # type: ignore
+    def iterate(self, evaluation_fn: Callable, depth: int, rewards: torch.Tensor) -> torch.Tensor:  # type: ignore
         while depth > 0:
             with torch.no_grad():
-                policy_logits, values = model(self.env.states)
+                policy_logits, values = evaluation_fn(self.env.states)
             depth -= 1
             if depth == 0:
                 rewards = self.env.get_rewards()
@@ -90,10 +90,10 @@ class LazyMCTS(Evaluator):
                 next_actions = torch.multinomial(distribution + self.env.is_terminal().unsqueeze(1), 1, replacement=True).flatten()
                 self.env.step(next_actions)
 
-    def explore_for_iters(self, model: torch.nn.Module, iters: int, search_depth: int) -> torch.Tensor:
+    def explore_for_iters(self, evaluation_fn: Callable, iters: int, search_depth: int) -> torch.Tensor:
         legal_actions = self.env.get_legal_actions()
         with torch.no_grad():
-            policy_logits, _ = model(self.env.states)
+            policy_logits, _ = evaluation_fn(self.env.states)
         policy_logits = torch.nn.functional.softmax(policy_logits, dim=1)
         self.env.save_node()
 
@@ -102,7 +102,7 @@ class LazyMCTS(Evaluator):
                 policy_logits, legal_actions)
             self.env.step(actions)
             rewards = self.env.get_rewards()
-            values = self.iterate(model, search_depth, rewards)
+            values = self.iterate(evaluation_fn, search_depth, rewards)
             if search_depth % self.env.num_players:
                 values = 1 - values
             self.visit_counts[self.env.env_indices, actions] += 1
