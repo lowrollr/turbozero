@@ -22,9 +22,14 @@ class Evaluator:
     def evaluate(self, *args) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         # returns probability distribution over actions, and optionally the value of the current state
         raise NotImplementedError()
+    
+    def step_evaluator(self, actions, terminated) -> None:
+        pass
 
     def step_env(self, actions) -> torch.Tensor:
-        return self.env.step(actions)
+        terminated = self.env.step(actions)
+        self.step_evaluator(actions, terminated)
+        return terminated
 
     def choose_actions(self, probs: torch.Tensor) -> torch.Tensor:
         legal_actions = self.env.get_legal_actions()

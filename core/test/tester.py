@@ -82,18 +82,24 @@ class TwoPlayerTester(Tester):
     def evaluate_against_baseline(self, baseline: Evaluator):
         self.collector.reset()
         split = self.config.episodes_per_epoch // 2
+        reset = torch.zeros(self.config.episodes_per_epoch, dtype=torch.bool, device=self.collector.evaluator.env.device, requires_grad=False)
+        reset[:split] = True
         completed_episodes = torch.zeros(self.config.episodes_per_epoch, dtype=torch.bool, device=self.collector.evaluator.env.device, requires_grad=False)
         scores = torch.zeros(self.config.episodes_per_epoch, dtype=torch.float, device=self.collector.evaluator.env.device, requires_grad=False)
-        self.collector.collect_step(self.model)
+        actions, terminated = self.collector.collect_step(self.model)
+        envs_to_reset = terminated | reset
+        baseline.step_evaluator(actions, envs_to_reset)
         self.collector.evaluator.env.terminated[:split] = True
         self.collector.evaluator.env.reset_terminated_states()
 
         use_other_evaluator = True
         while not completed_episodes.all():
             if use_other_evaluator:
-                _, _, _, _, terminated = baseline.step()
+                _, _, _, actions, terminated = baseline.step()
+                self.collector.evaluator.step_evaluator(actions, terminated)
             else:
-                terminated = self.collector.collect_step(self.model)
+                actions, terminated = self.collector.collect_step(self.model)
+                baseline.step_evaluator(actions, terminated)
             rewards = self.collector.evaluator.env.get_rewards()
             if use_other_evaluator:
                 scores += rewards * terminated * ~completed_episodes

@@ -95,25 +95,28 @@ class MCTS(Evaluator):
         self.reward_indices = self.build_reward_indices(env.num_players)
         self.dirilecht = torch.distributions.dirichlet.Dirichlet(torch.full((self.policy_size,), self.dirichlet_a, device=self.device, dtype=torch.float32, requires_grad=False))
         
+        self.max_depths = torch.ones(
+            (self.parallel_envs,), dtype=torch.int64, device=self.device, requires_grad=False
+        )
         
         # stores the subtree 
         self.subtrees = torch.zeros((self.parallel_envs, self.max_nodes), dtype=torch.long, device=self.device, requires_grad=False) # index by master id
-        self.cur_subtree = torch.zeros((self.parallel_envs,), dtype=torch.long, device=self.device, requires_grad=False)
-        self.depths_arranged = torch.arange(self.max_nodes, dtype=torch.int64, device=self.device, requires_grad=False)
+        self.parents = torch.zeros((self.parallel_envs, self.max_nodes), dtype=torch.long, device=self.device, requires_grad=False)
+        self.depths_aranged = torch.arange(self.max_nodes, dtype=torch.int64, device=self.device, requires_grad=False)
 
     def build_reward_indices(self, num_players: int) -> torch.Tensor:
         num_repeats = math.ceil(self.max_nodes / num_players)
         return torch.tensor([1] + [0] * (num_players - 1), dtype=torch.bool, device=self.device).repeat(num_repeats).view(1, -1)
     
-    def step_env(self, actions) -> torch.Tensor:
+    def step_evaluator(self, actions, terminated):
         self.load_subtree(actions)
-        terminated = super().step_env(actions)
         self.reset_terminated_envs(terminated)
-        return terminated
 
     def reset_terminated_envs(self, terminated: torch.Tensor) -> None:
         self.nodes[terminated].zero_()
         self.next_empty[terminated] = 2
+        self.max_depths[terminated] = 1
+        self.parents[terminated].zero_()
 
     def reset(self, seed=None) -> None:
         self.env.reset(seed=seed)
@@ -180,6 +183,7 @@ class MCTS(Evaluator):
             self.visits[self.env_indices, self.depths] = master_action_indices_long
             self.actions[self.env_indices, self.depths - 1] = actions
 
+            self.parents[self.env_indices, master_action_indices_long] = self.cur_nodes
             # cur nodes should now reflect the taken actions
             self.cur_nodes = master_action_indices_long
 
@@ -203,15 +207,11 @@ class MCTS(Evaluator):
             self.nodes[self.env_indices_expnd, self.visits, self.actions + self.n_start] += leaf_inc
             self.nodes[self.env_indices_expnd, self.visits, self.actions + self.w_start] += \
                 (rewards * leaf_inc * self.reward_indices) + ((1-rewards) * leaf_inc * ~self.reward_indices)
-            
-            is_subtree_root = self.depths == 1
-            self.cur_subtree *= (~is_subtree_root).long()
-            self.cur_subtree += master_action_indices_long * is_subtree_root.long()
-            self.subtrees[self.env_indices, self.cur_nodes] = self.cur_subtree * in_bounds
 
             # update the depths tensor to reflect the current search depth for each environment   
             self.depths *= ~is_leaf
             self.depths += 1
+            self.max_depths = torch.max(self.max_depths, self.depths)
             # zero out visits and actions if we've reached a leaf node
             self.visits[:, 1:] *= ~is_leaf.view(-1, 1)
             self.actions *= ~is_leaf.view(-1, 1)
@@ -220,7 +220,7 @@ class MCTS(Evaluator):
             self.env.load_node(is_leaf)
             self.cur_nodes *= ~is_leaf
             self.cur_nodes += is_leaf
-
+            
             
             
         # return to the root node
@@ -285,24 +285,34 @@ class MCTS(Evaluator):
 
         return torch.argmax(legal_puct_scores, dim=1)
     
+    def relax_subtrees(self):
+        self.subtrees.zero_()
+        self.subtrees += self.depths_aranged
+        for _ in range(self.max_depths.max() + 1):
+            parent_subtrees = self.subtrees[self.env_indices_expnd, self.parents]
+            self.subtrees = (parent_subtrees * (parent_subtrees > 1)) + (self.subtrees * (parent_subtrees <= 1))
+            
     def load_subtree(self, actions: torch.Tensor):
+        self.relax_subtrees()
         # convert actions to master indices (N,)
         subtree_master_indices = self.nodes[self.env_indices, 1, self.i_start + actions]
-
+        is_real = (self.nodes[self.env_indices, 1, self.i_start + actions] > 1)
         new_nodes = (self.subtrees == subtree_master_indices.view(-1, 1))
-
         # get master indices that belong to subtreee (others are zeroed out) (N, D)
-        translation = new_nodes * new_nodes.long().cumsum(dim=1)
+        translation = new_nodes * is_real.view(-1, 1) * new_nodes.long().cumsum(dim=1) 
         nodes_copy = self.nodes.clone()
         self.nodes.zero_()
         # replace node indices with new indices (N, D)
-        self.nodes[self.env_indices_expnd, translation] = nodes_copy[self.env_indices_expnd, self.depths_arranged * new_nodes]
+        self.nodes[self.env_indices_expnd, translation] = nodes_copy[self.env_indices_expnd, self.depths_aranged * new_nodes]
         self.nodes[self.env_indices, :, self.i_start:self.i_end] = \
             translation[self.env_indices.view(-1, 1, 1), self.nodes[self.env_indices, :, self.i_start:self.i_end].long()].float()
         self.nodes[self.env_indices, :, self.n_start:self.n_end] *= self.nodes[self.env_indices, :, self.i_start:self.i_end] > 0
+        translated_parents = translation[self.env_indices_expnd, self.parents].clone()
+        self.parents.zero_()
+        self.parents[self.env_indices_expnd, translation] = translated_parents
         self.next_empty = torch.amax(translation, dim=1) + 1
         self.next_empty.clamp_(min=2)
+        self.max_depths -= 1
+        self.max_depths.clamp_(min=1)
         
-        self.subtrees.zero_()
-        self.cur_subtree.zero_()
     

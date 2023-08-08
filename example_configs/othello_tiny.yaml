@@ -1,0 +1,83 @@
+run_tag: 'othello'
+env_config: {
+  env_type: 'othello',
+  board_size: 8
+}
+model_config: { # overwritten if loading a checkpoint
+  input_size: [2, 8, 8],
+  policy_size: 65,
+  res_channels: 8,
+  res_blocks: 2,
+  value_head_res_channels: 8,
+  value_head_res_blocks: 1,
+  policy_head_res_channels: 8,
+  policy_head_res_blocks: 1,
+  kernel_size: 3,
+  policy_fc_size: 32,
+  value_fc_size: 32,
+  value_output_activation: "tanh0to1"
+}
+train_mode_config: {
+  algo_type: "alphazero",
+  algo_config: {
+    temperature: 1.0,
+    num_iters: 50,
+    max_nodes: 100,
+    puct_coeff: 1.0,
+    dirichlet_alpha: 0.45,
+    dirichlet_epsilon: 0.25
+  },
+  learning_rate: 0.0003,
+  replay_memory_max_size: 1000,
+  replay_memory_min_size: 10,
+  parallel_envs: 32,
+  policy_factor: 1.0,
+  minibatch_size: 256,
+  minibatches_per_update: 1,
+  episodes_per_epoch: 32,
+  test_config: {
+    algo_type: "alphazero",
+    algo_config: {
+      temperature: 0.0,
+      num_iters: 50,
+      max_nodes: 100,
+      puct_coeff: 1.0,
+      dirichlet_alpha: 0.01,
+      dirichlet_epsilon: 0.1
+    },
+    episodes_per_epoch: 25,
+    baselines: [
+      {
+        name: 'random'
+      },
+      {
+        name: 'best'
+      }
+    ],
+    improvement_threshold_pct: 0.5
+  }
+}
+test_mode_config: {
+  algo_type: "alphazero",
+  algo_config: {
+    temperature: 0.0,
+    num_iters: 50,
+    max_nodes: 100,
+    puct_coeff: 1.0,
+    dirichlet_alpha: 0.01,
+      dirichlet_epsilon: 0.1
+  },
+  episodes_per_epoch: 25,
+  baselines: [
+    {
+      name: 'random'
+    },
+    {
+      name: 'best'
+    }
+  ],
+  improvement_threshold_pct: 0.5
+}
+
+
+

@@ -21,7 +21,8 @@ class Collector:
 
 
     def collect(self, model: torch.nn.Module, inactive_mask: Optional[torch.Tensor] = None):
-        terminated = self.collect_step(model).clone()
+        _, terminated = self.collect_step(model)
+        terminated = terminated.clone()
 
         if inactive_mask is not None:
             terminated *= ~inactive_mask
@@ -35,9 +36,9 @@ class Collector:
     
     def collect_step(self, model: torch.nn.Module):
         model.eval()
-        initial_states, probs, _, _, terminated = self.evaluator.step(model)
+        initial_states, probs, _, actions, terminated = self.evaluator.step(model)
         self.episode_memory.insert(initial_states, probs)
-        return terminated
+        return actions, terminated
     
     def assign_rewards(self, terminated_episodes, terminated):
         raise NotImplementedError()
