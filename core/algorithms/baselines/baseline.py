@@ -15,14 +15,15 @@ class Baseline(Evaluator):
         self.proper_name = 'Baseline'
 
     def add_metrics(self, history):
-        history.epoch_metrics[self.metrics_key] = Metric(
-            name=self.metrics_key, 
-            xlabel='Epoch', 
-            ylabel='Margin (+/- games)', 
-            maximize=True, 
-            alert_on_best=False, 
-            proper_name=f'Win Margin (Current Model vs. {self.proper_name})'
-        )
+        if history.epoch_metrics.get(self.metrics_key) is None:
+            history.epoch_metrics[self.metrics_key] = Metric(
+                name=self.metrics_key, 
+                xlabel='Epoch', 
+                ylabel='Margin (+/- games)', 
+                maximize=True, 
+                alert_on_best=False, 
+                proper_name=f'Win Margin (Current Model vs. {self.proper_name})'
+            )
     
     def add_metrics_data(self, data, history, log=True):
         history.add_epoch_data({self.metrics_key: data}, log=log)
