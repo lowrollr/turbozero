@@ -166,7 +166,8 @@ class Trainer:
         while self.history.cur_epoch < epochs if epochs is not None else True:
             while self.history.cur_train_step < self.config.episodes_per_epoch * (self.history.cur_epoch+1):
                 self.selfplay_step()
-            self.tester.collect_test_batch()
+            if self.tester.config.episodes_per_epoch > 0:
+                self.tester.collect_test_batch()
             self.add_epoch_metrics()
 
             if self.interactive:
