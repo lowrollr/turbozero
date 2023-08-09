@@ -143,7 +143,7 @@ class MCTS(Evaluator):
                 + self.dirilecht.rsample(torch.Size((self.parallel_envs,))) * self.dirichlet_e # type: ignore
         
 
-        self.env.save_node()
+        saved = self.env.save_node()
         cur_players = self.env.cur_players.clone()
 
         for _ in range(self.iters):
@@ -214,7 +214,7 @@ class MCTS(Evaluator):
             self.actions *= ~is_leaf.view(-1, 1)
 
             # reset to root node if we've reached a leaf node
-            self.env.load_node(is_leaf)
+            self.env.load_node(is_leaf, saved)
             self.cur_nodes *= ~is_leaf
             self.cur_nodes += is_leaf
             
@@ -222,12 +222,10 @@ class MCTS(Evaluator):
             
         # return to the root node
         self.cur_nodes.fill_(1)
-        self.env.load_node(self.cur_nodes.bool())
+        self.env.load_node(self.cur_nodes.bool(), saved)
         # return visited counts at the root node
         return self.n_vals, None
 
-  
-    
     @property
     def next_indices(self) -> torch.Tensor:
         return self.nodes[self.env_indices, self.cur_nodes, self.i_start:self.i_end]

@@ -95,7 +95,7 @@ class LazyMCTS(Evaluator):
         with torch.no_grad():
             policy_logits, _ = evaluation_fn(self.env.states)
         policy_logits = torch.nn.functional.softmax(policy_logits, dim=1)
-        self.env.save_node()
+        saved = self.env.save_node()
 
         for _ in range(iters):
             actions = self.choose_action_with_puct(
@@ -107,6 +107,6 @@ class LazyMCTS(Evaluator):
                 values = 1 - values
             self.visit_counts[self.env.env_indices, actions] += 1
             self.action_scores[self.env.env_indices, actions] += values
-            self.env.load_node(self.all_nodes)
+            self.env.load_node(self.all_nodes, saved)
 
         return self.visit_counts

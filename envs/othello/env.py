@@ -1,5 +1,6 @@
 
 from dataclasses import dataclass
+from typing import List, Tuple
 import torch
 
 from core.env import Env, EnvConfig
@@ -48,8 +49,6 @@ class OthelloEnv(Env):
 
         self.need_to_calculate_rays = True
         self.reset()
-        self.save_node()
-        
 
         if self.debug:
             self.get_legal_actions_traced = get_legal_actions
@@ -120,17 +119,17 @@ class OthelloEnv(Env):
         self.need_to_calculate_rays = True
 
     def save_node(self):
-        self.saved = [
+        return (
             self.states.clone(),
             self.cur_players.clone(),
             self.consecutive_passes.clone()
-        ]
+        )
         
-    def load_node(self, load_envs: torch.Tensor):
+    def load_node(self, load_envs: torch.Tensor, saved: Tuple[torch.Tensor, torch.Tensor, torch.Tensor]):
         load_envs_expnd = load_envs.view(-1, 1, 1, 1)
-        self.states = self.saved[0].clone() * load_envs_expnd + self.states * (~load_envs_expnd)
-        self.cur_players = self.saved[1].clone() * load_envs + self.cur_players * (~load_envs)
-        self.consecutive_passes = self.saved[2].clone() * load_envs + self.consecutive_passes * (~load_envs)
+        self.states = saved[0].clone() * load_envs_expnd + self.states * (~load_envs_expnd)
+        self.cur_players = saved[1].clone() * load_envs + self.cur_players * (~load_envs)
+        self.consecutive_passes = saved[2].clone() * load_envs + self.consecutive_passes * (~load_envs)
         self.need_to_calculate_rays = True
         self.update_terminated()
     

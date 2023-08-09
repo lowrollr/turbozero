@@ -82,10 +82,10 @@ class _2048Env(Env):
     def push_actions(self, actions) -> None:
         self.states = self.push_actions_ts(self.states, actions) # type: ignore
 
-    def save_node(self):
-        self.saved_states = self.states.clone()
+    def save_node(self) -> torch.Tensor:
+        return self.states.clone()
     
-    def load_node(self, envs):
-        load_envs_expnd = envs.view(self.parallel_envs, 1, 1, 1)
-        self.states = self.saved_states.clone() * load_envs_expnd + self.states * (~load_envs_expnd)
+    def load_node(self, load_envs: torch.Tensor, saved: torch.Tensor):
+        load_envs_expnd = load_envs.view(self.parallel_envs, 1, 1, 1)
+        self.states = saved.clone() * load_envs_expnd + self.states * (~load_envs_expnd)
         self.update_terminated()

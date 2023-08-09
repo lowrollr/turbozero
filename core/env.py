@@ -95,9 +95,30 @@ class Env:
     def save_node(self):
         raise NotImplementedError()
     
-    def load_node(self, envs):
+    def load_node(self, load_envs, saved):
         raise NotImplementedError()
     
     def get_greedy_rewards(self):
         # returns instantaneous reward, used in greedy algorithms
         raise NotImplementedError()
+    
+    def choose_random_legal_action(self) -> torch.Tensor:
+        legal_actions = self.get_legal_actions()
+        return torch.multinomial(legal_actions.float(), 1, replacement=True).flatten()
+    
+    def random_rollout(self, num_rollouts: int) -> torch.Tensor:
+        saved = self.save_node()
+        cumulative_rewards = torch.zeros(self.parallel_envs, dtype=torch.float32, device=self.device, requires_grad=False)
+        for _ in range(num_rollouts):
+            completed = torch.zeros(self.parallel_envs, dtype=torch.bool, device=self.device, requires_grad=False)
+            starting_players = self.cur_players.clone()
+            while not completed.all():
+                actions = self.choose_random_legal_action()
+                terminated = self.step(actions)
+                rewards = self.get_rewards()
+                rewards = ((self.cur_players == starting_players) * rewards) + ((self.cur_players != starting_players) * 1-rewards)
+                cumulative_rewards += rewards * terminated * (~completed)
+                completed = completed | terminated
+            self.load_node(torch.full((self.parallel_envs,), True, dtype=torch.bool, device=self.device), saved)
+        cumulative_rewards /= num_rollouts
+        return cumulative_rewards
