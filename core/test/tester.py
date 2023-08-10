@@ -90,7 +90,7 @@ class TwoPlayerTester(Tester):
         baseline.step_evaluator(actions, envs_to_reset)
         self.collector.evaluator.env.terminated[:split] = True
         self.collector.evaluator.env.reset_terminated_states()
-
+        starting_players = self.collector.evaluator.env.cur_players.clone()
         use_other_evaluator = True
         while not completed_episodes.all():
             if use_other_evaluator:
@@ -99,11 +99,8 @@ class TwoPlayerTester(Tester):
             else:
                 actions, terminated = self.collector.collect_step(self.model)
                 baseline.step_evaluator(actions, terminated)
-            rewards = self.collector.evaluator.env.get_rewards()
-            if use_other_evaluator:
-                scores += rewards * terminated * ~completed_episodes
-            else:
-                scores += (1 - rewards) * terminated * ~completed_episodes
+            rewards = self.collector.evaluator.env.get_rewards(starting_players)
+            scores += rewards * terminated * (~completed_episodes)
             completed_episodes |= terminated
             use_other_evaluator = not use_other_evaluator
 

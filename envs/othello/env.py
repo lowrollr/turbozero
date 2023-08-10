@@ -1,6 +1,6 @@
 
 from dataclasses import dataclass
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 import torch
 
 from core.env import Env, EnvConfig
@@ -98,10 +98,16 @@ class OthelloEnv(Env):
     def update_terminated(self):
         super().update_terminated()
     
-    def get_rewards(self):
+    def get_rewards(self, player_ids: Optional[torch.Tensor] = None):
         self.rewards.zero_()
-        p1_sum = self.states[self.env_indices, 0].sum(dim=(1, 2))
-        p2_sum = self.states[self.env_indices, 1].sum(dim=(1, 2))
+
+        if player_ids is None:
+            player_ids = self.cur_players
+        idx = ((player_ids == self.cur_players).int() - 1) % 2
+        other_idx = 1 - idx
+
+        p1_sum = self.states[self.env_indices, idx].sum(dim=(1, 2))
+        p2_sum = self.states[self.env_indices, other_idx].sum(dim=(1, 2))
         self.rewards += 1 * (p1_sum > p2_sum)
         self.rewards += 0.5 * (p1_sum == p2_sum)
         return self.rewards
@@ -133,8 +139,12 @@ class OthelloEnv(Env):
         self.need_to_calculate_rays = True
         self.update_terminated()
     
-    def get_greedy_rewards(self):
-        return self.states[:, 0].sum(dim=(1, 2)) - self.states[:, 1].sum(dim=(1, 2))
+    def get_greedy_rewards(self, player_ids: Optional[torch.Tensor] = None):
+        if player_ids is None:
+            player_ids = self.cur_players
+        idx = ((player_ids == self.cur_players).int() - 1) % 2
+        other_idx = 1 - idx
+        return 0.5 - ((self.states[self.env_indices, idx].sum(dim=(1, 2)) - self.states[self.env_indices, other_idx].sum(dim=(1, 2))) / (2 * (self.board_size ** 2)))
 
     def __str__(self):
         assert self.parallel_envs == 1

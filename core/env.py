@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Tuple
+from typing import Optional, Tuple
 import torch
 
 
@@ -86,8 +86,8 @@ class Env:
     def next_player(self):
         self.cur_players = (self.cur_players + 1) % self.num_players
     
-    def get_rewards(self):
-        return self.rewards
+    def get_rewards(self, player_ids: Optional[torch.Tensor] = None):
+        raise NotImplementedError()
     
     def next_turn(self):
         raise NotImplementedError()
@@ -98,7 +98,7 @@ class Env:
     def load_node(self, load_envs, saved):
         raise NotImplementedError()
     
-    def get_greedy_rewards(self):
+    def get_greedy_rewards(self, player_ids: Optional[torch.Tensor] = None):
         # returns instantaneous reward, used in greedy algorithms
         raise NotImplementedError()
     
@@ -115,7 +115,7 @@ class Env:
             while not completed.all():
                 actions = self.choose_random_legal_action()
                 terminated = self.step(actions)
-                rewards = self.get_rewards()
+                rewards = self.get_rewards(starting_players)
                 rewards = ((self.cur_players == starting_players) * rewards) + ((self.cur_players != starting_players) * 1-rewards)
                 cumulative_rewards += rewards * terminated * (~completed)
                 completed = completed | terminated
