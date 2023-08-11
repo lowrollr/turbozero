@@ -144,7 +144,7 @@ class OthelloEnv(Env):
             player_ids = self.cur_players
         idx = ((player_ids == self.cur_players).int() - 1) % 2
         other_idx = 1 - idx
-        return 0.5 - ((self.states[self.env_indices, idx].sum(dim=(1, 2)) - self.states[self.env_indices, other_idx].sum(dim=(1, 2))) / (2 * (self.board_size ** 2)))
+        return 0.5 + ((self.states[self.env_indices, idx].sum(dim=(1, 2)) - self.states[self.env_indices, other_idx].sum(dim=(1, 2))) / (2 * (self.board_size ** 2)))
 
     def __str__(self):
         assert self.parallel_envs == 1
