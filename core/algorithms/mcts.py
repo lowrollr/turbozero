@@ -7,6 +7,7 @@ import math
 from core.algorithms.evaluator import Evaluator, EvaluatorConfig
 
 from core.env import Env
+from core.utils.utils import rand_argmax_2d
 
 
 @dataclass
@@ -278,7 +279,7 @@ class MCTS(Evaluator):
         legal_puct_scores = (puct_scores * legal_actions) - \
             (self.very_positive_value * (~legal_actions))
 
-        return torch.argmax(legal_puct_scores, dim=1)
+        return rand_argmax_2d(legal_puct_scores).flatten()
     
     def relax_subtrees(self):
         self.subtrees.zero_()

@@ -7,6 +7,7 @@ import torch
 from core.algorithms.evaluator import Evaluator, EvaluatorConfig, TrainableEvaluator
 from core.algorithms.mcts import MCTS, MCTSConfig
 from core.env import Env
+from core.utils.utils import rand_argmax_2d
 
 @dataclass
 class AlphaZeroConfig(MCTSConfig):
@@ -23,7 +24,7 @@ class AlphaZero(MCTS, TrainableEvaluator):
         if self.config.temperature > 0:
             return torch.multinomial(torch.pow(visits, 1/self.config.temperature), 1, replacement=True).flatten()
         else:
-            return torch.argmax(visits, dim=1).flatten()
+            return rand_argmax_2d(visits).flatten()
         
     def evaluate(self) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         evaluation_fn = lambda env: self.model(env.states)

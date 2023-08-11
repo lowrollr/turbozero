@@ -4,6 +4,7 @@ from typing import Callable, Optional, Tuple
 import torch
 
 from core.algorithms.evaluator import Evaluator, EvaluatorConfig
+from core.utils.utils import rand_argmax_2d
 from ..env import Env
 
 
@@ -68,9 +69,7 @@ class LazyMCTS(Evaluator):
         # even with puct score of zero only a legal action will be chosen
         legal_action_scores = (puct_scores * legal_actions) - \
             (self.very_positive_value * torch.logical_not(legal_actions))
-        chosen_actions = torch.argmax(legal_action_scores, dim=1, keepdim=True)
-
-        return chosen_actions.squeeze(1)
+        return rand_argmax_2d(legal_action_scores).flatten()
 
     def iterate(self, evaluation_fn: Callable, depth: int, rewards: torch.Tensor) -> torch.Tensor:  # type: ignore
         while depth > 0:

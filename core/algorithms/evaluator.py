@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from typing import Optional, Tuple
 import torch
 from core.env import Env
+from core.utils.utils import rand_argmax_2d
 
 @dataclass
 class EvaluatorConfig:
@@ -32,7 +33,7 @@ class Evaluator:
 
     def choose_actions(self, probs: torch.Tensor) -> torch.Tensor:
         legal_actions = self.env.get_legal_actions()
-        return torch.argmax(probs * legal_actions, dim=1)
+        return rand_argmax_2d(probs * legal_actions).flatten()
 
     def step(self, *args) -> Tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor], torch.Tensor, torch.Tensor]:
         initial_states = self.env.states.clone()
