@@ -3,9 +3,10 @@ from typing import Union
 import torch
 import logging
 import argparse
-from core.algorithms.load import init_trainable_evaluator
+from core.algorithms.load import init_evaluator, init_trainable_evaluator
 from core.resnet import ResNetConfig, TurboZeroResnet
 from core.test.tester import  Tester
+from core.test.tournament.tournament import Tournament, TournamentPlayer
 from core.train.trainer import Trainer, load_checkpoint, init_history
 
 
@@ -57,6 +58,25 @@ def load_tester_nb(
         args.logfile = 'turbozero.log'
     logging.basicConfig(filename=args.logfile, filemode='a', level=logging.INFO, format='%(asctime)s %(message)s')
     return load_tester(args, interactive=True)
+
+def load_tournament_nb(
+    config_file: str,
+    gpu: bool,
+    debug: bool,
+    logfile: str = '',
+    verbose_logging: bool = True
+) -> Tournament:
+    args = argparse.Namespace(
+        config=config_file,
+        gpu=gpu,
+        debug=debug,
+        logfile=logfile,
+        verbose=verbose_logging
+    )
+    if not args.logfile:
+        args.logfile = 'turbozero.log'
+    logging.basicConfig(filename=args.logfile, filemode='a', level=logging.INFO, format='%(asctime)s %(message)s')
+    return load_tournament(args, interactive=True)
     
 
 def load_config(config_file: str) -> dict:
@@ -131,6 +151,29 @@ def load_tester(args, interactive: bool) -> Tester:
     tester = init_tester(test_config, collector, model, history, None, args.verbose)
     return tester
 
+def load_tournament(args, interactive: bool) -> Tournament:
+    raw_config = load_config(args.config)
+    if torch.cuda.is_available() and args.gpu:
+        device = torch.device('cuda')
+        torch.backends.cudnn.benchmark = True
+    else:
+        device = torch.device('cpu')
+    tournament_config = raw_config['tournament_mode_config']
+    env = init_env(device, tournament_config['num_games'], raw_config['env_config'], args.debug)
+
+    competitors = []
+    for competitor in tournament_config['competitors']:
+        if competitor.get('checkpoint'):
+            model, _, _, _, _, _ = load_checkpoint(competitor['checkpoint'])
+            model = model.to(device)
+            evaluator = init_evaluator(competitor['algo_config'], env, model)
+        else:
+            evaluator = init_evaluator(competitor['algo_config'], env)
+        player = TournamentPlayer(competitor['name'], evaluator)
+        competitors.append(player)
+    tournament = Tournament(competitors, env, tournament_config['num_games'], tournament_config['num_tournaments'])
+    return tournament
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(prog='TurboZero')
@@ -158,5 +201,10 @@ if __name__ == '__main__':
     if args.mode == 'train':
         trainer = load_trainer(args, interactive=False)
         trainer.training_loop()
-    
+    elif args.mode == 'test':
+        tester = load_tester(args, interactive=False)
+        tester.collect_test_batch()
+    elif args.mode == 'tournament':
+        tournament = load_tournament(args)
+        tournament.run()
 

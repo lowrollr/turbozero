@@ -11,7 +11,7 @@ from core.algorithms.baselines.random import RandomBaseline
 from core.algorithms.baselines.rollout_mcts import RandomRolloutMCTS, RandomRolloutMCTSConfig
 from core.algorithms.evaluator import EvaluatorConfig
 from core.algorithms.mcts import MCTSConfig
-from core.demo.human import HumanEvaluator
+# from core.demo.human import HumanEvaluator
 from core.env import Env
 
 
