@@ -2,6 +2,7 @@
 from dataclasses import dataclass
 from typing import Optional, Tuple
 import torch
+from core.algorithms.evaluator import TrainableEvaluator
 
 
 from core.algorithms.lazy_mcts import LazyMCTS, LazyMCTSConfig
@@ -13,9 +14,9 @@ class LazyZeroConfig(LazyMCTSConfig):
 
 
 
-class LazyZero(LazyMCTS):
-    def __init__(self, env: Env, config: LazyZeroConfig):
-        super().__init__(env, config)
+class LazyZero(LazyMCTS, TrainableEvaluator):
+    def __init__(self, env: Env, config: LazyZeroConfig, model: torch.nn.Module, *args, **kwargs):
+        super().__init__(env, config, model, *args, **kwargs)
         self.config: LazyZeroConfig
         
 
@@ -26,6 +27,6 @@ class LazyZero(LazyMCTS):
         else:
             return torch.argmax(visits, dim=1).flatten()
     
-    def evaluate(self, model) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
-        evaluation_fn = lambda env: model(env.states)
+    def evaluate(self) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+        evaluation_fn = lambda env: self.model(env.states)
         return super().evaluate(evaluation_fn)

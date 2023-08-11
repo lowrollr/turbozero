@@ -21,8 +21,8 @@ class MCTSConfig(EvaluatorConfig):
 # For now, this implementation of MCTS assumes that a model is used to evaluate leaf nodes rather than support rollouts
 # TODO: implement a more general version that supports rollouts + other strategies
 class MCTS(Evaluator):
-    def __init__(self, env: Env, config: MCTSConfig) -> None:
-        super().__init__(env, config)
+    def __init__(self, env: Env, config: MCTSConfig, *args, **kwargs) -> None:
+        super().__init__(env, config, *args, **kwargs)
         # search parameters
         # each evaluation traverses an edge of the search tree
         self.iters = config.num_iters

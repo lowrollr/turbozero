@@ -66,6 +66,9 @@ class _2048Env(Env):
     
     def get_high_squares(self):
         return torch.amax(self.states, dim=(1, 2, 3))
+    
+    def get_rewards(self, player_ids: Optional[torch.Tensor] = None) -> torch.Tensor:
+        return self.rewards
         
     def update_terminated(self) -> None:
         self.terminated = self.is_terminal()

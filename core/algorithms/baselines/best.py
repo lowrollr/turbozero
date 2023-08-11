@@ -18,9 +18,9 @@ class BestModelBaseline(Baseline):
         best_model_optimizer: torch.optim.Optimizer,
         metrics_key: str = 'win_margin_vs_best',
         proper_name: str = 'Best Model',
-        **kwargs
+        *args, **kwargs
     ):
-        super().__init__(env, config)
+        super().__init__(env, config, *args, **kwargs)
         self.best_model = deepcopy(best_model)
         self.best_model_optimizer = deepcopy(best_model_optimizer.state_dict()) if best_model_optimizer is not None else None
         self.evaluator = evaluator.__class__(env, evaluator.config)

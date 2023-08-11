@@ -19,8 +19,8 @@ class RandomRolloutMCTSConfig(MCTSConfig):
 
     
 class RandomRolloutMCTS(MCTS, Baseline):
-    def __init__(self, env: Env, config: RandomRolloutMCTSConfig):
-        super().__init__(env, config)
+    def __init__(self, env: Env, config: RandomRolloutMCTSConfig, *args, **kwargs):
+        super().__init__(env, config, *args, **kwargs)
         self.config: RandomRolloutMCTSConfig
         self.uniform_probabilities = torch.ones((self.env.parallel_envs, self.env.policy_shape[0]), device=self.device, requires_grad=False) / self.env.policy_shape[0]
 

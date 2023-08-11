@@ -12,34 +12,34 @@ from core.demo.human import HumanEvaluator
 from core.env import Env
 
 
-def init_trainable_evaluator(algo_config: dict, env: Env):
+def init_trainable_evaluator(algo_config: dict, env: Env, model: torch.nn.Module, *args, **kwargs):
     algo_type = algo_config['name']
     if algo_type == 'lazyzero':
         config = LazyZeroConfig(**algo_config)
-        return LazyZero(env, config)
+        return LazyZero(env, config, model)
     elif algo_type == 'alphazero':
         config = AlphaZeroConfig(**algo_config)
-        return AlphaZero(env, config)
+        return AlphaZero(env, config, model)
     else:
         raise NotImplementedError(f'Unknown trainable evaluator type: {algo_type}')
     
-def init_evaluator(algo_config: dict, env: Env, **kwargs):
+def init_evaluator(algo_config: dict, env: Env, *args, **kwargs):
     algo_type = algo_config['name']
     if algo_type == 'lazyzero':
         config = LazyZeroConfig(**algo_config)
-        return LazyZero(env, config)
+        return LazyZero(env, config, *args, **kwargs)
     elif algo_type == 'alphazero':
         config = AlphaZeroConfig(**algo_config)
-        return AlphaZero(env, config)
+        return AlphaZero(env, config, **kwargs)
     elif algo_type == 'random':
         config = EvaluatorConfig(**algo_config)
-        return RandomBaseline(env, config)
+        return RandomBaseline(env, config, *args, **kwargs)
     elif algo_type == 'human':
         config = EvaluatorConfig(**algo_config)
-        return HumanEvaluator(env, config)
+        return HumanEvaluator(env, config, *args, **kwargs)
     elif algo_type == 'greedy_mcts':
         config = MCTSConfig(**algo_config)
-        return GreedyMCTS(env, config)
+        return GreedyMCTS(env, config, *args, **kwargs)
     else:
         raise NotImplementedError(f'Unknown evaluator type: {algo_type}')
     

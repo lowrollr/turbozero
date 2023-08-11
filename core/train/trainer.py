@@ -152,7 +152,7 @@ class Trainer:
         return value
     
     def selfplay_step(self):
-        finished_episodes, _ = self.collector.collect(self.model)
+        finished_episodes, _ = self.collector.collect()
         if finished_episodes:
             for episode in finished_episodes:
                 episode = self.collector.postprocess(episode)

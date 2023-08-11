@@ -9,8 +9,8 @@ from core.utils.history import Metric
 
 
 class Baseline(Evaluator):
-    def __init__(self, env: Env, config: EvaluatorConfig):
-        super().__init__(env, config)
+    def __init__(self, env: Env, config: EvaluatorConfig, *args, **kwargs):
+        super().__init__(env, config, *args, **kwargs)
         self.metrics_key = 'baseline'
         self.proper_name = 'Baseline'
 

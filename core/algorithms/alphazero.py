@@ -4,7 +4,7 @@
 from dataclasses import dataclass
 from typing import Callable, Optional, Tuple
 import torch
-from core.algorithms.evaluator import Evaluator, EvaluatorConfig
+from core.algorithms.evaluator import Evaluator, EvaluatorConfig, TrainableEvaluator
 from core.algorithms.mcts import MCTS, MCTSConfig
 from core.env import Env
 
@@ -13,9 +13,9 @@ class AlphaZeroConfig(MCTSConfig):
     temperature: float = 1.0
 
 
-class AlphaZero(MCTS):
-    def __init__(self, env: Env, config: AlphaZeroConfig) -> None:
-        super().__init__(env, config)
+class AlphaZero(MCTS, TrainableEvaluator):
+    def __init__(self, env: Env, config: AlphaZeroConfig, model: torch.nn.Module) -> None:
+        super().__init__(env, config, model)
         self.config: AlphaZeroConfig
 
     # all additional alphazero implementation details live in MCTS, for now
@@ -25,8 +25,8 @@ class AlphaZero(MCTS):
         else:
             return torch.argmax(visits, dim=1).flatten()
         
-    def evaluate(self, model) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
-        evaluation_fn = lambda env: model(env.states)
+    def evaluate(self) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+        evaluation_fn = lambda env: self.model(env.states)
         return super().evaluate(evaluation_fn)
     
 

@@ -15,8 +15,8 @@ class LazyMCTSConfig(EvaluatorConfig):
 
 
 class LazyMCTS(Evaluator):
-    def __init__(self, env: Env, config: LazyMCTSConfig) -> None:
-        super().__init__(env, config)
+    def __init__(self, env: Env, config: LazyMCTSConfig, *args, **kwargs) -> None:
+        super().__init__(env, config, *args, **kwargs)
 
         self.action_scores = torch.zeros(
             (self.env.parallel_envs, *self.env.policy_shape),
@@ -75,7 +75,7 @@ class LazyMCTS(Evaluator):
     def iterate(self, evaluation_fn: Callable, depth: int, rewards: torch.Tensor) -> torch.Tensor:  # type: ignore
         while depth > 0:
             with torch.no_grad():
-                policy_logits, values = evaluation_fn(self.env.states)
+                policy_logits, values = evaluation_fn(self.env)
             depth -= 1
             if depth == 0:
                 rewards = self.env.get_rewards()
@@ -93,7 +93,7 @@ class LazyMCTS(Evaluator):
     def explore_for_iters(self, evaluation_fn: Callable, iters: int, search_depth: int) -> torch.Tensor:
         legal_actions = self.env.get_legal_actions()
         with torch.no_grad():
-            policy_logits, _ = evaluation_fn(self.env.states)
+            policy_logits, _ = evaluation_fn(self.env)
         policy_logits = torch.nn.functional.softmax(policy_logits, dim=1)
         saved = self.env.save_node()
 

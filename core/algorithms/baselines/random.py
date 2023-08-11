@@ -17,9 +17,9 @@ class RandomBaseline(Baseline):
         config: EvaluatorConfig,
         metrics_key: str = 'random',
         proper_name: str = 'Random',
-        **kwargs
+        *args, **kwargs
     ) -> None:
-        super().__init__(env, config)
+        super().__init__(env, config, *args, **kwargs)
         self.metrics_key = metrics_key
         self.proper_name = proper_name
         self.sample = torch.zeros(self.env.parallel_envs, self.env.policy_shape[0], device=self.device, requires_grad=False, dtype=torch.float32)

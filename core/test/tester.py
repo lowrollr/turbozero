@@ -47,7 +47,7 @@ class Tester:
         # TODO: batch evaluation episodes where necessary
         completed_episodes = torch.zeros(self.config.episodes_per_epoch, dtype=torch.bool, device=self.collector.evaluator.env.device)
         while not completed_episodes.all():
-            episodes, termianted = self.collector.collect(self.model, inactive_mask=completed_episodes)
+            episodes, termianted = self.collector.collect(inactive_mask=completed_episodes)
             self.add_evaluation_metrics(episodes)
             completed_episodes |= termianted
     
@@ -85,7 +85,7 @@ class TwoPlayerTester(Tester):
         reset[:split] = True
         completed_episodes = torch.zeros(self.config.episodes_per_epoch, dtype=torch.bool, device=self.collector.evaluator.env.device, requires_grad=False)
         scores = torch.zeros(self.config.episodes_per_epoch, dtype=torch.float, device=self.collector.evaluator.env.device, requires_grad=False)
-        actions, terminated = self.collector.collect_step(self.model)
+        actions, terminated = self.collector.collect_step()
         envs_to_reset = terminated | reset
         
         baseline.step_evaluator(actions, envs_to_reset)
@@ -98,7 +98,7 @@ class TwoPlayerTester(Tester):
                 _, _, _, actions, terminated = baseline.step()
                 self.collector.evaluator.step_evaluator(actions, terminated)
             else:
-                actions, terminated = self.collector.collect_step(self.model)
+                actions, terminated = self.collector.collect_step()
                 baseline.step_evaluator(actions, terminated)
             rewards = self.collector.evaluator.env.get_rewards(starting_players)
             scores += rewards * terminated * (~completed_episodes)

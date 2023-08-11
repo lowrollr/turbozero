@@ -6,12 +6,12 @@
 from typing import Optional
 import torch
 from core.utils.memory import EpisodeMemory
-from core.algorithms.evaluator import Evaluator
+from core.algorithms.evaluator import Evaluator, TrainableEvaluator
 
 
 class Collector:
     def __init__(self, 
-        evaluator: Evaluator, 
+        evaluator: TrainableEvaluator, 
         episode_memory_device: torch.device
     ) -> None:
         parallel_envs = evaluator.env.parallel_envs
@@ -20,8 +20,8 @@ class Collector:
         self.episode_memory = EpisodeMemory(parallel_envs, episode_memory_device)
 
 
-    def collect(self, model: torch.nn.Module, inactive_mask: Optional[torch.Tensor] = None):
-        _, terminated = self.collect_step(model)
+    def collect(self, inactive_mask: Optional[torch.Tensor] = None):
+        _, terminated = self.collect_step()
         terminated = terminated.clone()
 
         if inactive_mask is not None:
@@ -34,9 +34,9 @@ class Collector:
 
         return terminated_episodes, terminated
     
-    def collect_step(self, model: torch.nn.Module):
-        model.eval()
-        initial_states, probs, _, actions, terminated = self.evaluator.step(model)
+    def collect_step(self):
+        self.evaluator.model.eval()
+        initial_states, probs, _, actions, terminated = self.evaluator.step()
         self.episode_memory.insert(initial_states, probs)
         return actions, terminated
     

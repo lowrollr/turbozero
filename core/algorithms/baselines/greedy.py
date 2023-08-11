@@ -10,8 +10,8 @@ from core.env import Env
 
 
 class GreedyBaseline(Baseline):
-    def __init__(self, env: Env, config: EvaluatorConfig):
-        super().__init__(env, config)
+    def __init__(self, env: Env, config: EvaluatorConfig, *args, **kwargs):
+        super().__init__(env, config, *args, **kwargs)
         self.metrics_key = 'greedy'
         self.proper_name = 'Greedy'
 

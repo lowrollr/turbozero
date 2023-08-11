@@ -11,8 +11,8 @@ from core.env import Env
 
 
 class GreedyMCTS(MCTS, Baseline):
-    def __init__(self, env: Env, config: MCTSConfig) -> None:
-        super().__init__(env, config)
+    def __init__(self, env: Env, config: MCTSConfig, *args, **kwargs) -> None:
+        super().__init__(env, config, *args, **kwargs)
         self.uniform_probabilities = torch.ones((self.env.parallel_envs, self.env.policy_shape[0]), device=self.device, requires_grad=False) / self.env.policy_shape[0]
 
     def evaluate(self) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:

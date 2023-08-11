@@ -9,7 +9,7 @@ class EvaluatorConfig:
     name: str
 
 class Evaluator:
-    def __init__(self, env: Env, config: EvaluatorConfig):
+    def __init__(self, env: Env, config: EvaluatorConfig, *args, **kwargs):
         self.device = env.device
         self.env = env
         self.env.reset()
@@ -41,3 +41,13 @@ class Evaluator:
         terminated = self.step_env(actions)
         return initial_states, probs, values, actions, terminated
 
+class TrainableEvaluator(Evaluator):
+    def __init__(self, env: Env, config: EvaluatorConfig, model: torch.nn.Module):
+        super().__init__(env, config)
+        self.env = env
+        self.config = config
+        self._model = model
+
+    @property
+    def model(self) -> torch.nn.Module:
+        return self._model
