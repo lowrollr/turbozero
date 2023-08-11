@@ -166,6 +166,7 @@ def load_tournament(args, interactive: bool) -> Tournament:
         if competitor.get('checkpoint'):
             model, _, _, _, _, _ = load_checkpoint(competitor['checkpoint'])
             model = model.to(device)
+            model.eval()
             evaluator = init_evaluator(competitor['algo_config'], env, model)
         else:
             evaluator = init_evaluator(competitor['algo_config'], env)

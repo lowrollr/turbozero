@@ -79,7 +79,12 @@ class Tournament:
 
     def gather_round_robin_games(self, games_against_each_player: int) -> List[UnratedGameResult]:
         results = []
-        for (player1, player2) in combinations(self.competitors, 2):
+        matchups = list(combinations(self.competitors, 2))
+        shuffle(matchups)
+        for players in matchups:
+            players = list(players)
+            shuffle(players)
+            player1, player2 = players
             p1_scores = self.play_games(player1.evaluator, player2.evaluator)
             new_results = []
             for p1_score in p1_scores:
