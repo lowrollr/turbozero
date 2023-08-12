@@ -3,17 +3,23 @@
 
 
 
+from dataclasses import dataclass
 import torch
 from core.algorithms.baselines.baseline import Baseline
 from core.algorithms.evaluator import EvaluatorConfig
 from core.env import Env
 
+@dataclass
+class GreedyConfig(EvaluatorConfig):
+    heuristic: str
+
 
 class GreedyBaseline(Baseline):
-    def __init__(self, env: Env, config: EvaluatorConfig, *args, **kwargs):
+    def __init__(self, env: Env, config: GreedyConfig, *args, **kwargs):
         super().__init__(env, config, *args, **kwargs)
         self.metrics_key = 'greedy'
         self.proper_name = 'Greedy'
+        self.config: GreedyConfig
 
     def evaluate(self):
         saved = self.env.save_node()

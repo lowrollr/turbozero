@@ -139,12 +139,41 @@ class OthelloEnv(Env):
         self.need_to_calculate_rays = True
         self.update_terminated()
     
-    def get_greedy_rewards(self, player_ids: Optional[torch.Tensor] = None):
-        if player_ids is None:
-            player_ids = self.cur_players
-        idx = ((player_ids == self.cur_players).int() - 1) % 2
-        other_idx = 1 - idx
-        return 0.5 + ((self.states[self.env_indices, idx].sum(dim=(1, 2)) - self.states[self.env_indices, other_idx].sum(dim=(1, 2))) / (2 * (self.board_size ** 2)))
+    def get_greedy_rewards(self, player_ids: Optional[torch.Tensor] = None, heuristic: str = 'num_tiles'):
+        if heuristic == 'minmax_moves':
+            legal_actions_sum = self.get_legal_actions().sum(dim=1)
+            return (((legal_actions_sum) * (self.cur_players == player_ids)) + (self.policy_shape[0] - legal_actions_sum) * (self.cur_players != player_ids)) / self.policy_shape[0]
+        elif heuristic == 'num_tiles':
+            if player_ids is None:
+                player_ids = self.cur_players
+            idx = ((player_ids == self.cur_players).int() - 1) % 2
+            other_idx = 1 - idx 
+            return 0.5 + ((self.states[self.env_indices, idx].sum(dim=(1, 2)) - self.states[self.env_indices, other_idx].sum(dim=(1, 2))) / (2 * (self.board_size ** 2)))
+        elif heuristic == 'corners':
+            if player_ids is None:
+                player_ids = self.cur_players
+            idx = ((player_ids == self.cur_players).int() - 1) % 2
+            other_idx = 1 - idx 
+            top_left_corner = self.states[self.env_indices, idx, 0, 0] - self.states[self.env_indices, other_idx, 0, 0]
+            top_right_corner = self.states[self.env_indices, idx, 0, self.board_size - 1] - self.states[self.env_indices, other_idx, 0, self.board_size - 1]
+            bottom_left_corner = self.states[self.env_indices, idx, self.board_size - 1, 0] - self.states[self.env_indices, other_idx, self.board_size - 1, 0]
+            bottom_right_corner = self.states[self.env_indices, idx, self.board_size - 1, self.board_size - 1] - self.states[self.env_indices, other_idx, self.board_size - 1, self.board_size - 1]
+            return 0.5 + ((top_left_corner + top_right_corner + bottom_left_corner + bottom_right_corner) / 8)
+        elif heuristic == 'corners_and_edges':
+            if player_ids is None:
+                player_ids = self.cur_players
+            idx = ((player_ids == self.cur_players).int() - 1) % 2
+            other_idx = 1 - idx
+            edge = self.states[self.env_indices, idx, 0, :] - self.states[self.env_indices, other_idx, 0, :]
+            edge += self.states[self.env_indices, idx, :, 0] - self.states[self.env_indices, other_idx, :, 0]
+            edge += self.states[self.env_indices, idx, :, self.board_size - 1] - self.states[self.env_indices, other_idx, :, self.board_size - 1]
+            edge += self.states[self.env_indices, idx, self.board_size - 1, :] - self.states[self.env_indices, other_idx, self.board_size - 1, :]
+            # corners are counted twice, but corners are good, so it's fine!
+            circumference = (2 * self.board_size) + (2 * (self.board_size - 2))
+            return 0.5 + (edge / (2 * circumference))
+
+        else:
+            raise NotImplementedError(f'Heuristic {heuristic} not implemented for OthelloEnv')
 
     def __str__(self):
         assert self.parallel_envs == 1

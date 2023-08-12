@@ -98,7 +98,7 @@ class Env:
     def load_node(self, load_envs, saved):
         raise NotImplementedError()
     
-    def get_greedy_rewards(self, player_ids: Optional[torch.Tensor] = None):
+    def get_greedy_rewards(self, player_ids: Optional[torch.Tensor] = None, heuristic: Optional[str] = None):
         # returns instantaneous reward, used in greedy algorithms
         raise NotImplementedError()
     

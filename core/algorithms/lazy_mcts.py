@@ -78,8 +78,7 @@ class LazyMCTS(Evaluator):
             depth -= 1
             if depth == 0:
                 rewards = self.env.get_rewards()
-                final_values = values.squeeze(
-                    1) * torch.logical_not(self.env.terminated)
+                final_values = values * torch.logical_not(self.env.terminated)
                 final_values += rewards * self.env.terminated
                 return final_values
             else:

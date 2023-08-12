@@ -5,8 +5,9 @@
 
 from core.algorithms.baselines.baseline import Baseline
 from core.algorithms.baselines.best import BestModelBaseline
-from core.algorithms.baselines.greedy import GreedyBaseline
-from core.algorithms.baselines.greedy_mcts import GreedyMCTS
+from core.algorithms.baselines.greedy import GreedyBaseline, GreedyConfig
+from core.algorithms.baselines.greedy_mcts import GreedyMCTS, GreedyMCTSConfig
+from core.algorithms.baselines.lazy_greedy_mcts import LazyGreedyMCTS, LazyGreedyMCTSConfig
 from core.algorithms.baselines.random import RandomBaseline
 from core.algorithms.baselines.rollout_mcts import RandomRolloutMCTS, RandomRolloutMCTSConfig
 from core.algorithms.evaluator import EvaluatorConfig
@@ -25,13 +26,16 @@ def init_baseline(evaluator_config: dict, env: Env, *args, **kwargs) -> Baseline
         config = EvaluatorConfig(**evaluator_config)
         return BestModelBaseline(env, config, kwargs['evaluator'], kwargs['best_model'], kwargs['best_model_optimizer'], *args, **kwargs)
     elif algo_type == 'greedy_mcts':
-        config = MCTSConfig(**evaluator_config)
+        config = GreedyMCTSConfig(**evaluator_config)
         return GreedyMCTS(env, config, *args, **kwargs)
     elif algo_type == 'greedy':
-        config = EvaluatorConfig(**evaluator_config)
+        config = GreedyConfig(**evaluator_config)
         return GreedyBaseline(env, config, *args, **kwargs)
     elif algo_type == 'random_rollout_mcts':
         config = RandomRolloutMCTSConfig(**evaluator_config)
         return RandomRolloutMCTS(env, config, *args, **kwargs)
+    elif algo_type == 'lazy_greedy_mcts':
+        config = LazyGreedyMCTSConfig(**evaluator_config)
+        return LazyGreedyMCTS(env, config, *args, **kwargs)
     else:
         raise NotImplementedError(f'Unknown evaluator type: {algo_type}')
