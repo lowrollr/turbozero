@@ -5,12 +5,15 @@ from collections import defaultdict
 from dataclasses import dataclass
 import logging
 from random import shuffle
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 import torch
+import numpy as np
+import matplotlib.pyplot as plt
 from core.algorithms.evaluator import Evaluator
 from itertools import combinations
 from core.env import Env
+from core.utils.heatmap import annotate_heatmap, heatmap
 
 from envs.load import init_env
 
@@ -98,8 +101,9 @@ class Tournament:
             logging.info(f'{player1.name}: {sum([r.player1_result for r in new_results])}, {player2.name}: {sum([r.player2_result for r in new_results])}')
         return results
 
-    def run(self) -> Dict[str, int]:
+    def run(self, interactive: bool = True) -> Dict[str, int]:
         player_ratings = defaultdict(lambda: [])
+        matchups: Dict[Tuple[str, str], float] = defaultdict(lambda: 0)
         results = self.gather_round_robin_games(self.n_games)
         for _ in range(self.n_tournaments):
             shuffle(results)
@@ -109,10 +113,34 @@ class Tournament:
             for competitor in self.competitors:
                 player_ratings[competitor.name].append(competitor.rating)
                 competitor.reset_rating()
+        for result in results:
+            matchups[(result.player1_name, result.player2_name)] += result.player1_result
+            matchups[(result.player2_name, result.player1_name)] += result.player2_result
+        for key, value in matchups.items():
+            matchups[key] = (value / self.n_games) * 100
+
+        matchup_matrix = np.zeros((len(self.competitors), len(self.competitors)))
+        player_names = []
+        for p1_idx in range(len(self.competitors)):
+            for p2_idx in range(p1_idx+1, len(self.competitors)):
+                p1_name = self.competitors[p1_idx].name
+                p2_name = self.competitors[p2_idx].name
+                matchup_matrix[p1_idx, p2_idx] = matchups[(p1_name, p2_name)]
+                matchup_matrix[p2_idx, p1_idx] = matchups[(p2_name, p1_name)]
+            player_names.append(self.competitors[p1_idx].name)
                 
 
         final_ratings = {name: int(sum(ratings) / len(ratings)) for name, ratings in player_ratings.items()}
         logging.info(f'Final ratings: {final_ratings}')
+        if interactive: 
+            fig, ax = plt.subplots()
+            im, cbar = heatmap(matchup_matrix, player_names, player_names, ax=ax,
+                   cmap="YlGn", cbarlabel="Head-to-Head Win Rate (%)")
+            texts = annotate_heatmap(im, valfmt="{x:.1f}%")
+            fig.tight_layout()
+            plt.show()
+
+
         return final_ratings
     
 
