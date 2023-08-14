@@ -13,7 +13,7 @@ tournament_mode_config: {
       algo_config: {
         name: 'random'
       }
-    }
+    },
     # Greedy
     {
       name: 'greedy_moves',
@@ -318,7 +318,7 @@ tournament_mode_config: {
         puct_coeff: 1.0,
         temperature: 0.0,
       },
-      model: 'model.pt'
+      checkpoint: 'model.pt'
     },
     {
       name: 'lazyzero_166',
@@ -329,7 +329,7 @@ tournament_mode_config: {
         puct_coeff: 1.0,
         temperature: 0.0,
       },
-      model: 'model.pt'
+      checkpoint: 'model.pt'
     },
     {
       name: 'lazyzero_833',
@@ -340,7 +340,7 @@ tournament_mode_config: {
         puct_coeff: 1.0,
         temperature: 0.0,
       },
-      model: 'model.pt'
+      checkpoint: 'model.pt'
     },
     {
       name: 'alphazero_100',
@@ -353,7 +353,7 @@ tournament_mode_config: {
         dirichlet_epsilon: 0.1,
         temperature: 0.0,
       },
-      model: 'model.pt'
+      checkpoint: 'model.pt'
     },
     {
       name: 'alphazero_500',
@@ -366,7 +366,7 @@ tournament_mode_config: {
         dirichlet_epsilon: 0.1,
         temperature: 0.0,
       },
-      model: 'model.pt'
+      checkpoint: 'model.pt'
     },
     {
       name: 'alphazero_2500',
@@ -379,7 +379,7 @@ tournament_mode_config: {
         dirichlet_epsilon: 0.1,
         temperature: 0.0,
       },
-      model: 'model.pt'
+      checkpoint: 'model.pt'
     }
   ]
 }
