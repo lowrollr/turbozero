@@ -2,6 +2,7 @@
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 import torch
+from colorama import Fore, Back, Style
 
 from core.env import Env, EnvConfig
 from .torchscripts import get_legal_actions, push_actions, build_filters, build_flips
@@ -176,14 +177,30 @@ class OthelloEnv(Env):
             raise NotImplementedError(f'Heuristic {heuristic} not implemented for OthelloEnv')
 
     def __str__(self):
+        envstr = []
         assert self.parallel_envs == 1
         cur_player_is_o = self.cur_players[0] == 0
         cur_player = 'O' if cur_player_is_o else 'X'
         other_player = 'X' if cur_player_is_o else 'O'
-        print('+' + '-+' * (self.config.board_size - 1))
+        envstr.append('+' + '---+' * (self.config.board_size))
+        envstr.append('\n')
+        legal_actions = set(self.get_legal_actions()[0].nonzero().flatten().tolist())
         for i in range(self.config.board_size):
             for j in range(self.config.board_size):
-                print('|' + f' {cur_player} ' if self.states[0,0,i,j] == 1 else '|   ', end='')
-            print('|')
-            print('+' + '-+' * (self.config.board_size - 1))
-
+                action_idx = i*self.config.board_size + j
+                color = Fore.RED if cur_player_is_o else Fore.GREEN
+                other_color = Fore.GREEN if cur_player_is_o else Fore.RED
+                if action_idx in legal_actions: 
+                    envstr.append('|' + Fore.YELLOW + f'{action_idx}'.rjust(3))
+                elif self.states[0,0,i,j] == 1:
+                    envstr.append('|' + color + f' {cur_player} '.rjust(3))
+                elif self.states[0,1,i,j] == 1:
+                    envstr.append('|' + other_color + f' {other_player} '.rjust(3))
+                else:
+                    envstr.append(Fore.RESET + '|   ')
+                envstr.append(Fore.RESET)
+            envstr.append('|')
+            envstr.append('\n')
+            envstr.append('+' + '---+' * (self.config.board_size))
+            envstr.append('\n')
+        return ''.join(envstr)
