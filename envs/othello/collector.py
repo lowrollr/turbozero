@@ -1,13 +1,13 @@
 
 import torch
-from core.algorithms.evaluator import Evaluator
+from core.algorithms.evaluator import TrainableEvaluator
 from core.train.collector import Collector
 from envs.othello.env import  OthelloEnvConfig
 
 
 class OthelloCollector(Collector):
     def __init__(self,
-        evaluator: Evaluator,
+        evaluator: TrainableEvaluator,
         episode_memory_device: torch.device
     ) -> None:
         super().__init__(evaluator, episode_memory_device)

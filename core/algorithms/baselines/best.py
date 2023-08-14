@@ -23,7 +23,7 @@ class BestModelBaseline(Baseline):
         super().__init__(env, config, *args, **kwargs)
         self.best_model = deepcopy(best_model)
         self.best_model_optimizer = deepcopy(best_model_optimizer.state_dict()) if best_model_optimizer is not None else None
-        self.evaluator = evaluator.__class__(env, evaluator.config)
+        self.evaluator = evaluator.__class__(env, evaluator.config, self.best_model)
         self.metrics_key = metrics_key
         self.proper_name = proper_name
 
@@ -31,4 +31,4 @@ class BestModelBaseline(Baseline):
         self.evaluator.step_evaluator(actions, terminated)
 
     def step(self, *args) -> Tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor], torch.Tensor, torch.Tensor]:
-        return self.evaluator.step(self.best_model)
+        return self.evaluator.step(*args)
