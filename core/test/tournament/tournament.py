@@ -107,7 +107,7 @@ class Tournament:
                     player1_result=p1_score,
                     player2_result=1 - p1_score
                 ))
-            logging.info(f'{new_competitor.name}: {sum([r.player1_result for r in new_results])}, {competitor.name}: {sum([r.player2_result for r in new_results])}')
+            logging.info(f'{competitor.name}: {sum([r.player1_result for r in new_results])}, {new_competitor.name}: {sum([r.player2_result for r in new_results])}')
             self.results.extend(new_results)
         self.competitors.append(new_competitor)
         self.competitors_dict[new_competitor.name] = new_competitor
