@@ -1,5 +1,5 @@
 
-from typing import Union
+from typing import List, Tuple, Union
 import torch
 import logging
 import argparse
@@ -65,7 +65,7 @@ def load_tournament_nb(
     debug: bool,
     logfile: str = '',
     verbose_logging: bool = True
-) -> Tournament:
+) -> Tuple[Tournament, List[dict]]:
     args = argparse.Namespace(
         config=config_file,
         gpu=gpu,
@@ -151,29 +151,20 @@ def load_tester(args, interactive: bool) -> Tester:
     tester = init_tester(test_config, collector, model, history, None, args.verbose)
     return tester
 
-def load_tournament(args, interactive: bool) -> Tournament:
+def load_tournament(args, interactive: bool) -> Tuple[Tournament, List[dict]]:
     raw_config = load_config(args.config)
     if torch.cuda.is_available() and args.gpu:
         device = torch.device('cuda')
-        torch.backends.cudnn.benchmark = True
+        torch.backends.cudnn.deterministic = True
     else:
         device = torch.device('cpu')
     tournament_config = raw_config['tournament_mode_config']
     env = init_env(device, tournament_config['num_games'], raw_config['env_config'], args.debug)
 
-    competitors = []
-    for competitor in tournament_config['competitors']:
-        if competitor.get('checkpoint'):
-            model, _, _, _, _, _ = load_checkpoint(competitor['checkpoint'])
-            model = model.to(device)
-            model.eval()
-            evaluator = init_evaluator(competitor['algo_config'], env, model)
-        else:
-            evaluator = init_evaluator(competitor['algo_config'], env)
-        player = TournamentPlayer(competitor['name'], evaluator)
-        competitors.append(player)
-    tournament = Tournament(competitors, env, tournament_config['num_games'], tournament_config['num_tournaments'])
-    return tournament
+    competitors = tournament_config['competitors']
+        
+    tournament = Tournament(env, tournament_config['num_games'], tournament_config['num_tournaments'], device)
+    return tournament, competitors
 
 
 if __name__ == '__main__':
@@ -206,6 +197,6 @@ if __name__ == '__main__':
         tester = load_tester(args, interactive=False)
         tester.collect_test_batch()
     elif args.mode == 'tournament':
-        tournament = load_tournament(args)
-        tournament.run()
+        tournament, competitors = load_tournament(args, interactive=False)
+        tournament.run(competitors)
 

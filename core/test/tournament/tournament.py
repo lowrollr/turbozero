@@ -12,17 +12,20 @@ import numpy as np
 import matplotlib.pyplot as plt
 from core.algorithms.evaluator import Evaluator
 from itertools import combinations
+from core.algorithms.load import init_evaluator
 from core.env import Env
+from core.train.trainer import load_checkpoint
 from core.utils.heatmap import annotate_heatmap, heatmap
 
 from envs.load import init_env
 
 class TournamentPlayer:
-    def __init__(self, name: str, evaluator: Evaluator, initial_rating=1500) -> None:
+    def __init__(self, name: str, evaluator: Evaluator, raw_config: dict, initial_rating=1500) -> None:
         self.rating: float = initial_rating
         self.initial_rating = initial_rating
         self.name = name
         self.evaluator = evaluator
+        self.raw_config = raw_config
     
     def expected_result(self, opponent_rating: float):
         return 1 / (1 + 10 ** ((opponent_rating - self.rating) / 400))
@@ -35,7 +38,7 @@ class TournamentPlayer:
 
 
 @dataclass
-class UnratedGameResult:
+class GameResult:
     player1_name: str
     player2_name: str
     player1_result: float
@@ -43,12 +46,14 @@ class UnratedGameResult:
 
 
 class Tournament:
-    def __init__(self, competitors: List[TournamentPlayer], env: Env, n_games: int, n_tournaments: int):
-        self.competitors = competitors
-        self.competitors_dict = {player.name: player for player in competitors}
+    def __init__(self, env: Env, n_games: int, n_tournaments: int, device: torch.device):
+        self.competitors = []
+        self.competitors_dict = dict()
         self.env = env
         self.n_games = n_games
         self.n_tournaments = n_tournaments
+        self.results: List[GameResult] = []
+        self.device = device
 
     def play_games(self, evaluator1, evaluator2) -> List[float]: # assumes zero-sum, 2 player game
         evaluator1.env = self.env
@@ -79,41 +84,57 @@ class Tournament:
             completed_episodes |= terminated
             use_second_evaluator = not use_second_evaluator
         return scores.cpu().tolist()
-
-    def gather_round_robin_games(self, games_against_each_player: int) -> List[UnratedGameResult]:
-        results = []
-        matchups = list(combinations(self.competitors, 2))
-        shuffle(matchups)
-        for players in matchups:
-            players = list(players)
-            shuffle(players)
-            player1, player2 = players
-            p1_scores = self.play_games(player1.evaluator, player2.evaluator)
+    
+    def init_competitor(self, config: dict) -> TournamentPlayer:
+        if config.get('checkpoint'):
+            model, _, _, _, _, _ = load_checkpoint(config['checkpoint'])
+            model = model.to(self.device)
+            model.eval()
+            evaluator = init_evaluator(config['algo_config'], self.env, model)
+        else:
+            evaluator = init_evaluator(config['algo_config'], self.env)
+        return TournamentPlayer(config['name'], evaluator, config)
+    
+    def collect_games(self, new_competitor_config: dict):
+        new_competitor = self.init_competitor(new_competitor_config)
+        for competitor in self.competitors:
+            p1_scores = self.play_games(competitor.evaluator, new_competitor.evaluator)
             new_results = []
             for p1_score in p1_scores:
-                new_results.append(UnratedGameResult(
-                    player1_name=player1.name,
-                    player2_name=player2.name,
+                new_results.append(GameResult(
+                    player1_name=competitor.name,
+                    player2_name=new_competitor.name,
                     player1_result=p1_score,
                     player2_result=1 - p1_score
                 ))
-            results.extend(new_results)
-            logging.info(f'{player1.name}: {sum([r.player1_result for r in new_results])}, {player2.name}: {sum([r.player2_result for r in new_results])}')
-        return results
+            logging.info(f'{new_competitor.name}: {sum([r.player1_result for r in new_results])}, {competitor.name}: {sum([r.player2_result for r in new_results])}')
+            self.results.extend(new_results)
+        self.competitors.append(new_competitor)
+        self.competitors_dict[new_competitor.name] = new_competitor
 
-    def run(self, interactive: bool = True) -> Dict[str, int]:
+    def save(self, path: str) -> None:
+        data = dict()
+        data['competitor_configs'] = dict()
+        for competitor in self.competitors:
+            data['competitor_configs'][competitor.name] = competitor.raw_config
+        data['env_config'] = self.env.config.__dict__
+        data['n_games'] = self.n_games
+        data['n_tournaments'] = self.n_tournaments
+        data['results'] = self.results
+        torch.save(data, path)
+
+    def simulate_elo(self, interactive: bool = True) -> Dict[str, int]:
         player_ratings = defaultdict(lambda: [])
         matchups: Dict[Tuple[str, str], float] = defaultdict(lambda: 0)
-        results = self.gather_round_robin_games(self.n_games)
         for _ in range(self.n_tournaments):
-            shuffle(results)
-            for result in results:
+            shuffle(self.results)
+            for result in self.results:
                 self.competitors_dict[result.player1_name].update_rating(self.competitors_dict[result.player2_name].rating, result.player1_result)
                 self.competitors_dict[result.player2_name].update_rating(self.competitors_dict[result.player1_name].rating, result.player2_result)
             for competitor in self.competitors:
                 player_ratings[competitor.name].append(competitor.rating)
                 competitor.reset_rating()
-        for result in results:
+        for result in self.results:
             matchups[(result.player1_name, result.player2_name)] += result.player1_result
             matchups[(result.player2_name, result.player1_name)] += result.player2_result
         for key, value in matchups.items():
@@ -121,6 +142,7 @@ class Tournament:
 
         matchup_matrix = np.zeros((len(self.competitors), len(self.competitors)))
         player_names = []
+        player_names.sort(key = lambda n: self.competitors_dict[n].rating)
         for p1_idx in range(len(self.competitors)):
             for p2_idx in range(p1_idx+1, len(self.competitors)):
                 p1_name = self.competitors[p1_idx].name
@@ -143,5 +165,21 @@ class Tournament:
 
         return final_ratings
     
+    def run(self, competitors: List[dict], interactive: bool = True): 
+        for competitor in competitors:
+            self.collect_games(competitor)
+        return self.simulate_elo(interactive)
 
-        
+def load_tournament(path: str, device: torch.device):
+    tournament_data = torch.load(path)
+    tournament = Tournament(
+        init_env(device, tournament_data['n_games'], tournament_data['env_config'], False),
+        tournament_data['n_games'],
+        tournament_data['n_tournaments'],
+        device
+    )
+    for competitor_config in tournament_data['competitor_configs'].values():
+        tournament.competitors.append(tournament.init_competitor(competitor_config))
+    tournament.competitors_dict = {competitor.name: competitor for competitor in tournament.competitors}
+    tournament.results = tournament_data['results']
+    return tournament
