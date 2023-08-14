@@ -92,3 +92,24 @@ class _2048Env(Env):
         load_envs_expnd = load_envs.view(self.parallel_envs, 1, 1, 1)
         self.states = saved.clone() * load_envs_expnd + self.states * (~load_envs_expnd)
         self.update_terminated()
+    
+    def __str__(self) -> str:
+        envstr = []
+        assert self.parallel_envs == 1
+        envstr.append('+' + '--------+' * 4)
+        envstr.append('\n')
+        for i in range(4):
+            envstr.append('|' + '        |' * 4)
+            envstr.append('\n')
+            for j in range(4):
+                if self.states[0, 0, i, j] == 0:
+                    envstr.append('|        ')
+                else:
+                    envstr.append(f'|{str(int(2**self.states[0, 0, i, j])).center(8)}')
+            envstr.append('|')
+            envstr.append('\n')
+            envstr.append('|' + '        |' * 4)
+            envstr.append('\n')
+            envstr.append('+' + '--------+' * 4)
+            envstr.append('\n')
+        return ''.join(envstr)
