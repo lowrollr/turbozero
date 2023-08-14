@@ -20,7 +20,7 @@ class Demo:
         self.evaluator_args = evaluator_args
         self.evaluator.reset()
 
-    def run(self, print_probablities: bool = False, print_value: bool = False, print_action: bool = True, print_state: bool = True):
+    def run(self, print_probablities: bool = False, print_value: bool = False, print_action: bool = True, print_state: bool = True, interactive: bool =True):
         self.evaluator.reset()
         while True:
             if print_state:
@@ -28,6 +28,10 @@ class Demo:
             if self.manual_step:
                 input('Press any key to continue...')
             _, probs, value, action, terminated = self.evaluator.step(**self.evaluator_args)
+            if interactive:
+                clear_output(wait=False)
+            else:
+                os.system('clear')
             if print_action:
                 print(f'Action chosen: {action[0]}')
             if print_probablities:
