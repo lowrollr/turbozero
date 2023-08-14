@@ -31,4 +31,4 @@ class BestModelBaseline(Baseline):
         self.evaluator.step_evaluator(actions, terminated)
 
     def step(self, *args) -> Tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor], torch.Tensor, torch.Tensor]:
-        return self.evaluator.step(*args)
+        return self.evaluator.step(self.best_model)

@@ -24,7 +24,7 @@ def init_baseline(evaluator_config: dict, env: Env, *args, **kwargs) -> Baseline
         return RandomBaseline(env, config, *args, **kwargs)
     elif algo_type == 'best':
         config = EvaluatorConfig(**evaluator_config)
-        return BestModelBaseline(env, config, kwargs['evaluator'], kwargs['best_model'], kwargs['best_model_optimizer'], *args, **kwargs)
+        return BestModelBaseline(env, config, *args, **kwargs)
     elif algo_type == 'greedy_mcts':
         config = GreedyMCTSConfig(**evaluator_config)
         return GreedyMCTS(env, config, *args, **kwargs)

@@ -5,7 +5,9 @@ from core.algorithms.alphazero import AlphaZero, AlphaZeroConfig
 from core.algorithms.baselines.greedy import GreedyBaseline, GreedyConfig
 from core.algorithms.baselines.greedy_mcts import GreedyMCTS, GreedyMCTSConfig
 from core.algorithms.baselines.lazy_greedy_mcts import LazyGreedyMCTS, LazyGreedyMCTSConfig
+from core.algorithms.baselines.lazy_rollout_mcts import RandomRolloutLazyMCTS, RandomRolloutLazyMCTSConfig
 from core.algorithms.baselines.random import RandomBaseline
+from core.algorithms.baselines.rollout import Rollout, RolloutConfig
 from core.algorithms.baselines.rollout_mcts import RandomRolloutMCTS, RandomRolloutMCTSConfig
 from core.algorithms.evaluator import EvaluatorConfig
 from core.algorithms.lazy_mcts import LazyMCTSConfig
@@ -49,6 +51,12 @@ def init_evaluator(algo_config: dict, env: Env, *args, **kwargs):
     elif algo_type == 'random_rollout_mcts':
         config = RandomRolloutMCTSConfig(**algo_config)
         return RandomRolloutMCTS(env, config, *args, **kwargs)
+    elif algo_type == 'random_rollout_lazy_mcts':
+        config = RandomRolloutLazyMCTSConfig(**algo_config)
+        return RandomRolloutLazyMCTS(env, config, *args, **kwargs)
+    elif algo_type == 'rollout':
+        config = RolloutConfig(**algo_config)
+        return Rollout(env, config, *args, **kwargs)
     elif algo_type == 'lazy_greedy_mcts':
         config = LazyGreedyMCTSConfig(**algo_config)
         return LazyGreedyMCTS(env, config, *args, **kwargs)
