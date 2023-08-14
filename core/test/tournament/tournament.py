@@ -142,7 +142,8 @@ class Tournament:
 
         matchup_matrix = np.zeros((len(self.competitors), len(self.competitors)))
         player_names = []
-        player_names.sort(key = lambda n: self.competitors_dict[n].rating)
+        player_names_elo = []
+        
         for p1_idx in range(len(self.competitors)):
             for p2_idx in range(p1_idx+1, len(self.competitors)):
                 p1_name = self.competitors[p1_idx].name
@@ -150,13 +151,16 @@ class Tournament:
                 matchup_matrix[p1_idx, p2_idx] = matchups[(p1_name, p2_name)]
                 matchup_matrix[p2_idx, p1_idx] = matchups[(p2_name, p1_name)]
             player_names.append(self.competitors[p1_idx].name)
-                
-
+            player_names_elo.append(f'{self.competitors[p1_idx].name} ({int(self.competitors[p1_idx].rating)})')
+        player_names.sort(key = lambda n: self.competitors_dict[n].rating)
+        player_names_elo.sort(key = lambda n: self.competitors_dict[n].rating)
+        
         final_ratings = {name: int(sum(ratings) / len(ratings)) for name, ratings in player_ratings.items()}
         logging.info(f'Final ratings: {final_ratings}')
+
         if interactive: 
             fig, ax = plt.subplots()
-            im, cbar = heatmap(matchup_matrix, player_names, player_names, ax=ax,
+            im, cbar = heatmap(matchup_matrix, player_names_elo, player_names, ax=ax,
                    cmap="YlGn", cbarlabel="Head-to-Head Win Rate (%)")
             texts = annotate_heatmap(im, valfmt="{x:.1f}%")
             fig.tight_layout()
