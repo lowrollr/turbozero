@@ -1,0 +1,385 @@
+run_tag: 'othello'
+env_config: {
+  env_type: 'othello',
+  board_size: 8
+}
+tournament_mode_config: {
+  num_games: 32,
+  num_tournaments: 128,
+  competitors: [
+    # Random
+    {
+      name: 'random',
+      algo_config: {
+        name: 'random'
+      }
+    }
+    # Greedy
+    {
+      name: 'greedy_moves',
+      algo_config: {
+        name: 'greedy',
+        heuristic: 'minmax_moves'
+      }
+    },
+    {
+      name: 'greedy_tiles',
+      algo_config: {
+        name: 'greedy',
+        heuristic: 'num_tiles'
+      }
+    },
+    {
+      name: 'greedy_corners',
+      algo_config: {
+        name: 'greedy',
+        heuristic: 'corners'
+      }
+    },
+    {
+      name: 'greedy_corners_and_edges',
+      algo_config: {
+        name: 'greedy',
+        heuristic: 'corners_and_edges'
+      }
+    },
+    # Greedy MCTS
+    {
+      name: 'greedy_mcts_100_moves',
+      algo_config: {
+        name: 'greedy_mcts',
+        num_iters: 100,
+        max_nodes: 100,
+        puct_coeff: 1.0,
+        dirichlet_alpha: 0.01,
+        dirichlet_epsilon: 0.0,
+        heuristic: 'minmax_moves'
+      },
+    },
+    {
+      name: 'greedy_mcts_500_moves',
+      algo_config: {
+        name: 'greedy_mcts',
+        num_iters: 500,
+        max_nodes: 500,
+        puct_coeff: 1.0,
+        dirichlet_alpha: 0.01,
+        dirichlet_epsilon: 0.0,
+        heuristic: 'minmax_moves'
+      },
+    },
+    {
+      name: 'greedy_mcts_2500_moves',
+      algo_config: {
+        name: 'greedy_mcts',
+        num_iters: 2500,
+        max_nodes: 2500,
+        puct_coeff: 1.0,
+        dirichlet_alpha: 0.01,
+        dirichlet_epsilon: 0.0,
+        heuristic: 'minmax_moves'
+      },
+    },
+    {
+      name: 'greedy_mcts_100_tiles',
+      algo_config: {
+        name: 'greedy_mcts',
+        num_iters: 100,
+        max_nodes: 100,
+        puct_coeff: 1.0,
+        dirichlet_alpha: 0.01,
+        dirichlet_epsilon: 0.0,
+        heuristic: 'num_tiles'
+      },
+    },
+    {
+      name: 'greedy_mcts_500_tiles',
+      algo_config: {
+        name: 'greedy_mcts',
+        num_iters: 500,
+        max_nodes: 500,
+        puct_coeff: 1.0,
+        dirichlet_alpha: 0.01,
+        dirichlet_epsilon: 0.0,
+        heuristic: 'num_tiles'
+      },
+    },
+    {
+      name: 'greedy_mcts_2500_tiles',
+      algo_config: {
+        name: 'greedy_mcts',
+        num_iters: 2500,
+        max_nodes: 2500,
+        puct_coeff: 1.0,
+        dirichlet_alpha: 0.01,
+        dirichlet_epsilon: 0.0,
+        heuristic: 'num_tiles'
+      },
+    },
+    {
+      name: 'greedy_mcts_100_corners',
+      algo_config: {
+        name: 'greedy_mcts',
+        num_iters: 100,
+        max_nodes: 100,
+        puct_coeff: 1.0,
+        dirichlet_alpha: 0.01,
+        dirichlet_epsilon: 0.0,
+        heuristic: 'corners'
+      },
+    },
+    {
+      name: 'greedy_mcts_500_corners',
+      algo_config: {
+        name: 'greedy_mcts',
+        num_iters: 500,
+        max_nodes: 500,
+        puct_coeff: 1.0,
+        dirichlet_alpha: 0.01,
+        dirichlet_epsilon: 0.0,
+        heuristic: 'corners'
+      },
+    },
+    {
+      name: 'greedy_mcts_2500_corners',
+      algo_config: {
+        name: 'greedy_mcts',
+        num_iters: 2500,
+        max_nodes: 2500,
+        puct_coeff: 1.0,
+        dirichlet_alpha: 0.01,
+        dirichlet_epsilon: 0.0,
+        heuristic: 'corners'
+      },
+    },
+    {
+      name: 'greedy_mcts_100_corners_and_edges',
+      algo_config: {
+        name: 'greedy_mcts',
+        num_iters: 100,
+        max_nodes: 100,
+        puct_coeff: 1.0,
+        dirichlet_alpha: 0.01,
+        dirichlet_epsilon: 0.0,
+        heuristic: 'corners_and_edges'
+      },
+    },
+    {
+      name: 'greedy_mcts_500_corners_and_edges',
+      algo_config: {
+        name: 'greedy_mcts',
+        num_iters: 500,
+        max_nodes: 500,
+        puct_coeff: 1.0,
+        dirichlet_alpha: 0.01,
+        dirichlet_epsilon: 0.0,
+        heuristic: 'corners_and_edges'
+      },
+    },
+    {
+      name: 'greedy_mcts_2500_corners_and_edges',
+      algo_config: {
+        name: 'greedy_mcts',
+        num_iters: 2500,
+        max_nodes: 2500,
+        puct_coeff: 1.0,
+        dirichlet_alpha: 0.01,
+        dirichlet_epsilon: 0.0,
+        heuristic: 'corners_and_edges'
+      },
+    },
+    # Greedy LazyMCTS
+    {
+      name: 'greedy_lazymcts_100_moves',
+      algo_config: {
+        name: 'lazy_greedy_mcts',
+        num_policy_rollouts: 33,
+        rollout_depth: 3,
+        puct_coeff: 1.0,
+        heuristic: 'minmax_moves'
+      },
+    },
+    {
+      name: 'greedy_lazymcts_500_moves',
+      algo_config: {
+        name: 'lazy_greedy_mcts',
+        num_policy_rollouts: 166,
+        rollout_depth: 3,
+        puct_coeff: 1.0,
+        heuristic: 'minmax_moves'
+      },
+    },
+    {
+      name: 'greedy_lazymcts_2500_moves',
+      algo_config: {
+        name: 'lazy_greedy_mcts',
+        num_policy_rollouts: 833,
+        rollout_depth: 3,
+        puct_coeff: 1.0,
+        heuristic: 'minmax_moves'
+      },
+    },
+    {
+      name: 'greedy_lazymcts_100_tiles',
+      algo_config: {
+        name: 'lazy_greedy_mcts',
+        num_policy_rollouts: 33,
+        rollout_depth: 3,
+        puct_coeff: 1.0,
+        heuristic: 'num_tiles'
+      },
+    },
+    {
+      name: 'greedy_lazymcts_500_tiles',
+      algo_config: {
+        name: 'lazy_greedy_mcts',
+        num_policy_rollouts: 166,
+        rollout_depth: 3,
+        puct_coeff: 1.0,
+        heuristic: 'num_tiles'
+      },
+    },
+    {
+      name: 'greedy_lazymcts_2500_tiles',
+      algo_config: {
+        name: 'lazy_greedy_mcts',
+        num_policy_rollouts: 833,
+        rollout_depth: 3,
+        puct_coeff: 1.0,
+        heuristic: 'num_tiles'
+      },
+    },
+    {
+      name: 'greedy_lazymcts_100_corners',
+      algo_config: {
+        name: 'lazy_greedy_mcts',
+        num_policy_rollouts: 33,
+        rollout_depth: 3,
+        puct_coeff: 1.0,
+        heuristic: 'corners'
+      },
+    },
+    {
+      name: 'greedy_lazymcts_500_corners',
+      algo_config: {
+        name: 'lazy_greedy_mcts',
+        num_policy_rollouts: 166,
+        rollout_depth: 3,
+        puct_coeff: 1.0,
+        heuristic: 'corners'
+      },
+    },
+    {
+      name: 'greedy_lazymcts_2500_corners',
+      algo_config: {
+        name: 'lazy_greedy_mcts',
+        num_policy_rollouts: 833,
+        rollout_depth: 3,
+        puct_coeff: 1.0,
+        heuristic: 'corners'
+      },
+    },
+    {
+      name: 'greedy_lazymcts_100_corners_and_edges',
+      algo_config: {
+        name: 'lazy_greedy_mcts',
+        num_policy_rollouts: 33,
+        rollout_depth: 3,
+        puct_coeff: 1.0,
+        heuristic: 'corners_and_edges'
+      },
+    },
+    {
+      name: 'greedy_lazymcts_500_corners_and_edges',
+      algo_config: {
+        name: 'lazy_greedy_mcts',
+        num_policy_rollouts: 166,
+        rollout_depth: 3,
+        puct_coeff: 1.0,
+        heuristic: 'corners_and_edges'
+      },
+    },
+    {
+      name: 'greedy_lazymcts_2500_corners_and_edges',
+      algo_config: {
+        name: 'lazy_greedy_mcts',
+        num_policy_rollouts: 833,
+        rollout_depth: 3,
+        puct_coeff: 1.0,
+        heuristic: 'corners_and_edges'
+      },
+    },
+    {
+      name: 'lazyzero_33',
+      algo_config: {
+        name: 'lazyzero',
+        num_policy_rollouts: 33,
+        rollout_depth: 3,
+        puct_coeff: 1.0,
+        temperature: 0.0,
+      },
+      model: 'model.pt'
+    },
+    {
+      name: 'lazyzero_166',
+      algo_config: {
+        name: 'lazyzero',
+        num_policy_rollouts: 166,
+        rollout_depth: 3,
+        puct_coeff: 1.0,
+        temperature: 0.0,
+      },
+      model: 'model.pt'
+    },
+    {
+      name: 'lazyzero_833',
+      algo_config: {
+        name: 'lazyzero',
+        num_policy_rollouts: 833,
+        rollout_depth: 3,
+        puct_coeff: 1.0,
+        temperature: 0.0,
+      },
+      model: 'model.pt'
+    },
+    {
+      name: 'alphazero_100',
+      algo_config: {
+        name: 'alphazero',
+        num_iters: 100,
+        max_nodes: 100,
+        puct_coeff: 1.0,
+        dirichlet_alpha: 0.01,
+        dirichlet_epsilon: 0.1,
+        temperature: 0.0,
+      },
+      model: 'model.pt'
+    },
+    {
+      name: 'alphazero_500',
+      algo_config: {
+        name: 'alphazero',
+        num_iters: 500,
+        max_nodes: 500,
+        puct_coeff: 1.0,
+        dirichlet_alpha: 0.01,
+        dirichlet_epsilon: 0.1,
+        temperature: 0.0,
+      },
+      model: 'model.pt'
+    },
+    {
+      name: 'alphazero_2500',
+      algo_config: {
+        name: 'alphazero',
+        num_iters: 2500,
+        max_nodes: 2500,
+        puct_coeff: 1.0,
+        dirichlet_alpha: 0.01,
+        dirichlet_epsilon: 0.1,
+        temperature: 0.0,
+      },
+      model: 'model.pt'
+    }
+  ]
+}
