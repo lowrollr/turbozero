@@ -141,22 +141,21 @@ class Tournament:
             matchups[key] = (value / self.n_games) * 100
 
         matchup_matrix = np.zeros((len(self.competitors), len(self.competitors)))
-        player_names = []
         
-        
-        for p1_idx in range(len(self.competitors)):
-            for p2_idx in range(p1_idx+1, len(self.competitors)):
-                p1_name = self.competitors[p1_idx].name
-                p2_name = self.competitors[p2_idx].name
+        final_ratings = {name: int(sum(ratings) / len(ratings)) for name, ratings in player_ratings.items()}
+
+        sorted_competitors = sorted(self.competitors, key=lambda c: final_ratings[c.name])
+        for p1_idx in range(len(sorted_competitors)):
+            for p2_idx in range(p1_idx+1, len(sorted_competitors)):
+                p1_name = sorted_competitors[p1_idx].name
+                p2_name = sorted_competitors[p2_idx].name
                 matchup_matrix[p1_idx, p2_idx] = matchups[(p1_name, p2_name)]
                 matchup_matrix[p2_idx, p1_idx] = matchups[(p2_name, p1_name)]
-            player_names.append(self.competitors[p1_idx].name)
         
 
-        final_ratings = {name: int(sum(ratings) / len(ratings)) for name, ratings in player_ratings.items()}
-        player_names.sort(key = lambda n: final_ratings[n])
         logging.info(f'Final ratings: {final_ratings}')
-        player_names_elo = [f'{name} ({final_ratings[name]})' for name in player_names]
+        player_names = [c.name for c in sorted_competitors]
+        player_names_elo = [f'{c.name} ({final_ratings[c.name]})' for c in sorted_competitors]
 
 
         if interactive: 
