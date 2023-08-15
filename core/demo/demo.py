@@ -20,23 +20,19 @@ class Demo:
         self.evaluator_args = evaluator_args
         self.evaluator.reset()
 
-    def run(self, print_probablities: bool = False, print_value: bool = False, print_action: bool = True, print_state: bool = True, interactive: bool =True):
+    def run(self, print_evaluation: bool = False, print_state: bool = True, interactive: bool =True):
         self.evaluator.reset()
         while True:
             if print_state:
                 print(self.evaluator.env)
             if self.manual_step:
                 input('Press any key to continue...')
-            _, probs, value, action, terminated = self.evaluator.step(**self.evaluator_args)
+            _, _, value, _, terminated = self.evaluator.step(**self.evaluator_args)
             if interactive:
-                clear_output(wait=False)
+                clear_output(wait=True)
             else:
                 os.system('clear')
-            if print_action:
-                print(f'Action chosen: {action[0]}')
-            if print_probablities:
-                print(f'Action Probabilities: {[str(i) + ":{:.2f}".format(p) for i,p in enumerate(torch.nn.functional.softmax(probs[0], dim=0))]}')
-            if print_value and value is not None:
+            if print_evaluation and value is not None:
                 print(f'Evaluation: {value[0]}')
             if terminated:
                 print('Game over!')
@@ -58,7 +54,7 @@ class TwoPlayerDemo(Demo):
         self.evaluator2_args = evaluator2_args
         self.evaluator2.reset()
     
-    def run(self, print_probablities: bool = False, print_value: bool = False, print_action: bool = True, print_state: bool = True, interactive: bool =True):
+    def run(self, print_evaluation: bool = False, print_state: bool = True, interactive: bool =True):
         self.evaluator.reset()
         self.evaluator2.reset()
         p1_turn = random.choice([True, False])
@@ -71,16 +67,12 @@ class TwoPlayerDemo(Demo):
                 print(active_evaluator.env)
             if self.manual_step:
                 input('Press any key to continue...')
-            _, probs, value, action, terminated = active_evaluator.step(**evaluator_args)
+            _, _, value, _, terminated = active_evaluator.step(**evaluator_args)
             if interactive:
-                clear_output(wait=False)
+                clear_output(wait=True)
             else:
                 os.system('clear')
-            if print_action:
-                print(f'Action chosen: {action[0]}')
-            if print_probablities:
-                print(f'Action Probabilities: {[str(i) + ":{:.2f}".format(p) for i,p in enumerate(torch.nn.functional.softmax(probs[0], dim=0))]}')
-            if print_value and value is not None:
+            if print_evaluation and value is not None:
                 print(f'Evaluation: {value[0]}')
             if terminated:
                 print('Game over!')
@@ -94,8 +86,8 @@ class TwoPlayerDemo(Demo):
     def print_rewards(self):
         reward = self.evaluator.env.get_rewards(torch.tensor([0]))[0]
         if reward == 1:
-            print('Player 1 won!')
+            print(f'Player 1 ({self.evaluator.__class__.__name__}) won!')
         elif reward == 0:
-            print('Player 2 won!')
+            print(f'Player 2 ({self.evaluator2.__class__.__name__}) won!')
         else:
             print('Draw!')

@@ -40,7 +40,7 @@ class GreedyBaseline(Baseline):
 
             self.env.load_node(torch.full_like(starting_players, True, dtype=torch.bool, device=self.device, requires_grad=False), saved=saved)
 
-        return action_scores, None
+        return action_scores, (action_scores * legal_actions).max(dim=1)
 
         
 
