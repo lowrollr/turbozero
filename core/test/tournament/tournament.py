@@ -112,6 +112,11 @@ class Tournament:
         self.competitors.append(new_competitor)
         self.competitors_dict[new_competitor.name] = new_competitor
 
+    def remove_competitor(self, name: str):
+        self.competitors = [competitor for competitor in self.competitors if competitor.name != name]
+        self.competitors_dict.pop(name)
+        self.results = [result for result in self.results if result.player1_name != name and result.player2_name != name]
+
     def save(self, path: str) -> None:
         data = dict()
         data['competitor_configs'] = dict()
