@@ -159,7 +159,9 @@ class Tournament:
 
 
         if interactive: 
-            fig, ax = plt.subplots()
+            height = len(player_names) / 1.5
+            width = len(player_names) * 1.5
+            fig, ax = plt.subplots(figsize=(width, height), dpi=500)
             im, cbar = heatmap(matchup_matrix, player_names_elo, player_names, ax=ax,
                    cmap="YlGn", cbarlabel="Head-to-Head Win Rate (%)")
             texts = annotate_heatmap(im, valfmt="{x:.1f}%")
