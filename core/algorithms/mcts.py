@@ -137,7 +137,7 @@ class MCTS(Evaluator):
         # save the root node so that we can reset the environment to this state when we reach a leaf node
         # get root node policy
         with torch.no_grad():
-            policy_logits, _ = evaluation_fn(self.env)
+            policy_logits, initial_values = evaluation_fn(self.env)
 
         # set root node policy, apply dirilecht noise
         self.p_vals = (torch.softmax(policy_logits, dim=1) * (1 - self.dirichlet_e)) \
@@ -225,7 +225,7 @@ class MCTS(Evaluator):
         self.cur_nodes.fill_(1)
         self.env.load_node(self.cur_nodes.bool(), saved)
         # return visited counts at the root node
-        return self.n_vals, None
+        return self.n_vals, initial_values
 
     @property
     def next_indices(self) -> torch.Tensor:

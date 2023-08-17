@@ -54,7 +54,7 @@ class LazyMCTS(Evaluator):
     def evaluate(self, evaluation_fn: Callable) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         self.reset_puct()
 
-        return self.explore_for_iters(evaluation_fn, self.policy_rollouts, self.rollout_depth), None
+        return self.explore_for_iters(evaluation_fn, self.policy_rollouts, self.rollout_depth)
 
     def choose_action_with_puct(self, probs: torch.Tensor, legal_actions: torch.Tensor) -> torch.Tensor:
         n_sum = torch.sum(self.visit_counts, dim=1, keepdim=True)
@@ -88,10 +88,10 @@ class LazyMCTS(Evaluator):
                 next_actions = torch.multinomial(distribution + self.env.is_terminal().unsqueeze(1), 1, replacement=True).flatten()
                 self.env.step(next_actions)
 
-    def explore_for_iters(self, evaluation_fn: Callable, iters: int, search_depth: int) -> torch.Tensor:
+    def explore_for_iters(self, evaluation_fn: Callable, iters: int, search_depth: int) -> Tuple[torch.Tensor, torch.Tensor]:
         legal_actions = self.env.get_legal_actions()
         with torch.no_grad():
-            policy_logits, _ = evaluation_fn(self.env)
+            policy_logits, initial_values = evaluation_fn(self.env)
         policy_logits = torch.nn.functional.softmax(policy_logits, dim=1)
         saved = self.env.save_node()
 
@@ -107,4 +107,4 @@ class LazyMCTS(Evaluator):
             self.action_scores[self.env.env_indices, actions] += values
             self.env.load_node(self.all_nodes, saved)
 
-        return self.visit_counts
+        return self.visit_counts, initial_values
