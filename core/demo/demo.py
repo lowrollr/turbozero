@@ -59,6 +59,7 @@ class TwoPlayerDemo(Demo):
         self.evaluator2.reset()
         p1_turn = random.choice([True, False])
         p1_started = p1_turn
+        actions = None
         while True:
             
 
@@ -66,7 +67,7 @@ class TwoPlayerDemo(Demo):
             other_evaluator = self.evaluator2 if p1_turn else self.evaluator
             evaluator_args = self.evaluator_args if p1_turn else self.evaluator2_args
             if print_state:
-                print(active_evaluator.env)
+                active_evaluator.env.print_state(int(actions.item()) if actions is not None else None)
             if self.manual_step:
                 input('Press any key to continue...')
             _, _, value, actions, terminated = active_evaluator.step(**evaluator_args)
@@ -80,7 +81,7 @@ class TwoPlayerDemo(Demo):
             if terminated:
                 print('Game over!')
                 print('Final state:')
-                print(active_evaluator.env)
+                active_evaluator.env.print_state(int(actions.item()))
                 self.print_rewards(p1_started)
                 break
                 

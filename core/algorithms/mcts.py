@@ -225,7 +225,8 @@ class MCTS(Evaluator):
         self.cur_nodes.fill_(1)
         self.env.load_node(self.cur_nodes.bool(), saved)
         # return visited counts at the root node
-        return self.n_vals, initial_values
+        max_inds = self.n_vals.max(dim=1).indices
+        return self.n_vals, self.w_vals[self.env_indices, max_inds] / self.n_vals[self.env_indices, max_inds]
 
     @property
     def next_indices(self) -> torch.Tensor:

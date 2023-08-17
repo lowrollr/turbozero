@@ -122,3 +122,6 @@ class Env:
             self.load_node(torch.full((self.parallel_envs,), True, dtype=torch.bool, device=self.device), saved)
         cumulative_rewards /= num_rollouts
         return cumulative_rewards
+    
+    def print_state(self, last_action: Optional[int] = None) -> None:
+        pass

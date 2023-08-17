@@ -87,10 +87,10 @@ class OthelloEnv(Env):
         self.cur_players.zero_()
         self.consecutive_passes.zero_()
         self.legal_actions.zero_()
-        self.states[:, 0, 3, 3] = 1
-        self.states[:, 1, 3, 4] = 1
-        self.states[:, 1, 4, 3] = 1
-        self.states[:, 0, 4, 4] = 1
+        self.states[:, 0, 3, 4] = 1
+        self.states[:, 1, 3, 3] = 1
+        self.states[:, 1, 4, 4] = 1
+        self.states[:, 0, 4, 3] = 1
         self.need_to_calculate_rays = True
 
     def is_terminal(self):
@@ -118,10 +118,10 @@ class OthelloEnv(Env):
         self.cur_players *= 1 * ~self.terminated
         self.consecutive_passes *= 1 * ~self.terminated
         mask = 1 * self.terminated
-        self.states[:, 0, 3, 3] += mask
-        self.states[:, 1, 3, 4] += mask
-        self.states[:, 1, 4, 3] += mask
-        self.states[:, 0, 4, 4] += mask
+        self.states[:, 0, 3, 4] += mask
+        self.states[:, 1, 3, 3] += mask
+        self.states[:, 1, 4, 4] += mask
+        self.states[:, 0, 4, 3] += mask
         self.terminated.zero_()
         self.need_to_calculate_rays = True
 
@@ -176,7 +176,7 @@ class OthelloEnv(Env):
         else:
             raise NotImplementedError(f'Heuristic {heuristic} not implemented for OthelloEnv')
 
-    def __str__(self):
+    def print_state(self, last_action: Optional[int] = None) -> None:
         envstr = []
         assert self.parallel_envs == 1
         cur_player_is_o = self.cur_players[0] == 0
@@ -190,6 +190,9 @@ class OthelloEnv(Env):
                 action_idx = i*self.config.board_size + j
                 color = Fore.RED if cur_player_is_o else Fore.GREEN
                 other_color = Fore.GREEN if cur_player_is_o else Fore.RED
+                if action_idx == last_action:
+                    color = Fore.BLUE
+                    other_color = Fore.BLUE
                 if action_idx in legal_actions: 
                     envstr.append('|' + Fore.YELLOW + f'{action_idx}'.rjust(3))
                 elif self.states[0,0,i,j] == 1:
@@ -203,4 +206,4 @@ class OthelloEnv(Env):
             envstr.append('\n')
             envstr.append('+' + '---+' * (self.config.board_size))
             envstr.append('\n')
-        return ''.join(envstr)
+        print(''.join(envstr))
