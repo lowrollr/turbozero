@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import List, Optional, Type
+from typing import List, Optional, Tuple, Type
 import torch
 import logging
 from pathlib import Path
@@ -31,6 +31,7 @@ class TrainerConfig:
     algo_config: EvaluatorConfig
     episodes_per_epoch: int
     learning_rate: float
+    lr_decay_gamma: float
     minibatch_size: int
     minibatches_per_update: int
     parallel_envs: int
@@ -68,6 +69,7 @@ class Trainer:
         self.run_tag = run_tag
         self.raw_train_config = raw_train_config
         self.raw_env_config = raw_env_config
+        self.scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=self.config.lr_decay_gamma)
         
 
         self.history = history 
@@ -172,6 +174,7 @@ class Trainer:
 
             if self.interactive:
                 self.history.generate_plots()
+            self.scheduler.step()
             self.history.start_new_epoch()
             self.save_checkpoint()
             

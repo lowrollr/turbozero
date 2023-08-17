@@ -20,14 +20,15 @@ model_config: { # overwritten if loading a checkpoint
 train_mode_config: {
   algo_config: {
     name: "alphazero",
-    temperature: 1.0,
+    temperature: 0.0,
     num_iters: 50,
     max_nodes: 100,
     puct_coeff: 1.0,
     dirichlet_alpha: 0.45,
     dirichlet_epsilon: 0.25
   },
-  learning_rate: 0.0003,
+  learning_rate: 0.001,
+  lr_decay_gamma: 0.9,
   replay_memory_max_size: 1000,
   replay_memory_min_size: 10,
   parallel_envs: 32,
@@ -50,43 +51,85 @@ train_mode_config: {
       {
         name: 'random'
       },
-      {
-        name: 'greedy_mcts',
-        num_iters: 1000,
-        max_nodes: 1000,
-        puct_coeff: 1.0,
-        dirichlet_alpha: 0.01,
-        dirichlet_epsilon: 0.1
-      }
     ],
     improvement_threshold_pct: 0.5
   }
 }
 test_mode_config: {
+  
   algo_config: {
     name: 'alphazero',
     temperature: 0.0,
-    num_iters: 1000,
-    max_nodes: 1000,
+    num_iters: 100,
+    max_nodes: 100,
     puct_coeff: 1.0,
     dirichlet_alpha: 0.01,
     dirichlet_epsilon: 0.1
   },
-  episodes_per_epoch: 25,
+  episodes_per_epoch: 10,
   baselines: [
     {
-      name: 'random'
+      name: 'greedy'
+    },
+    # {
+    #   name: 'greedy_mcts',
+    #   num_iters: 100,
+    #   max_nodes: 100,
+    #   puct_coeff: 1.0,
+    #   dirichlet_alpha: 0.01,
+    #   dirichlet_epsilon: 0.0
+    # },
+    # {
+    #   name: 'random_rollout_mcts',
+    #   rollouts_per_leaf: 5,
+    #   num_iters: 100,
+    #   max_nodes: 100,
+    #   puct_coeff: 1.0,
+    #   dirichlet_alpha: 0.01,
+    #   dirichlet_epsilon: 0.0
+    # },
+  ],
+  improvement_threshold_pct: 0.5
+}
+tournament_mode_config: {
+  num_games: 16,
+  num_tournaments: 10,
+  competitors: [{
+      name: 'greedy',
+      algo_config: {
+        name: 'greedy'
+      }},
+    {
+      name: 'random',
+      algo_config: {
+        name: 'random'
+      }
     },
     {
       name: 'greedy_mcts',
-      num_iters: 1000,
-      max_nodes: 1000,
-      puct_coeff: 1.0,
-      dirichlet_alpha: 0.01,
-      dirichlet_epsilon: 0.1
+      algo_config: {
+        name: 'greedy_mcts',
+        num_iters: 100,
+        max_nodes: 100,
+        puct_coeff: 1.0,
+        dirichlet_alpha: 0.01,
+        dirichlet_epsilon: 0.0
+      },
+    },
+    {
+      name: 'tiny_alphazero',
+      algo_config: {
+        name: 'alphazero',
+        temperature: 0.0,
+        num_iters: 100,
+        max_nodes: 100,
+        puct_coeff: 1.0,
+        dirichlet_alpha: 0.01,
+        dirichlet_epsilon: 0.1
+      },
+      checkpoint: './checkpoints/othello/3.pt'
     }
-  ],
-  improvement_threshold_pct: 0.5
+  ]
 }
 
 
