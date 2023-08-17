@@ -58,16 +58,19 @@ class TwoPlayerDemo(Demo):
         self.evaluator.reset()
         self.evaluator2.reset()
         p1_turn = random.choice([True, False])
+        p1_started = p1_turn
         while True:
             
 
             active_evaluator = self.evaluator if p1_turn else self.evaluator2
+            other_evaluator = self.evaluator2 if p1_turn else self.evaluator
             evaluator_args = self.evaluator_args if p1_turn else self.evaluator2_args
             if print_state:
                 print(active_evaluator.env)
             if self.manual_step:
                 input('Press any key to continue...')
-            _, _, value, _, terminated = active_evaluator.step(**evaluator_args)
+            _, _, value, actions, terminated = active_evaluator.step(**evaluator_args)
+            other_evaluator.step_evaluator(actions, terminated)
             if interactive:
                 clear_output(wait=True)
             else:
@@ -78,13 +81,13 @@ class TwoPlayerDemo(Demo):
                 print('Game over!')
                 print('Final state:')
                 print(active_evaluator.env)
-                self.print_rewards()
+                self.print_rewards(p1_started)
                 break
                 
             p1_turn = not p1_turn
 
-    def print_rewards(self):
-        reward = self.evaluator.env.get_rewards(torch.tensor([0]))[0]
+    def print_rewards(self, p1_started: bool):
+        reward = self.evaluator.env.get_rewards(torch.tensor([0 if p1_started else 1]))[0]
         if reward == 1:
             print(f'Player 1 ({self.evaluator.__class__.__name__}) won!')
         elif reward == 0:
