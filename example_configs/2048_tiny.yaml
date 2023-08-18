@@ -1,11 +1,10 @@
-run_tag: 'othello_tiny'
+run_tag: '2048_tiny'
 env_config: {
-  env_type: 'othello',
-  board_size: 8
+  env_type: '2048',
 }
 model_config: { # overwritten if loading a checkpoint
-  input_size: [2, 8, 8],
-  policy_size: 65,
+  input_size: [1, 4, 4],
+  policy_size: 4,
   res_channels: 8,
   res_blocks: 2,
   value_head_res_channels: 8,
@@ -19,13 +18,11 @@ model_config: { # overwritten if loading a checkpoint
 }
 train_mode_config: {
   algo_config: {
-    name: "alphazero",
+    name: "lazyzero",
     temperature: 1.0,
-    num_iters: 50,
-    max_nodes: 100,
+    num_policy_rollouts: 100,
+    rollout_depth: 2,
     puct_coeff: 1.0,
-    dirichlet_alpha: 0.45,
-    dirichlet_epsilon: 0.25
   },
   learning_rate: 0.001,
   lr_decay_gamma: 0.9,
@@ -38,20 +35,12 @@ train_mode_config: {
   episodes_per_epoch: 32,
   test_config: {
     algo_config: {
-      name: "alphazero",
+      name: "lazyzero",
       temperature: 0.0,
-      num_iters: 50,
-      max_nodes: 100,
+      num_policy_rollouts: 100,
+      rollout_depth: 2,
       puct_coeff: 1.0,
-      dirichlet_alpha: 0.1,
-      dirichlet_epsilon: 0.0
     },
-    episodes_per_epoch: 25,
-    baselines: [
-      {
-        name: 'random'
-      },
-    ],
-    improvement_threshold_pct: 0.5
+    episodes_per_epoch: 0
   }
 }
