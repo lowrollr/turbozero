@@ -92,8 +92,9 @@ class MCTS(Evaluator):
         self.visits = torch.zeros((self.parallel_envs, self.max_nodes),
                                   dtype=torch.int64, device=self.device, requires_grad=False)
         self.visits[:, 0] = 1
-
+        
         self.reward_indices = self.build_reward_indices(env.num_players)
+        assert self.dirichlet_a != 0
         self.dirilecht = torch.distributions.dirichlet.Dirichlet(torch.full((self.policy_size,), self.dirichlet_a, device=self.device, dtype=torch.float32, requires_grad=False))
         
         self.max_depths = torch.ones(

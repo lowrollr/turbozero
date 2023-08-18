@@ -4,6 +4,8 @@ import torch
 import logging
 import argparse
 from core.algorithms.load import init_evaluator, init_trainable_evaluator
+from core.demo.demo import Demo
+from core.demo.load import init_demo
 from core.resnet import ResNetConfig, TurboZeroResnet
 from core.test.tester import  Tester
 from core.test.tournament.tournament import Tournament, TournamentPlayer, load_tournament as load_tournament_checkpoint
@@ -170,6 +172,11 @@ def load_tournament(args, interactive: bool) -> Tuple[Tournament, List[dict]]:
         
     return tournament, competitors
 
+def load_demo(args) -> Demo:
+    device = torch.device('cpu')
+    raw_config = load_config(args.config)
+    return init_demo(raw_config['env_config'], raw_config['demo_config'], torch.device('cpu'))
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(prog='TurboZero')
@@ -204,4 +211,5 @@ if __name__ == '__main__':
         tournament, competitors = load_tournament(args, interactive=False)
         print(tournament.run(competitors, interactive=False))
     elif args.mode == 'demo':
-        pass
+        demo = load_demo(args)
+        demo.run(print_state=True, interactive=False)

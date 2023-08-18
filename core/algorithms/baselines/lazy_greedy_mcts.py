@@ -17,6 +17,8 @@ class LazyGreedyMCTSConfig(LazyMCTSConfig):
 class LazyGreedyMCTS(LazyMCTS, Baseline):
     def __init__(self, env: Env, config: LazyGreedyMCTSConfig, *args, **kwargs) -> None:
         super().__init__(env, config, *args, **kwargs)
+        self.metrics_key = 'lazygreedymcts_' + config.heuristic + '_' + str(config.num_policy_rollouts)
+        self.proper_name = 'LazyGreedyMCTS_' + config.heuristic + '_' + str(config.num_policy_rollouts)
         self.uniform_probabilities = torch.ones((self.env.parallel_envs, self.env.policy_shape[0]), device=self.device, requires_grad=False) / self.env.policy_shape[0]
         self.config: LazyGreedyMCTSConfig
 

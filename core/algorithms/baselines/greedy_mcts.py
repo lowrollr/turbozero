@@ -18,6 +18,8 @@ class GreedyMCTSConfig(MCTSConfig):
 class GreedyMCTS(MCTS, Baseline):
     def __init__(self, env: Env, config: GreedyMCTSConfig, *args, **kwargs) -> None:
         super().__init__(env, config, *args, **kwargs)
+        self.metrics_key = 'greedymcts_' + config.heuristic + '_' + str(config.num_iters)
+        self.proper_name = 'GreedyMCTS_' + config.heuristic + '_' + str(config.num_iters)
         self.uniform_probabilities = torch.ones((self.env.parallel_envs, self.env.policy_shape[0]), device=self.device, requires_grad=False) / self.env.policy_shape[0]
         self.config: GreedyMCTSConfig
 

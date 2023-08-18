@@ -17,8 +17,8 @@ class GreedyConfig(EvaluatorConfig):
 class GreedyBaseline(Baseline):
     def __init__(self, env: Env, config: GreedyConfig, *args, **kwargs):
         super().__init__(env, config, *args, **kwargs)
-        self.metrics_key = 'greedy'
-        self.proper_name = 'Greedy'
+        self.metrics_key = 'greedy_' + config.heuristic
+        self.proper_name = 'Greedy_' + config.heuristic
         self.config: GreedyConfig
 
     def evaluate(self):
