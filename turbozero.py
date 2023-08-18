@@ -198,5 +198,6 @@ if __name__ == '__main__':
         tester.collect_test_batch()
     elif args.mode == 'tournament':
         tournament, competitors = load_tournament(args, interactive=False)
-        tournament.run(competitors)
-
+        tournament.run(competitors, interactive=False)
+    elif args.mode == 'demo':
+        pass

@@ -97,20 +97,23 @@ class Tournament:
     
     def collect_games(self, new_competitor_config: dict):
         new_competitor = self.init_competitor(new_competitor_config)
-        for competitor in self.competitors:
-            p1_scores = self.play_games(competitor.evaluator, new_competitor.evaluator)
-            new_results = []
-            for p1_score in p1_scores:
-                new_results.append(GameResult(
-                    player1_name=competitor.name,
-                    player2_name=new_competitor.name,
-                    player1_result=p1_score,
-                    player2_result=1 - p1_score
-                ))
-            logging.info(f'{competitor.name}: {sum([r.player1_result for r in new_results])}, {new_competitor.name}: {sum([r.player2_result for r in new_results])}')
-            self.results.extend(new_results)
-        self.competitors.append(new_competitor)
-        self.competitors_dict[new_competitor.name] = new_competitor
+        if new_competitor.name not in self.competitors_dict:
+            for competitor in self.competitors:
+                p1_scores = self.play_games(competitor.evaluator, new_competitor.evaluator)
+                new_results = []
+                for p1_score in p1_scores:
+                    new_results.append(GameResult(
+                        player1_name=competitor.name,
+                        player2_name=new_competitor.name,
+                        player1_result=p1_score,
+                        player2_result=1 - p1_score
+                    ))
+                logging.info(f'{competitor.name}: {sum([r.player1_result for r in new_results])}, {new_competitor.name}: {sum([r.player2_result for r in new_results])}')
+                self.results.extend(new_results)
+            self.competitors.append(new_competitor)
+            self.competitors_dict[new_competitor.name] = new_competitor
+        else:
+            logging.warn(f'Already have data for competitor {new_competitor.name}, skipping...')
 
     def remove_competitor(self, name: str):
         self.competitors = [competitor for competitor in self.competitors if competitor.name != name]
