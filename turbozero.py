@@ -80,6 +80,14 @@ def load_tournament_nb(
         args.logfile = 'turbozero.log'
     logging.basicConfig(filename=args.logfile, filemode='a', level=logging.INFO, format='%(asctime)s %(message)s')
     return load_tournament(args, interactive=True)
+
+def load_demo_nb(
+    config_file: str
+) -> Demo:
+    args = argparse.Namespace(
+        config=config_file
+    )
+    return load_demo(args)
     
 
 def load_config(config_file: str) -> dict:
