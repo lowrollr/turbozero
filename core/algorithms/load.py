@@ -10,10 +10,8 @@ from core.algorithms.baselines.random import RandomBaseline
 from core.algorithms.baselines.rollout import Rollout, RolloutConfig
 from core.algorithms.baselines.rollout_mcts import RandomRolloutMCTS, RandomRolloutMCTSConfig
 from core.algorithms.evaluator import EvaluatorConfig
-from core.algorithms.lazy_mcts import LazyMCTSConfig
 from core.algorithms.lazyzero import LazyZero, LazyZeroConfig
-from core.algorithms.mcts import MCTSConfig
-# from core.demo.human import HumanEvaluator
+from core.demo.human import HumanEvaluator
 from core.env import Env
 
 
@@ -39,9 +37,9 @@ def init_evaluator(algo_config: dict, env: Env, *args, **kwargs):
     elif algo_type == 'random':
         config = EvaluatorConfig(**algo_config)
         return RandomBaseline(env, config, *args, **kwargs)
-    # elif algo_type == 'human':
-    #     config = EvaluatorConfig(**algo_config)
-    #     return HumanEvaluator(env, config, *args, **kwargs)
+    elif algo_type == 'human':
+        config = EvaluatorConfig(**algo_config)
+        return HumanEvaluator(env, config, *args, **kwargs)
     elif algo_type == 'greedy_mcts':
         config = GreedyMCTSConfig(**algo_config)
         return GreedyMCTS(env, config, *args, **kwargs)

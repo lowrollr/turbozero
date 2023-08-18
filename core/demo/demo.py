@@ -10,14 +10,11 @@ import os
 class Demo:
     def __init__(self,
         evaluator: Evaluator,
-        evaluator_args: dict,
         manual_step: bool = False
     ):
-        
         self.manual_step = manual_step
         self.evaluator = evaluator
         assert self.evaluator.env.parallel_envs == 1
-        self.evaluator_args = evaluator_args
         self.evaluator.reset()
 
     def run(self, print_evaluation: bool = False, print_state: bool = True, interactive: bool =True):
@@ -28,7 +25,7 @@ class Demo:
                 self.evaluator.env.print_state(actions.item() if actions is not None else None)
             if self.manual_step:
                 input('Press any key to continue...')
-            _, _, value, actions, terminated = self.evaluator.step(**self.evaluator_args)
+            _, _, value, actions, terminated = self.evaluator.step()
             if interactive:
                 clear_output(wait=True)
             else:
@@ -44,15 +41,12 @@ class Demo:
 class TwoPlayerDemo(Demo):
     def __init__(self,
         evaluator,
-        evaluator_args,
         evaluator2,
-        evaluator2_args,
         manual_step: bool = False
     ) -> None:
-        super().__init__(evaluator, evaluator_args, manual_step)
+        super().__init__(evaluator, manual_step)
         self.evaluator2 = evaluator2
         assert self.evaluator2.env.parallel_envs == 1
-        self.evaluator2_args = evaluator2_args
         self.evaluator2.reset()
     
     def run(self, print_evaluation: bool = False, print_state: bool = True, interactive: bool =True):
@@ -66,12 +60,11 @@ class TwoPlayerDemo(Demo):
 
             active_evaluator = self.evaluator if p1_turn else self.evaluator2
             other_evaluator = self.evaluator2 if p1_turn else self.evaluator
-            evaluator_args = self.evaluator_args if p1_turn else self.evaluator2_args
             if print_state:
                 active_evaluator.env.print_state(int(actions.item()) if actions is not None else None)
             if self.manual_step:
                 input('Press any key to continue...')
-            _, _, value, actions, terminated = active_evaluator.step(**evaluator_args)
+            _, _, value, actions, terminated = active_evaluator.step()
             other_evaluator.step_evaluator(actions, terminated)
             if interactive:
                 clear_output(wait=True)

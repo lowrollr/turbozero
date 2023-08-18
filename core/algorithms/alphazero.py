@@ -19,13 +19,13 @@ class AlphaZero(MCTS, TrainableEvaluator):
         super().__init__(env, config, model)
         self.config: AlphaZeroConfig
 
-    # all additional alphazero implementation details live in MCTS, for now
     def choose_actions(self, visits: torch.Tensor) -> torch.Tensor:
         if self.config.temperature > 0:
             return torch.multinomial(torch.pow(visits, 1/self.config.temperature), 1, replacement=True).flatten()
         else:
             return rand_argmax_2d(visits).flatten()
-        
+
+    # see MCTS        
     def evaluate(self) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         evaluation_fn = lambda env: self.model(env.states)
         return super().evaluate(evaluation_fn)
