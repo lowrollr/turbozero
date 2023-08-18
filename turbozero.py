@@ -6,9 +6,8 @@ import argparse
 from core.algorithms.load import init_evaluator, init_trainable_evaluator
 from core.resnet import ResNetConfig, TurboZeroResnet
 from core.test.tester import  Tester
-from core.test.tournament.tournament import Tournament, TournamentPlayer
+from core.test.tournament.tournament import Tournament, TournamentPlayer, load_tournament as load_tournament_checkpoint
 from core.train.trainer import Trainer, load_checkpoint, init_history
-
 
 import yaml
 
@@ -158,25 +157,30 @@ def load_tournament(args, interactive: bool) -> Tuple[Tournament, List[dict]]:
         torch.backends.cudnn.deterministic = True
     else:
         device = torch.device('cpu')
+
     tournament_config = raw_config['tournament_mode_config']
-    env = init_env(device, tournament_config['num_games'], raw_config['env_config'], args.debug)
+    if args.checkpoint:
+        tournament = load_tournament_checkpoint(args.checkpoint, device)
+    else:
+        env = init_env(device, tournament_config['num_games'], raw_config['env_config'], args.debug)
+        tournament_name = tournament_config.get('tournament_name', 'tournament')
+        tournament = Tournament(env, tournament_config['num_games'], tournament_config['num_tournaments'], device, tournament_name)
 
     competitors = tournament_config['competitors']
         
-    tournament = Tournament(env, tournament_config['num_games'], tournament_config['num_tournaments'], device)
     return tournament, competitors
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(prog='TurboZero')
     parser.add_argument('--checkpoint', type=str)
-    parser.add_argument('--mode', type=str, default='demo', choices=['train', 'evaluate', 'demo'])
+    parser.add_argument('--mode', type=str, default='demo', choices=['train', 'test', 'demo', 'tournament'])
     parser.add_argument('--config', type=str)
-    parser.add_argument('--gpu', type=bool, default=False)
-    parser.add_argument('--interactive', type=bool, default=False)
-    parser.add_argument('--debug', type=bool, default=False)
+    parser.add_argument('--gpu', action='store_true')
+    parser.add_argument('--interactive', action='store_true')
+    parser.add_argument('--debug', action='store_true')
     parser.add_argument('--logfile', type=str, default='')
-    parser.add_argument('--verbose', type=bool, default=False)
+    parser.add_argument('--verbose', action='store_true')
     args = parser.parse_args()
 
     if args.config:
@@ -198,6 +202,6 @@ if __name__ == '__main__':
         tester.collect_test_batch()
     elif args.mode == 'tournament':
         tournament, competitors = load_tournament(args, interactive=False)
-        tournament.run(competitors, interactive=False)
+        print(tournament.run(competitors, interactive=False))
     elif args.mode == 'demo':
         pass

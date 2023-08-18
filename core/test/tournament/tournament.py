@@ -5,7 +5,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 import logging
 from random import shuffle
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import torch
 import numpy as np
@@ -46,7 +46,7 @@ class GameResult:
 
 
 class Tournament:
-    def __init__(self, env: Env, n_games: int, n_tournaments: int, device: torch.device):
+    def __init__(self, env: Env, n_games: int, n_tournaments: int, device: torch.device, name: str):
         self.competitors = []
         self.competitors_dict = dict()
         self.env = env
@@ -54,6 +54,7 @@ class Tournament:
         self.n_tournaments = n_tournaments
         self.results: List[GameResult] = []
         self.device = device
+        self.name = name
 
     def play_games(self, evaluator1, evaluator2) -> List[float]: # assumes zero-sum, 2 player game
         evaluator1.env = self.env
@@ -120,7 +121,9 @@ class Tournament:
         self.competitors_dict.pop(name)
         self.results = [result for result in self.results if result.player1_name != name and result.player2_name != name]
 
-    def save(self, path: str) -> None:
+    def save(self, path: Optional[str] = '') -> None:
+        if not path:
+            path = f'{self.name}.pt'
         data = dict()
         data['competitor_configs'] = dict()
         for competitor in self.competitors:
@@ -182,6 +185,7 @@ class Tournament:
     def run(self, competitors: List[dict], interactive: bool = True): 
         for competitor in competitors:
             self.collect_games(competitor)
+        self.save()
         return self.simulate_elo(interactive)
 
 def load_tournament(path: str, device: torch.device):
@@ -190,7 +194,8 @@ def load_tournament(path: str, device: torch.device):
         init_env(device, tournament_data['n_games'], tournament_data['env_config'], False),
         tournament_data['n_games'],
         tournament_data['n_tournaments'],
-        device
+        device,
+        tournament_data.get('name', 'tournament')
     )
     for competitor_config in tournament_data['competitor_configs'].values():
         tournament.competitors.append(tournament.init_competitor(competitor_config))
