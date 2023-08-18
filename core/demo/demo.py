@@ -22,12 +22,13 @@ class Demo:
 
     def run(self, print_evaluation: bool = False, print_state: bool = True, interactive: bool =True):
         self.evaluator.reset()
+        actions = None
         while True:
             if print_state:
-                print(self.evaluator.env)
+                self.evaluator.env.print_state(actions.item() if actions is not None else None)
             if self.manual_step:
                 input('Press any key to continue...')
-            _, _, value, _, terminated = self.evaluator.step(**self.evaluator_args)
+            _, _, value, actions, terminated = self.evaluator.step(**self.evaluator_args)
             if interactive:
                 clear_output(wait=True)
             else:

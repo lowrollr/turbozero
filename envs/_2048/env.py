@@ -1,9 +1,31 @@
 
 from dataclasses import dataclass
 from typing import Optional, Tuple
+from colorama import Fore
 import torch
 from core.env import Env, EnvConfig
 from .torchscripts import get_stochastic_progressions, push_actions, get_legal_actions
+
+COLOR_MAP = {
+    1: Fore.WHITE,
+    2: Fore.LIGHTWHITE_EX,
+    3: Fore.LIGHTYELLOW_EX,
+    4: Fore.LIGHTRED_EX,
+    5: Fore.LIGHTMAGENTA_EX,
+    6: Fore.LIGHTGREEN_EX,
+    7: Fore.LIGHTCYAN_EX,
+    8: Fore.LIGHTBLUE_EX,
+    9: Fore.YELLOW,
+    10: Fore.RED,
+    11: Fore.MAGENTA,
+    12: Fore.GREEN,
+    13: Fore.CYAN,
+    14: Fore.BLUE,
+    15: Fore.WHITE,
+    16: Fore.BLACK,
+    17: Fore.LIGHTBLACK_EX
+}
+
 
 @dataclass
 class _2048EnvConfig(EnvConfig):
@@ -93,23 +115,41 @@ class _2048Env(Env):
         self.states = saved.clone() * load_envs_expnd + self.states * (~load_envs_expnd)
         self.update_terminated()
     
-    def __str__(self) -> str:
+    def print_state(self, action=None) -> None:
         envstr = []
         assert self.parallel_envs == 1
-        envstr.append('+' + '--------+' * 4)
-        envstr.append('\n')
+        envstr.append((Fore.BLUE if action == 3 else '') + '+' + '--------+' * 4)
+
+        envstr.append(Fore.RESET + '\n')
         for i in range(4):
-            envstr.append('|' + '        |' * 4)
-            envstr.append('\n')
+            envstr.append((Fore.BLUE if action == 0 else ''))
+            envstr.append('|' + Fore.RESET + '        |' * 3)
+            envstr.append((Fore.BLUE if action == 2 else ''))
+            envstr.append('        |')
+            envstr.append(Fore.RESET + '\n')
             for j in range(4):
+                color = Fore.RESET
+                if j == 0 and action == 0:
+                    color = Fore.BLUE
                 if self.states[0, 0, i, j] == 0:
-                    envstr.append('|        ')
+                    envstr.append(color + '|        ')
                 else:
-                    envstr.append(f'|{str(int(2**self.states[0, 0, i, j])).center(8)}')
+                    num = int(self.states[0, 0, i, j])
+                    envstr.append(color + '|' + COLOR_MAP[num] + str(2**num).center(8))
+            envstr.append((Fore.BLUE if action == 2 else Fore.RESET))
             envstr.append('|')
-            envstr.append('\n')
-            envstr.append('|' + '        |' * 4)
-            envstr.append('\n')
-            envstr.append('+' + '--------+' * 4)
-            envstr.append('\n')
-        return ''.join(envstr)
+            envstr.append(Fore.RESET + '\n')
+            envstr.append((Fore.BLUE if action == 0 else ''))
+            envstr.append('|' + Fore.RESET + '        |' * 3)
+            envstr.append((Fore.BLUE if action == 2 else ''))
+            envstr.append('        |')
+            envstr.append(Fore.RESET + '\n')
+            if i < 3:
+                envstr.append((Fore.BLUE if action == 0 else ''))
+                envstr.append('+' + Fore.RESET + '--------+' * 3)
+                envstr.append('--------' +(Fore.BLUE if action == 2 else '') + '+')
+            else:
+                envstr.append((Fore.BLUE if action == 1 else ''))
+                envstr.append('+' + '--------+' * 4)
+            envstr.append(Fore.RESET + '\n')
+        print(''.join(envstr))
