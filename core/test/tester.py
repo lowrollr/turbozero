@@ -58,7 +58,7 @@ class Tester:
 @dataclass
 class TwoPlayerTesterConfig(TesterConfig):
     baselines: List[dict]
-    improvement_threshold_pct: float
+    improvement_threshold_pct: float = 0.0
 
     
 class TwoPlayerTester(Tester):

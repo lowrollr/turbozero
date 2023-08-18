@@ -65,6 +65,7 @@ def load_tournament_nb(
     gpu: bool,
     debug: bool,
     logfile: str = '',
+    tournament_checkpoint: str = '',
     verbose_logging: bool = True
 ) -> Tuple[Tournament, List[dict]]:
     args = argparse.Namespace(
@@ -72,7 +73,8 @@ def load_tournament_nb(
         gpu=gpu,
         debug=debug,
         logfile=logfile,
-        verbose=verbose_logging
+        verbose=verbose_logging,
+        checkpoint=tournament_checkpoint
     )
     if not args.logfile:
         args.logfile = 'turbozero.log'
