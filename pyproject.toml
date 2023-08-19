@@ -1,0 +1,22 @@
+[tool.poetry]
+name = "turbozero"
+version = "0.1.0"
+description = "vectorized implementations of alphazero + envs"
+authors = ["lowrollr <92640744+lowrollr@users.noreply.github.com>"]
+license = "Apache-2.0"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.9"
+torch = "^2.0.1"
+numpy = "^1.25.2"
+matplotlib = "^3.7.2"
+ipython = "^8.14.0"
+colorama = "^0.4.6"
+Bottleneck = "^1.3.7"
+pyyaml = "^6.0.1"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
