@@ -7,7 +7,7 @@ The TurboZero project contains vectorized, hardware-accelerated implementations 
 ## Motivation 
 Training reinforcement learning algorithms is notoriously compute-intensive. Oftentimes models must train for millions of episodes to reach desired performance, with each episode containing many steps and each step requiring numerous model inference calls and dynamic game-tree exploration. All of these factors contribute to RL training tasks sometimes being prohibitvely expensive, even when taking advantage of process (CPU) parallelism. However, if environments and algorithms can be implemented as a set of multi-dimensional matrix operations, this computation can be offloaded to GPUs, reaping all the benefits of GPU parallelism by training on and evaluating stacked environments in parallel. TurboZero includes implementations of simulation environments and Rl algorithms that do just that.
 
-While other common open-source implementations of AlphaZero complete training runs in days/weeks, TurboZero can complete similar tasks in minutes/hours when paired with the appropriate hardware.
+While other common open-source implementations of AlphaZero complete training runs in days/weeks, TurboZero can complete similar tasks in minutes/hours when paired with the appropriate  hardware.
 
 ## Features
 ### Environments
@@ -26,22 +26,25 @@ TurboZero supports training policy/value models via the following vectorized alg
 | AlphaZero | DeepMind's algorithm that first famously defeated Lee Sodol in Go and has since been shown to generalize well to other games such as Chess and Shogi as well as more sophisticated tasks like code generation and video compression. | [dataclass](https://github.com/lowrollr/lazyzero/blob/main/core/evaluation/mcts_hypers.py) | [Silver, 2017](https://arxiv.org/abs/1712.01815)
 | LazyZero | A lazy implementation of AlphaZero that only utilizes PUCT to dictate exploration at the root node. Exploration steps instead use fixed depth rollouts sampling from the trained model policy. I wrote this as a simpler, albeit worse alternative to AlphaZero, and showed it can effectively train models to play *2048* and win. | [dataclass](https://github.com/lowrollr/lazyzero/blob/main/core/evaluation/lazy_mcts_hypers.py) | | 
 
-Training can be done in a Jupyter notebook, or via the command-line. In addition to environment parameters and training hyperparameters, the user may specify the number of environments to train in parallel, so that the user is able to optimize for their own hardware. See Quickstart for a quick guide on how to get started, or Training for full information on configurating your training run. I also provide example configurations that I have used to train effective models for each environment.  
+Training can be done in a Jupyter notebook, or via the command-line. In addition to environment parameters and training hyperparameters, the user may specify the number of environments to train in parallel, so that the user is able to optimize for their own hardware. See [Quickstart](https://github.com/lowrollr/turbozero#quickstart) for a quick guide on how to get started, or [Training](https://github.com/lowrollr/turbozero/wiki/Training) for full information on configurating your training run. I also provide example configurations that I have used to train effective models for each environment.  
 
 ### Evaluation
 In addition to the algorithms supporting training a policy, TurboZero also provides vectorized implementations of the following algorithms that serve as baselines to evaluate against:
-| Name | Description | Hyperparameters | 
+| Name | Description | Parameters | 
 | --- | --- | --- | 
-| Greedy MCTS | MCTS using a heurisitc function to evaluate leaf nodes | Hyperparameters |
-| Greedy Lazy MCTS | Greedy MCTS, but using the LazyMCTS algorithm |
-| Greedy | Evaluates potential actions using a heuristic function, no tree search |
-| Random | Makes a random legal move | 
+| [Greedy MCTS](https://github.com/lowrollr/turbozero/wiki/Evaluation-&-Testing#greedy-mcts) | MCTS using a heurisitc function to evaluate leaf nodes | [parameters](https://github.com/lowrollr/turbozero/wiki/Evaluation-&-Testing#parameters-2) |
+| [Greedy](https://github.com/lowrollr/turbozero/wiki/Evaluation-&-Testing#greedy) | Evaluates potential actions using a heuristic function, no tree search | [parameters](https://github.com/lowrollr/turbozero/wiki/Evaluation-&-Testing#parameters-1)
+| [Random](https://github.com/lowrollr/turbozero/wiki/Evaluation-&-Testing#random) | Makes a random legal move | [parameters](https://github.com/lowrollr/turbozero/wiki/Evaluation-&-Testing#parameters)
 
-Evaluating against these algorithms can be baked into the evaluation step of a training run, or be run independently. See Evaluation for the full configuration specification.
+Evaluating against these algorithms can be baked into the evaluation step of a training run, or be run independently. See [Evaluation & Testing](https://github.com/lowrollr/turbozero/wiki/Evaluation-&-Testing) for the full configuration specification.
 
 ### Tournaments / Calculating Elo
 
 Available for multi-player environments, tournaments provide a great way to gauge the relative strength of an algorithm in relation to various opponents. This allows the user to evaluate the effectiveness of adjusting parameters of an algorithm, or analyze how effective increasing the size of a neural network is in terms of performance. In addition, tournaments allow algorithms to be compared against a large cohort of baseline algorithms. Where applicable, I provide tournament data for each environment that will allow you to test your algorithms and models against a pre-populated field. Tournaments are simulated many times in order to generate accurate Elo ratings. Once simulation is complete, in addition to ratings a matchup heatmap is also generated:
+
+![heatmap](./misc/heatmap.png)
+
+For more about tournaments, and configuration options, see the Tournaments wiki page.
 
 ### Demo
 Demo mode provides the option to step through a game alongside an algorithm, which can be useful as a debugging tool or simply interesting to watch. For multi-player games, demo mode allows you to play *against* an algorithm, whether it be a heuristic baseline or a trained policy. For more information, see the Demo page.
@@ -89,11 +92,6 @@ If you'd like to evaluate an existing model, you can use `--mode=test`, link a c
 python turbozero.py --verbose --mode=test --config=./example_config/my_test_config.yaml --checkpoint=./checkpoints/my_checkpoint.pt --logfile=./test.log
 ```
 ### Tournament
-It's often useful to compare different variations of your algorithm/model to other variations as well as baselines. While test mode gives a direct comparison, sometimes other metrics are useful to gauge relative strength. Tournaments allow for models & algorithms compete against one another to determine an Elo score, which helps quantify relative strenght. 
-
-Tournaments also generate these snazzy heatmaps upon completion:
-
-![heatmap](./misc/heatmap.png)
 
 To run an example tournament with some heuristic algorithms, you can run the following command:
 ```terminal
@@ -102,7 +100,6 @@ python turbozero.py --mode=tournament --config=./example_configs/othello_tournam
 
 Remember to use the --gpu flag here if you have one, all algorithms are hardware accelerated!
 
-For more about tournaments, and configuration options, see the Tournaments wiki page.
 
 ### Demo
 ```terminal
