@@ -50,14 +50,12 @@ Demo mode provides the option to step through a game alongside an algorithm, whi
 ### Setup
 To get started, first clone the repository. I have not done any formal releases yet, so for now you can just clone the main branch.
 
-Then, I recommend creating a new environment with your environment manager of choice. Install the requirements found in requirements.txt. This project was developed with python 1.3.8, I cannot garauntee it will work with older versions.
+TurboZero uses poetry to manage dependencies. 
 
 ```terminal
-git clone https://github.com/lowrollr/turbozero.git && cd turbozero
+git clone https://github.com/lowrollr/turbozero.git && cd turbozero && poetry install && poetry shell
 ```
-```terminal
-conda create --name turbozero python=3.8 && conda activate turbozero && conda install --yes --file requirements.txt
-```
+If you'd rather not use poetry's shell, you can prepend `poetry.run` to any commands.
 
 ### Training
 To get started training a simple model, you can use one of the following commands, which load example configurations I've included for demonstration purposes. These commands will train a model and run periodic evaluation steps to track progress.
