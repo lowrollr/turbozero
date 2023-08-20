@@ -55,7 +55,7 @@ TurboZero uses poetry to manage dependencies.
 ```terminal
 git clone https://github.com/lowrollr/turbozero.git && cd turbozero && poetry install && poetry shell
 ```
-If you'd rather not use poetry's shell, you can prepend `poetry.run` to any commands.
+If you'd rather not use poetry's shell, you can prepend `poetry run` to any commands.
 
 ### Training
 To get started training a simple model, you can use one of the following commands, which load example configurations I've included for demonstration purposes. These commands will train a model and run periodic evaluation steps to track progress.
