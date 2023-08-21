@@ -27,7 +27,7 @@ train_mode_config: {
   learning_rate: 0.0003,
   replay_memory_max_size: 20000,
   replay_memory_min_size: 20000,
-  parallel_envs: 64,
+  parallel_envs: 8192,
   policy_factor: 1.0,
   minibatch_size: 4096,
   minibatches_per_update: 1,
@@ -51,7 +51,7 @@ test_mode_config: {
       rollout_depth: 3, 
       puct_coeff: 1.0 
     },
-  episodes_per_epoch: 64
+  episodes_per_epoch: 1000
 }
 
 
