@@ -16,7 +16,7 @@ class BestModelBaseline(Baseline):
         evaluator: Evaluator, 
         best_model: torch.nn.Module,
         best_model_optimizer: torch.optim.Optimizer,
-        metrics_key: str = 'win_margin_vs_best',
+        metrics_key: str = 'win_rate_vs_best',
         proper_name: str = 'Best Model',
         *args, **kwargs
     ):

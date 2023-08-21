@@ -19,10 +19,10 @@ class Baseline(Evaluator):
             history.epoch_metrics[self.metrics_key] = Metric(
                 name=self.metrics_key, 
                 xlabel='Epoch', 
-                ylabel='Margin (+/- games)', 
+                ylabel='Win Rate', 
                 maximize=True, 
                 alert_on_best=False, 
-                proper_name=f'Win Margin (Current Model vs. {self.proper_name})'
+                proper_name=f'Win Rate (Current Model vs. {self.proper_name})'
             )
     
     def add_metrics_data(self, data, history, log=True):
