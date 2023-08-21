@@ -10,6 +10,7 @@ from core.train.collector import Collector
 from core.utils.history import Metric, TrainingMetrics
 
 from core.utils.memory import GameReplayMemory, ReplayMemory
+import time
 
 
 def init_history(log_results: bool = True):
@@ -192,6 +193,15 @@ class Trainer:
             'raw_train_config': self.raw_train_config,
             'raw_env_config': self.raw_env_config
         }, filepath)
+
+    def benchmark_selfplay_step(self):
+        start = time.time()
+        self.selfplay_step()
+        tottime = time.time() - start
+        time_per_env_step = tottime / self.config.parallel_envs
+        print(f'Stepped {self.config.parallel_envs} envs in {tottime:.4f} seconds ({time_per_env_step:.4f} seconds per step)')
+
+    
 
 def load_checkpoint(checkpoint_file: str):
     checkpoint = torch.load(checkpoint_file, map_location=torch.device('cpu'))
