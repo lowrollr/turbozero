@@ -22,7 +22,7 @@ train_mode_config: {
     name: "alphazero",
     temperature: 1.0,
     num_iters: 1000,
-    max_nodes: 1000,
+    max_nodes: 400,
     puct_coeff: 1.0,
     dirichlet_alpha: 0.45,
     dirichlet_epsilon: 0.25
@@ -41,7 +41,7 @@ train_mode_config: {
       name: "alphazero",
       temperature: 0.0,
       num_iters: 1000,
-      max_nodes: 1000,
+      max_nodes: 400,
       puct_coeff: 1.0,
       dirichlet_alpha: 0.1,
       dirichlet_epsilon: 0.0
@@ -55,7 +55,6 @@ train_mode_config: {
         name: 'greedy',
         heuristic: 'corners_and_edges'
       }
-    ],
-    improvement_threshold_pct: 0.5
+    ]
   }
 }

@@ -6,12 +6,12 @@ env_config: {
 model_config: { # overwritten if loading a checkpoint
   input_size: [2, 8, 8],
   policy_size: 65,
-  res_channels: 32,
-  res_blocks: 8,
-  value_head_res_channels: 32,
-  value_head_res_blocks: 4,
-  policy_head_res_channels: 32,
-  policy_head_res_blocks: 4,
+  res_channels: 64,
+  res_blocks: 12,
+  value_head_res_channels: 64,
+  value_head_res_blocks: 2,
+  policy_head_res_channels: 64,
+  policy_head_res_blocks: 2,
   kernel_size: 3,
   policy_fc_size: 32,
   value_fc_size: 32,
@@ -20,64 +20,38 @@ model_config: { # overwritten if loading a checkpoint
 train_mode_config: {
   algo_config: {
     name: 'alphazero',
-    temperature: 1.0,
-    num_iters: 500,
+    temperature: 0.9,
+    num_iters: 2500,
     max_nodes: 1000,
     puct_coeff: 1.0,
     dirichlet_alpha: 0.45,
     dirichlet_epsilon: 0.25
   },
-  learning_rate: 0.0003,
-  replay_memory_max_size: 30000,
-  replay_memory_min_size: 30000,
+  learning_rate: 0.001,
+  lr_decay_gamma: 0.9,
+  replay_memory_max_size: 15000,
+  replay_memory_min_size: 15000,
   parallel_envs: 8192,
   policy_factor: 1.0,
   minibatch_size: 4096,
   minibatches_per_update: 1,
-  episodes_per_epoch: 30000,
+  episodes_per_epoch: 15000,
   test_config: {
     algo_config: {
       name: 'alphazero',
       temperature: 0.0,
-      num_iters: 500,
+      num_iters: 2500,
       max_nodes: 1000,
       puct_coeff: 1.0,
       dirichlet_alpha: 0.01,
-      dirichlet_epsilon: 0.1
+      dirichlet_epsilon: 0.0
     },
-    episodes_per_epoch: 1000,
+    episodes_per_epoch: 256,
     baselines: [
       {
-        name: 'random'
-      },
-      {
-        name: 'best'
+        name: 'greedy',
+        heuristic: 'minmax_moves'
       }
-    ],
-    improvement_threshold_pct: 0.5
+    ]
   }
 }
-test_mode_config: {
-  algo_config: {
-    name: 'alphazero',
-    temperature: 0.0,
-    num_iters: 500,
-    max_nodes: 1000,
-    puct_coeff: 1.0,
-    dirichlet_alpha: 0.01,
-    dirichlet_epsilon: 0.1
-  },
-  episodes_per_epoch: 1000,
-  baselines: [
-    {
-      name: 'random'
-    },
-    {
-      name: 'best'
-    }
-  ],
-  improvement_threshold_pct: 0.5
-}
-
-
-
