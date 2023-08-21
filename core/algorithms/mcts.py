@@ -286,6 +286,7 @@ class MCTS(Evaluator):
     def propogate_root_subtrees(self):
         self.subtrees.zero_()
         self.subtrees += self.slots_aranged
+        self.parents[:, 0] = 0
         for _ in range(self.max_depths.max() + 1):
             parent_subtrees = self.subtrees[self.env_indices_expnd, self.parents]
             self.subtrees = (parent_subtrees * (parent_subtrees > 1)) + (self.subtrees * (parent_subtrees <= 1))
