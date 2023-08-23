@@ -8,7 +8,7 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.9"
-torch = "^2.0.1"
+torch = "=2.0.0" # dependencies are not specified properly for torch==2.0.1
 numpy = "^1.25.2"
 matplotlib = "^3.7.2"
 ipython = "^8.14.0"
