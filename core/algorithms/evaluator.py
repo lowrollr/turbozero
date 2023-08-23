@@ -34,7 +34,7 @@ class Evaluator:
 
     def choose_actions(self, probs: torch.Tensor) -> torch.Tensor:
         legal_actions = self.env.get_legal_actions()
-        return rand_argmax_2d((probs + self.epslion) * legal_actions).flatten()
+        return rand_argmax_2d((probs + self.epsilon) * legal_actions).flatten()
 
     def step(self, *args) -> Tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor], torch.Tensor, torch.Tensor]:
         initial_states = self.env.states.clone()
