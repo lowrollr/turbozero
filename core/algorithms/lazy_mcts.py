@@ -67,9 +67,8 @@ class LazyMCTS(Evaluator):
             (self.puct_coeff * probs * torch.sqrt(n_sum + 1) / (1 + self.visit_counts))
 
         # even with puct score of zero only a legal action will be chosen
-        legal_action_scores = (puct_scores * legal_actions) - \
-            (self.very_positive_value * torch.logical_not(legal_actions))
-        return rand_argmax_2d(legal_action_scores).flatten()
+        legal_puct_scores = (puct_scores * legal_actions) + (self.epslion * legal_actions)
+        return rand_argmax_2d(legal_puct_scores).flatten()
 
     def iterate(self, evaluation_fn: Callable, depth: int, rewards: torch.Tensor) -> torch.Tensor:  # type: ignore
         while depth > 0:

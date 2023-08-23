@@ -19,8 +19,6 @@ class MCTSConfig(EvaluatorConfig):
     dirichlet_epsilon: float # proportion of policy composed of dirichlet noise
 
 
-# For now, this implementation of MCTS assumes that a model is used to evaluate leaf nodes rather than support rollouts
-# TODO: implement a more general version that supports rollouts + other strategies
 class MCTS(Evaluator):
     def __init__(self, env: Env, config: MCTSConfig, *args, **kwargs) -> None:
         super().__init__(env, config, *args, **kwargs)
@@ -40,24 +38,6 @@ class MCTS(Evaluator):
         self.parallel_envs = self.env.parallel_envs
         self.policy_size = self.env.policy_shape[-1]
 
-        
-
-        '''
-        self.nodes holds the state of the search tree 
-        = (NUM_ENVS * MAX_EVALS * (4 *self.policy_size))
-        -> dim0: env index
-        -> dim1: node index 
-            -> 0: garbage/null/empty
-            -> 1: search root
-            -> 2->: children
-        -> dim2: node info (m =self.policy_size)
-            -> 0->m: action index -> node index mapping
-            -> m->2m: action P-values
-            -> 2m->3m: action N-values
-            -> 3m->4m: action W-values
-
-        (to make operations cleaner we use node index 0 as a 'garbage' index, and node index 1 as the root node)
-        '''
         # garbage node + root node + other nodes
         self.total_slots = 2 + self.max_nodes 
 
@@ -88,8 +68,6 @@ class MCTS(Evaluator):
             device=self.device,
             requires_grad=False
         )
-
-
 
         # helper tensors for indexing by env
         self.env_indices = self.env.env_indices
@@ -169,29 +147,29 @@ class MCTS(Evaluator):
 
         n_sum = visits.sum(dim=1, keepdim=True)
         probs = self.p_vals[self.env_indices, self.cur_nodes]
-        puct_scores = q_values * (self.puct_coeff * probs * torch.sqrt(n_sum + 1) / (1 + visits))
+        puct_scores = q_values + (self.puct_coeff * probs * torch.sqrt(n_sum + 1) / (1 + visits))
 
         legal_actions = self.env.get_legal_actions()
-
-        legal_puct_scores = (puct_scores * legal_actions) - \
-            (self.very_positive_value * (~legal_actions))
+        # even with puct score of zero only a legal action will be chosen
+        legal_puct_scores = (puct_scores * legal_actions) + (self.epslion * legal_actions)
 
         return rand_argmax_2d(legal_puct_scores).flatten()
 
     def evaluate(self, evaluation_fn: Callable) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         self.reset_search()
 
-        # save the root node so that we can reset the environment to this state when we reach a leaf node
         # get root node policy
         with torch.no_grad():
             policy_logits, _ = evaluation_fn(self.env)
 
         # set root node policy, apply dirilecht noise
         self.p_vals[self.env_indices, self.cur_nodes] = (torch.softmax(policy_logits, dim=1) * (1 - self.dirichlet_e)) \
-                + self.dirilecht.rsample(torch.Size((self.parallel_envs,))) * self.dirichlet_e # type: ignore
+                + (self.dirilecht.rsample(torch.Size((self.parallel_envs,))) * self.dirichlet_e)
         
         # save root node, so that we can load it again when a leaf node is reached
         saved = self.env.save_node()
+
+        # store player id of current player at root node
         cur_players = self.env.cur_players.clone()
 
         for _ in range(self.iters):
