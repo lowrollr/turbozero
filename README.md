@@ -16,8 +16,8 @@ While other common open-source implementations of AlphaZero complete training ru
 TurboZero provides vectorized implementations of the following environments:
 | Environment | Type | Observation Size | Policy Size | Description | 
 | --- | --- | --- | --- | --- |
-| Othello | Multi-Player |2x8x8 | 65 | 2-player tile-swapping game played on an 8x8 board. also called Reversi |
-| 2048 | Single-Player |4x4 | 4 | Single-player numeric puzzle game |
+| [Othello](https://github.com/lowrollr/turbozero/wiki/Othello-Env) | Multi-Player |2x8x8 | 65 | 2-player tile-swapping game played on an 8x8 board. also called Reversi |
+| [2048](https://github.com/lowrollr/turbozero/wiki/2048-Env) | Single-Player |4x4 | 4 | Single-player numeric puzzle game |
 
 Each environment supports the full-suite of training and evaluation tools, and are implemented with GPU-acceleration in mind. Links to the environment readmes are found above, which provide information on configuration options, implementation details, and results acheived.
 
@@ -25,8 +25,8 @@ Each environment supports the full-suite of training and evaluation tools, and a
 TurboZero supports training policy/value models via the following vectorized algorithms:
 | Name | Description | Hyperparameters | Paper |
 | --- | --- | --- | --- |
-| AlphaZero | DeepMind's algorithm that first famously defeated Lee Sodol in Go and has since been shown to generalize well to other games such as Chess and Shogi as well as more sophisticated tasks like code generation and video compression. | [dataclass](https://github.com/lowrollr/lazyzero/blob/main/core/evaluation/mcts_hypers.py) | [Silver, 2017](https://arxiv.org/abs/1712.01815)
-| LazyZero | A lazy implementation of AlphaZero that only utilizes PUCT to dictate exploration at the root node. Exploration steps instead use fixed depth rollouts sampling from the trained model policy. I wrote this as a simpler, albeit worse alternative to AlphaZero, and showed it can effectively train models to play *2048* and win. | [dataclass](https://github.com/lowrollr/lazyzero/blob/main/core/evaluation/lazy_mcts_hypers.py) | | 
+| [AlphaZero](https://github.com/lowrollr/turbozero/wiki/AlphaZero) | DeepMind's algorithm that first famously defeated Lee Sodol in Go and has since been shown to generalize well to other games such as Chess and Shogi as well as more sophisticated tasks like code generation and video compression. | [hyperparameters](https://github.com/lowrollr/turbozero/wiki/AlphaZero#parameters) | [Silver, 2017](https://arxiv.org/abs/1712.01815)
+| [LazyZero](https://github.com/lowrollr/turbozero/wiki/LazyZero) | A lazy implementation of AlphaZero that only utilizes PUCT to dictate exploration at the root node. Exploration steps instead use fixed depth rollouts sampling from the trained model policy. I wrote this as a simpler, albeit worse alternative to AlphaZero, and showed it can effectively train models to play *2048* and win. | hyperparameters | | 
 
 Training can be done in a Jupyter notebook, or via the command-line. In addition to environment parameters and training hyperparameters, the user may specify the number of environments to train in parallel, so that the user is able to optimize for their own hardware. See [Quickstart](https://github.com/lowrollr/turbozero#quickstart) for a quick guide on how to get started, or [Training](https://github.com/lowrollr/turbozero/wiki/Training) for full information on configurating your training run. I also provide example configurations that I have used to train effective models for each environment.  
 
