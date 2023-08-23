@@ -151,7 +151,7 @@ class MCTS(Evaluator):
 
         legal_actions = self.env.get_legal_actions()
         # even with puct score of zero only a legal action will be chosen
-        legal_puct_scores = (puct_scores * legal_actions) + (self.epslion * legal_actions)
+        legal_puct_scores = (puct_scores * legal_actions) + (self.epsilon * legal_actions)
 
         return rand_argmax_2d(legal_puct_scores).flatten()
 
