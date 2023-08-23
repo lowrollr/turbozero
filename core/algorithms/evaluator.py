@@ -15,7 +15,7 @@ class Evaluator:
         self.env = env
         self.env.reset()
         self.config = config
-        self.epslion = 1e-8
+        self.epsilon = 1e-8
 
     def reset(self, seed=None) -> None:
         self.env.reset(seed=seed)
