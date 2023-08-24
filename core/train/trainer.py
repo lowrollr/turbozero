@@ -149,7 +149,7 @@ class Trainer:
         return policy_loss.item(), value_loss.item(), policy_accuracy.item(), loss.item()
     
     def policy_transform(self, policy):
-        return policy.div(policy.sum(dim=1, keepdim=True))
+        return policy.float().softmax(dim=1)
     
     def value_transform(self, value):
         return value
