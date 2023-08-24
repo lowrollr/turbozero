@@ -23,15 +23,12 @@ class OthelloCollector(Collector):
         
         if terminated.any():
             term_indices = terminated.nonzero(as_tuple=False).flatten()
-            rewards = self.evaluator.env.get_rewards().cpu().numpy()
-            cur_players = self.evaluator.env.cur_players.cpu().numpy()
+            rewards = self.evaluator.env.get_rewards(torch.zeros_like(self.evaluator.env.env_indices)).clone().cpu().numpy()
             for i, episode in enumerate(terminated_episodes):
                 episode_with_rewards = []
                 ti = term_indices[i]
-                cur_player = cur_players[ti]
-                reward = rewards[ti]
-                r1, r2 = reward, 1 - reward
-                p1_reward, p2_reward = (r2, r1) if cur_player else (r1, r2)
+                p1_reward = rewards[ti]
+                p2_reward = 1 - p1_reward
                 for ei, (inputs, visits) in enumerate(episode):
                     if visits.sum(): # only append states where a move was possible
                         episode_with_rewards.append((inputs, visits, torch.tensor(p2_reward if ei%2 else p1_reward, dtype=torch.float32, requires_grad=False, device=inputs.device)))
