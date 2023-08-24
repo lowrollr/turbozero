@@ -22,16 +22,18 @@ train_mode_config: {
     name: "alphazero",
     temperature: 1.0,
     num_iters: 50,
-    max_nodes: 25,
+    max_nodes: 50,
     puct_coeff: 1.0,
     dirichlet_alpha: 0.45,
     dirichlet_epsilon: 0.25
   },
-  learning_rate: 0.001,
-  lr_decay_gamma: 0.9,
+  learning_rate: 0.1,
+  lr_decay_gamma: 0.8,
+  momentum: 0.9,
+  c_reg: 0.0001,
   replay_memory_max_size: 1000,
   replay_memory_min_size: 10,
-  parallel_envs: 32,
+  parallel_envs: 128,
   policy_factor: 1.0,
   minibatch_size: 256,
   minibatches_per_update: 1,
@@ -41,15 +43,16 @@ train_mode_config: {
       name: "alphazero",
       temperature: 0.0,
       num_iters: 50,
-      max_nodes: 25,
+      max_nodes: 50,
       puct_coeff: 1.0,
       dirichlet_alpha: 0.1,
       dirichlet_epsilon: 0.0
     },
-    episodes_per_epoch: 25,
+    episodes_per_epoch: 128,
     baselines: [
       {
-        name: 'random'
+        name: 'greedy',
+        heuristic: 'num_tiles'
       },
     ]
   }

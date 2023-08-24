@@ -24,7 +24,9 @@ train_mode_config: {
     rollout_depth: 3, 
     puct_coeff: 1.0 
   },
-  learning_rate: 0.0003,
+  learning_rate: 0.1,
+  momentum: 0.8,
+  c_reg: 0.0001,
   replay_memory_max_size: 20000,
   replay_memory_min_size: 20000,
   parallel_envs: 8192,

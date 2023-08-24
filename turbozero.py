@@ -119,7 +119,7 @@ def load_trainer(args, interactive: bool) -> Trainer:
         train_config = raw_config['train_mode_config']
         run_tag = raw_config.get('run_tag', '')
         model = TurboZeroResnet(ResNetConfig(**raw_config['model_config'])).to(device)
-        optimizer = torch.optim.AdamW(model.parameters(), lr=raw_config['train_mode_config']['learning_rate'])
+        optimizer = torch.optim.SGD(model.parameters(), lr=raw_config['train_mode_config']['learning_rate'], momentum=raw_config['train_mode_config']['momentum'], weight_decay=raw_config['train_mode_config']['c_reg'])
         history = init_history()
 
     env_type = env_config['env_type']

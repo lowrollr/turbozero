@@ -32,6 +32,8 @@ class TrainerConfig:
     algo_config: EvaluatorConfig
     episodes_per_epoch: int
     learning_rate: float
+    momentum: float
+    c_reg: float
     lr_decay_gamma: float
     minibatch_size: int
     minibatches_per_update: int
@@ -212,7 +214,7 @@ def load_checkpoint(checkpoint_file: str):
     model = TurboZeroResnet(checkpoint['model_arch_params'])
     model.load_state_dict(checkpoint['model_state_dict'])
     raw_train_config = checkpoint['raw_train_config']
-    optimizer = torch.optim.AdamW(model.parameters(), raw_train_config['learning_rate'])
+    optimizer = torch.optim.SGD(model.parameters(), raw_train_config['learning_rate'], raw_train_config['momentum'], raw_train_config['c_reg'])
     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
     return model, optimizer, history, run_tag, raw_train_config, raw_env_config
 
