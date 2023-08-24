@@ -25,7 +25,7 @@ Each environment supports the full-suite of training and evaluation tools, and a
 TurboZero supports training policy/value models via the following vectorized algorithms:
 | Name | Description | Hyperparameters | Paper |
 | --- | --- | --- | --- |
-| [AlphaZero](https://github.com/lowrollr/turbozero/wiki/AlphaZero) | DeepMind's algorithm that first famously defeated Lee Sodol in Go and has since been shown to generalize well to other games such as Chess and Shogi as well as more sophisticated tasks like code generation and video compression. | [hyperparameters](https://github.com/lowrollr/turbozero/wiki/AlphaZero#parameters) | [Silver, 2017](https://arxiv.org/abs/1712.01815)
+| [AlphaZero](https://github.com/lowrollr/turbozero/wiki/Vectorizing-AlphaZero) | DeepMind's algorithm that first famously defeated Lee Sodol in Go and has since been shown to generalize well to other games such as Chess and Shogi as well as more sophisticated tasks like code generation and video compression. | [hyperparameters](https://github.com/lowrollr/turbozero/wiki/AlphaZero#parameters) | [Silver, 2017](https://arxiv.org/abs/1712.01815)
 | [LazyZero](https://github.com/lowrollr/turbozero/wiki/LazyZero) | A lazy implementation of AlphaZero that only utilizes PUCT to dictate exploration at the root node. Exploration steps instead use fixed depth rollouts sampling from the trained model policy. I wrote this as a simpler, albeit worse alternative to AlphaZero, and showed it can effectively train models to play *2048* and win. | hyperparameters | | 
 
 Training can be done in a Jupyter notebook, or via the command-line. In addition to environment parameters and training hyperparameters, the user may specify the number of environments to train in parallel, so that the user is able to optimize for their own hardware. See [Quickstart](https://github.com/lowrollr/turbozero#quickstart) for a quick guide on how to get started, or [Training](https://github.com/lowrollr/turbozero/wiki/Training) for full information on configurating your training run. I also provide example configurations that I have used to train effective models for each environment.  
@@ -46,10 +46,10 @@ Available for multi-player environments, tournaments provide a great way to gaug
 
 ![heatmap](./misc/heatmap.png)
 
-For more about tournaments, and configuration options, see the Tournaments wiki page.
+For more about tournaments, and configuration options, see the [Tournaments](https://github.com/lowrollr/turbozero/wiki/Tournaments) wiki page.
 
 ### Demo
-Demo mode provides the option to step through a game alongside an algorithm, which can be useful as a debugging tool or simply interesting to watch. For multi-player games, demo mode allows you to play *against* an algorithm, whether it be a heuristic baseline or a trained policy. For more information, see the Demo page.
+Demo mode provides the option to step through a game alongside an algorithm, which can be useful as a debugging tool or simply interesting to watch. For multi-player games, demo mode allows you to play *against* an algorithm, whether it be a heuristic baseline or a trained policy. For more information, see the [Demo](https://github.com/lowrollr/turbozero/wiki/Demo) page.
 
 ## Quickstart
 ### Setup
@@ -93,13 +93,15 @@ python turbozero.py --verbose --gpu --mode=train --config=./example_configs/2048
 ```
 With proper hardware these should not take long to train, as they are still relatively small. These commands will train on 4096 environments in parallel as opposed to 32 for the CPU configuration.
 
-For more information on training configuration, please see the Training page.
+For more information on training configuration, please see the [Training](https://github.com/lowrollr/turbozero/wiki/Training) wiki page.
 
 ### Evaluation
 If you'd like to evaluate an existing model, you can use `--mode=test`, link a checkpoint file with `--checkpoint`. For example:
 ```terminal
 python turbozero.py --verbose --mode=test --config=./example_config/my_test_config.yaml --checkpoint=./checkpoints/my_checkpoint.pt --logfile=./test.log
 ```
+
+For more information on evaluation/testing coniguration, see the [Evaluation & Testing](https://github.com/lowrollr/turbozero/wiki/Evaluation-&-Testing) wiki page.
 ### Tournament
 
 To run an example tournament with some heuristic algorithms, you can run the following command:
@@ -109,12 +111,12 @@ python turbozero.py --mode=tournament --config=./example_configs/othello_tournam
 
 Remember to use the --gpu flag here if you have one, all algorithms are hardware accelerated!
 
-
+For more information on tournament coniguration, see the [Tournaments](https://github.com/lowrollr/turbozero/wiki/Tournaments) wiki page.
 ### Demo
 ```terminal
 python turbozero.py --mode=demo --config=./example_configs/othello_demo.yaml
 ```
-
+For more information on demo coniguration, see the [Demo](https://github.com/lowrollr/turbozero/wiki/Demo) wiki page.
 ## Future Work
 
 ## Issues
