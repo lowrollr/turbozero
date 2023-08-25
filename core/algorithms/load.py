@@ -15,17 +15,6 @@ from core.demo.human import HumanEvaluator
 from core.env import Env
 
 
-def init_trainable_evaluator(algo_config: dict, env: Env, model: torch.nn.Module, *args, **kwargs):
-    algo_type = algo_config['name']
-    if algo_type == 'lazyzero':
-        config = LazyZeroConfig(**algo_config)
-        return LazyZero(env, config, model, *args, **kwargs)
-    elif algo_type == 'alphazero':
-        config = AlphaZeroConfig(**algo_config)
-        return AlphaZero(env, config, model, *args, **kwargs)
-    else:
-        raise NotImplementedError(f'Unknown trainable evaluator type: {algo_type}')
-    
 def init_evaluator(algo_config: dict, env: Env, *args, **kwargs):
     algo_type = algo_config['name']
     if algo_type == 'lazyzero':

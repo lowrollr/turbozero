@@ -3,7 +3,7 @@ from typing import List, Tuple, Union
 import torch
 import logging
 import argparse
-from core.algorithms.load import init_evaluator, init_trainable_evaluator
+from core.algorithms.load import init_evaluator
 from core.demo.demo import Demo
 from core.demo.load import init_demo
 from core.resnet import ResNetConfig, TurboZeroResnet
@@ -127,9 +127,9 @@ def load_trainer(args, interactive: bool) -> Trainer:
     parallel_envs_test = train_config['test_config']['episodes_per_epoch']
     env_train = init_env(device, parallel_envs_train, env_config, args.debug)
     env_test = init_env(device, parallel_envs_test, env_config, args.debug)
-    train_evaluator = init_trainable_evaluator(train_config['algo_config'], env_train, model)
+    train_evaluator = init_evaluator(train_config['algo_config'], env_train, model)
     train_collector = init_collector(episode_memory_device, env_type, train_evaluator)
-    test_evaluator = init_trainable_evaluator(train_config['test_config']['algo_config'], env_test, model)
+    test_evaluator = init_evaluator(train_config['test_config']['algo_config'], env_test, model)
     test_collector = init_collector(episode_memory_device, env_type, test_evaluator)
     tester = init_tester(train_config['test_config'], test_collector, model, history, optimizer, args.verbose)
     trainer = init_trainer(device, env_type, train_collector, tester, model, optimizer, train_config, env_config, history, args.verbose, interactive, run_tag)
@@ -157,7 +157,7 @@ def load_tester(args, interactive: bool) -> Tester:
     model = model.to(device)
     run_tag = raw_config.get('run_tag', run_tag)
     env = init_env(device, parallel_envs, env_config, args.debug)
-    evaluator = init_trainable_evaluator(test_config['algo_config'], env, model)
+    evaluator = init_evaluator(test_config['algo_config'], env, model)
     collector = init_collector(episode_memory_device, env_config['env_type'], evaluator)
     tester = init_tester(test_config, collector, model, history, None, args.verbose)
     return tester
