@@ -130,7 +130,7 @@ def load_trainer(args, interactive: bool) -> Trainer:
         model, optimizer = load_model_and_optimizer_from_checkpoint(checkpoint, env_train, device)
         history = checkpoint['history']
     else:
-        model = TurboZeroResnet(ResNetConfig(**raw_config['model_config'])).to(device)
+        model = TurboZeroResnet(ResNetConfig(**raw_config['model_config']), env_train.state_shape, env_train.policy_shape).to(device)
         optimizer = torch.optim.SGD(model.parameters(), lr=raw_config['train_mode_config']['learning_rate'], momentum=raw_config['train_mode_config']['momentum'], weight_decay=raw_config['train_mode_config']['c_reg'])
         history = init_history()
 

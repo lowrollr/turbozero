@@ -78,7 +78,7 @@ class TurboZeroResnet(nn.Module):
             nn.Linear(config.policy_head_res_channels * self.input_height * self.input_width, config.policy_fc_size, bias=False),
             nn.BatchNorm1d(config.policy_fc_size),
             nn.ReLU(),
-            nn.Linear(config.policy_fc_size, output_shape),
+            nn.Linear(config.policy_fc_size, output_shape[0]),
             # we use cross entropy loss so no need for softmax
         )
 
