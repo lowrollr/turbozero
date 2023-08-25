@@ -53,21 +53,16 @@ Demo mode provides the option to step through a game alongside an algorithm, whi
 
 ## Quickstart
 ### Setup
-To get started, first clone the repository. I have not done any formal releases yet, so for now you can just clone the main branch.
-
-TurboZero uses poetry to manage dependencies. 
+The following commands will install poetry (dependency managaement), clone the repository, install required packages, and create a kernel for notebooks to connect to.
 
 ```terminal
-git clone https://github.com/lowrollr/turbozero.git && cd turbozero
+curl -sSL https://install.python-poetry.org | python3 - && export PATH="/root/.local/bin:$PATH" && git clone https://github.com/lowrollr/turbozero.git && cd turbozero && poetry install && poetry run python -m ipykernel install --user --name turbozero
 ```
+You can run scripts on the command-line by creating a shell using 
 ```terminal
-poetry install && poetry shell
+poetry shell
 ```
-If you'd rather not use poetry's shell, you can prepend `poetry run` to any commands.
-If you are wanting to run a notebook and don't already have a kernel set up, use this command to create a kernel:
-```terminal
-poetry run python -m ipykernel install --user --name turbozero
-```
+If you'd rather not use poetry's shell, you can instead prepend `poetry run` to any commands.
 
 ### Training
 To get started training a simple model, you can use one of the following commands, which load example configurations I've included for demonstration purposes. These commands will train a model and run periodic evaluation steps to track progress.
