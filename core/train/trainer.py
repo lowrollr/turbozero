@@ -194,9 +194,9 @@ class Trainer:
             'raw_env_config': self.raw_env_config
         }, filepath)
 
-    def benchmark_selfplay_step(self):
+    def benchmark_collection_step(self):
         start = time.time()
-        self.selfplay_step()
+        self.collector.collect()
         tottime = time.time() - start
         time_per_env_step = tottime / self.config.parallel_envs
         print(f'Stepped {self.config.parallel_envs} envs in {tottime:.4f} seconds ({time_per_env_step:.4f} seconds per step)')
