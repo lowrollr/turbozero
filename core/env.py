@@ -59,6 +59,9 @@ class Env:
     def push_actions(self, actions):
         raise NotImplementedError()
     
+    def get_nn_input(self):
+        return self.states
+    
     def get_legal_actions(self):
         return torch.ones(self.parallel_envs, *self.policy_shape, dtype=torch.bool, device=self.device, requires_grad=False)
 

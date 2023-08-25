@@ -27,7 +27,7 @@ class AlphaZero(MCTS, TrainableEvaluator):
 
     # see MCTS        
     def evaluate(self) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
-        evaluation_fn = lambda env: self.model(env.states)
+        evaluation_fn = lambda env: self.model(env.get_nn_input())
         return super().evaluate(evaluation_fn)
     
 

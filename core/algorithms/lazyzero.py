@@ -29,5 +29,5 @@ class LazyZero(LazyMCTS, TrainableEvaluator):
             return rand_argmax_2d(visits).flatten()
     
     def evaluate(self) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
-        evaluation_fn = lambda env: self.model(env.states)
+        evaluation_fn = lambda env: self.model(env.get_nn_input())
         return super().evaluate(evaluation_fn)
