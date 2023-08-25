@@ -36,8 +36,8 @@ train_mode_config: {
   parallel_envs: 128,
   policy_factor: 1.0,
   minibatch_size: 256,
-  minibatches_per_update: 1,
   episodes_per_epoch: 128,
+  episodes_per_minibatch: 4,
   test_config: {
     algo_config: {
       name: "alphazero",

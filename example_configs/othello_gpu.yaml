@@ -31,13 +31,13 @@ train_mode_config: {
   lr_decay_gamma: 0.75,
   momentum: 0.9,
   c_reg: 0.0001,
-  replay_memory_max_size: 15000,
-  replay_memory_min_size: 15000,
+  replay_memory_max_size: 50000,
+  replay_memory_min_size: 50000,
   parallel_envs: 8192,
   policy_factor: 1.0,
-  minibatch_size: 4096,
-  minibatches_per_update: 1,
-  episodes_per_epoch: 15000,
+  minibatch_size: 2048,
+  episodes_per_epoch: 25000,
+  episodes_per_minibatch: 50,
   test_config: {
     algo_config: {
       name: 'alphazero',

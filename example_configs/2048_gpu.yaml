@@ -32,8 +32,8 @@ train_mode_config: {
   parallel_envs: 8192,
   policy_factor: 1.0,
   minibatch_size: 4096,
-  minibatches_per_update: 1,
   episodes_per_epoch: 20000,
+  episodes_per_minibatch: 1,
   test_config: {
       algo_config: {
       name: 'lazyzero',

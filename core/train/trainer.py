@@ -16,10 +16,10 @@ import time
 def init_history(log_results: bool = True):
     return TrainingMetrics(
         train_metrics=[
-            Metric(name='loss', xlabel='Step', ylabel='Loss', addons={'running_mean': 100}, maximize=False, alert_on_best=log_results),
-            Metric(name='value_loss', xlabel='Step', ylabel='Loss', addons={'running_mean': 100}, maximize=False, alert_on_best=log_results, proper_name='Value Loss'),
-            Metric(name='policy_loss', xlabel='Step', ylabel='Loss', addons={'running_mean': 100}, maximize=False, alert_on_best=log_results, proper_name='Policy Loss'),
-            Metric(name='policy_accuracy', xlabel='Step', ylabel='Accuracy (%)', addons={'running_mean': 100}, maximize=True, alert_on_best=log_results, proper_name='Policy Accuracy'),
+            Metric(name='loss', xlabel='Step', ylabel='Loss', addons={'running_mean': 25}, maximize=False, alert_on_best=log_results),
+            Metric(name='value_loss', xlabel='Step', ylabel='Loss', addons={'running_mean': 25}, maximize=False, alert_on_best=log_results, proper_name='Value Loss'),
+            Metric(name='policy_loss', xlabel='Step', ylabel='Loss', addons={'running_mean': 25}, maximize=False, alert_on_best=log_results, proper_name='Policy Loss'),
+            Metric(name='policy_accuracy', xlabel='Step', ylabel='Accuracy (%)', addons={'running_mean': 25}, maximize=True, alert_on_best=log_results, proper_name='Policy Accuracy'),
         ],
         episode_metrics=[],
         eval_metrics=[],
@@ -31,12 +31,12 @@ def init_history(log_results: bool = True):
 class TrainerConfig:
     algo_config: EvaluatorConfig
     episodes_per_epoch: int
+    episodes_per_minibatch: int
+    minibatch_size: int
     learning_rate: float
     momentum: float
     c_reg: float
-    lr_decay_gamma: float
-    minibatch_size: int
-    minibatches_per_update: int
+    lr_decay_gamma: float    
     parallel_envs: int
     policy_factor: float
     replay_memory_min_size: int
@@ -100,32 +100,6 @@ class Trainer:
     def add_epoch_metrics(self):
         raise NotImplementedError()
     
-    def training_steps(self, num_steps: int):
-        if num_steps > 0:
-            self.model.train()
-            memory_size = self.replay_memory.size()
-            if memory_size >= self.config.replay_memory_min_size:
-                for _ in range(num_steps):
-                    minibatch_value_loss = 0.0
-                    minibatch_policy_loss = 0.0
-                    minibatch_policy_accuracy = 0.0
-                    minibatch_loss = 0.0
-                    
-                    for _ in range(self.config.minibatches_per_update):
-                        policy_loss, value_loss, polcy_accuracy, loss = self.training_step()
-                        minibatch_value_loss += value_loss
-                        minibatch_policy_loss += policy_loss
-                        minibatch_policy_accuracy += polcy_accuracy
-                        minibatch_loss += loss
-
-                    minibatch_value_loss /= self.config.minibatches_per_update
-                    minibatch_policy_loss /= self.config.minibatches_per_update
-                    minibatch_policy_accuracy /= self.config.minibatches_per_update
-                    minibatch_loss /= self.config.minibatches_per_update
-                    self.add_train_metrics(minibatch_policy_loss, minibatch_value_loss, minibatch_policy_accuracy, minibatch_loss)
-            else:
-                logging.info(f'Replay memory samples ({memory_size}) <= min samples ({self.config.replay_memory_min_size}), skipping training steps')
-    
     def training_step(self):
         inputs, target_policy, target_value = zip(*self.replay_memory.sample(self.config.minibatch_size))
         inputs = torch.stack(inputs).to(device=self.device)
@@ -156,30 +130,54 @@ class Trainer:
     def value_transform(self, value):
         return value
     
-    def selfplay_step(self):
-        finished_episodes, _ = self.collector.collect()
-        if finished_episodes:
-            for episode in finished_episodes:
-                episode = self.collector.postprocess(episode)
-                self.replay_memory.insert(episode)
-        self.add_collection_metrics(finished_episodes)
+    def train_minibatch(self):
+        self.model.train()
+        memory_size = self.replay_memory.size()
+        if memory_size >= self.config.replay_memory_min_size:
+            policy_loss, value_loss, polcy_accuracy, loss = self.training_step()
+            self.add_train_metrics(policy_loss, value_loss, polcy_accuracy, loss)
+        else:
+            logging.info(f'Replay memory samples ({memory_size}) <= min samples ({self.config.replay_memory_min_size}), skipping training step')
         
-        num_train_steps = len(finished_episodes)
-        self.training_steps(num_train_steps)
+    def train_epoch(self):
+        new_episodes = 0
+        threshold_for_training_step = 0
+        while new_episodes < self.config.episodes_per_epoch:
+            threshold_for_training_step += self.config.episodes_per_minibatch
+            while new_episodes < threshold_for_training_step:
+                finished_episodes, _ = self.collector.collect()
+                if finished_episodes:
+                    for episode in finished_episodes:
+                        episode = self.collector.postprocess(episode)
+                        self.replay_memory.insert(episode)
+                self.add_collection_metrics(finished_episodes)
+                new_episodes += len(finished_episodes)
+            self.train_minibatch()
+        
 
     def training_loop(self, epochs: Optional[int] = None):
-        while self.history.cur_epoch < epochs if epochs is not None else True:
-            while self.history.cur_train_step < self.config.episodes_per_epoch * (self.history.cur_epoch+1):
-                self.selfplay_step()
+        if self.history.cur_epoch == 0:
+            # run initial test batch with untrained model
+            if self.tester.config.episodes_per_epoch > 0:
+                self.tester.collect_test_batch()
+            self.save_checkpoint()
+
+        while self.history.cur_epoch < epochs + 1 if epochs is not None else True:
+            self.history.start_new_epoch()
+
+            self.train_epoch()
+
             if self.tester.config.episodes_per_epoch > 0:
                 self.tester.collect_test_batch()
             self.add_epoch_metrics()
 
             if self.interactive:
                 self.history.generate_plots()
+
             self.scheduler.step()
-            self.history.start_new_epoch()
             self.save_checkpoint()
+            
+            
             
     def save_checkpoint(self, custom_name: Optional[str] = None) -> None:
         directory = f'./checkpoints/{self.run_tag}/'
