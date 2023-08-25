@@ -4,8 +4,6 @@ env_config: {
   board_size: 8
 }
 model_config: { # overwritten if loading a checkpoint
-  input_size: [2, 8, 8],
-  policy_size: 65,
   res_channels: 64,
   res_blocks: 12,
   value_head_res_channels: 64,

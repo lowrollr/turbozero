@@ -9,7 +9,8 @@ from core.demo.load import init_demo
 from core.resnet import ResNetConfig, TurboZeroResnet
 from core.test.tester import  Tester
 from core.test.tournament.tournament import Tournament, TournamentPlayer, load_tournament as load_tournament_checkpoint
-from core.train.trainer import Trainer, load_checkpoint, init_history
+from core.train.trainer import Trainer, init_history
+from core.utils.checkpoint import load_checkpoint, load_model_and_optimizer_from_checkpoint
 
 import yaml
 
@@ -111,22 +112,28 @@ def load_trainer(args, interactive: bool) -> Trainer:
     episode_memory_device = torch.device('cpu') # we do not support episdoe memory on GPU yet
 
     if args.checkpoint:
-        model, optimizer, history, run_tag, train_config, env_config = load_checkpoint(args.checkpoint)
-        model = model.to(device)
-        run_tag = raw_config.get('run_tag', run_tag)
+        checkpoint = load_checkpoint(args.checkpoint)
+        train_config = checkpoint['raw_train_config']
+        env_config = checkpoint['raw_env_config']
     else:
         env_config = raw_config['env_config']
         train_config = raw_config['train_mode_config']
-        run_tag = raw_config.get('run_tag', '')
-        model = TurboZeroResnet(ResNetConfig(**raw_config['model_config'])).to(device)
-        optimizer = torch.optim.SGD(model.parameters(), lr=raw_config['train_mode_config']['learning_rate'], momentum=raw_config['train_mode_config']['momentum'], weight_decay=raw_config['train_mode_config']['c_reg'])
-        history = init_history()
-
+        
+    run_tag = raw_config.get('run_tag', '')
     env_type = env_config['env_type']
     parallel_envs_train = train_config['parallel_envs']
     parallel_envs_test = train_config['test_config']['episodes_per_epoch']
     env_train = init_env(device, parallel_envs_train, env_config, args.debug)
     env_test = init_env(device, parallel_envs_test, env_config, args.debug)
+
+    if args.checkpoint:
+        model, optimizer = load_model_and_optimizer_from_checkpoint(checkpoint, env_train, device)
+        history = checkpoint['history']
+    else:
+        model = TurboZeroResnet(ResNetConfig(**raw_config['model_config'])).to(device)
+        optimizer = torch.optim.SGD(model.parameters(), lr=raw_config['train_mode_config']['learning_rate'], momentum=raw_config['train_mode_config']['momentum'], weight_decay=raw_config['train_mode_config']['c_reg'])
+        history = init_history()
+
     train_evaluator = init_evaluator(train_config['algo_config'], env_train, model)
     train_collector = init_collector(episode_memory_device, env_type, train_evaluator)
     test_evaluator = init_evaluator(train_config['test_config']['algo_config'], env_test, model)

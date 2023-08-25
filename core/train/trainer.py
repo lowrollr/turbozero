@@ -201,19 +201,4 @@ class Trainer:
         time_per_env_step = tottime / self.config.parallel_envs
         print(f'Stepped {self.config.parallel_envs} envs in {tottime:.4f} seconds ({time_per_env_step:.4f} seconds per step)')
 
-    
-
-def load_checkpoint(checkpoint_file: str):
-    checkpoint = torch.load(checkpoint_file, map_location=torch.device('cpu'))
-    history = checkpoint['history']
-    run_tag = checkpoint['run_tag']
-    raw_train_config = checkpoint['raw_train_config']
-    raw_env_config = checkpoint['raw_env_config']
-    model = TurboZeroResnet(checkpoint['model_arch_params'])
-    model.load_state_dict(checkpoint['model_state_dict'])
-    raw_train_config = checkpoint['raw_train_config']
-    optimizer = torch.optim.SGD(model.parameters(), raw_train_config['learning_rate'], raw_train_config['momentum'], raw_train_config['c_reg'])
-    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-    return model, optimizer, history, run_tag, raw_train_config, raw_env_config
-
 

@@ -3,8 +3,6 @@ env_config: {
   env_type: '2048',
 }
 model_config: { # overwritten if loading a checkpoint
-  input_size: [1, 4, 4],
-  policy_size: 4,
   res_channels: 16,
   res_blocks: 6,
   value_head_res_channels: 16,

@@ -14,7 +14,7 @@ from core.algorithms.evaluator import Evaluator
 from itertools import combinations
 from core.algorithms.load import init_evaluator
 from core.env import Env
-from core.train.trainer import load_checkpoint
+from core.utils.checkpoint import load_checkpoint, load_model_and_optimizer_from_checkpoint
 from core.utils.heatmap import annotate_heatmap, heatmap
 
 from envs.load import init_env
@@ -88,9 +88,7 @@ class Tournament:
     
     def init_competitor(self, config: dict) -> TournamentPlayer:
         if config.get('checkpoint'):
-            model, _, _, _, _, _ = load_checkpoint(config['checkpoint'])
-            model = model.to(self.device)
-            model.eval()
+            model, _ = load_model_and_optimizer_from_checkpoint(load_checkpoint(config['checkpoint']), self.env, self.device)
             evaluator = init_evaluator(config['algo_config'], self.env, model)
         else:
             evaluator = init_evaluator(config['algo_config'], self.env)

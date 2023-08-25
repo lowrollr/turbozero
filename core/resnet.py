@@ -11,8 +11,6 @@ from core.utils.custom_activations import load_activation
 
 @dataclass
 class ResNetConfig:
-    input_size: List[int]
-    policy_size: int
     res_channels: int
     res_blocks: int
     value_head_res_channels: int
@@ -56,11 +54,11 @@ class ResidualBlock(nn.Module):
 
 
 class TurboZeroResnet(nn.Module):
-    def __init__(self, config: ResNetConfig) -> None:
+    def __init__(self, config: ResNetConfig, input_shape: torch.Size, output_shape: torch.Size) -> None:
         super().__init__()
-        assert len(config.input_size) == 3  # (channels, height, width)
+        assert len(input_shape) == 3  # (channels, height, width)
         self.value_head_activation: Optional[torch.nn.Module] = load_activation(config.value_output_activation)
-        self.input_channels, self.input_height, self.input_width = config.input_size
+        self.input_channels, self.input_height, self.input_width = input_shape
 
         self.input_block = nn.Sequential(
             nn.Conv2d(self.input_channels, config.res_channels, kernel_size = config.kernel_size, stride = 1, padding = 'same', bias=False),
@@ -80,7 +78,7 @@ class TurboZeroResnet(nn.Module):
             nn.Linear(config.policy_head_res_channels * self.input_height * self.input_width, config.policy_fc_size, bias=False),
             nn.BatchNorm1d(config.policy_fc_size),
             nn.ReLU(),
-            nn.Linear(config.policy_fc_size, config.policy_size),
+            nn.Linear(config.policy_fc_size, output_shape),
             # we use cross entropy loss so no need for softmax
         )
 

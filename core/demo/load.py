@@ -4,7 +4,7 @@ import torch
 from core.algorithms.load import init_evaluator
 
 from core.demo.demo import Demo
-from core.train.trainer import load_checkpoint
+from utils.checkpoint import load_checkpoint, load_model_and_optimizer_from_checkpoint
 from envs.load import init_env
 from envs.othello.demo import OthelloDemo
 
@@ -13,14 +13,14 @@ def init_demo(env_config: dict, demo_config: dict, device: torch.device, *args, 
     env = init_env(device, 1, env_config, debug=False)
     evaluator1_config = demo_config['evaluator1_config']
     if evaluator1_config.get('checkpoint'):
-        model, _, _, _, _, _ = load_checkpoint(evaluator1_config['checkpoint'])
+        model, _, _, _, _, _ = load_model_and_optimizer_from_checkpoint(load_checkpoint(evaluator1_config['checkpoint']), env, device)
         evaluator1 = init_evaluator(evaluator1_config['algo_config'], env, model, *args, **kwargs)
     else:
         evaluator1 = init_evaluator(evaluator1_config['algo_config'], env, *args, **kwargs)
     if env_config['env_type'] == 'othello':
         evaluator2_config = demo_config['evaluator2_config']
         if evaluator2_config.get('checkpoint'):
-            model, _, _, _, _, _ = load_checkpoint(evaluator2_config['checkpoint'])
+            model, _, _, _, _, _ = load_model_and_optimizer_from_checkpoint(load_checkpoint(evaluator2_config['checkpoint']), env, device)
             evaluator2 = init_evaluator(evaluator2_config['algo_config'], env, model, *args, **kwargs)
         else:
             evaluator2 = init_evaluator(evaluator2_config['algo_config'], env, *args, **kwargs)
