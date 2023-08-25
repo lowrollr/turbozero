@@ -141,9 +141,8 @@ class Trainer:
         
     def train_epoch(self):
         new_episodes = 0
-        threshold_for_training_step = 0
+        threshold_for_training_step = self.config.episodes_per_minibatch
         while new_episodes < self.config.episodes_per_epoch:
-            threshold_for_training_step += self.config.episodes_per_minibatch
             while new_episodes < threshold_for_training_step:
                 finished_episodes, _ = self.collector.collect()
                 if finished_episodes:
@@ -152,7 +151,9 @@ class Trainer:
                         self.replay_memory.insert(episode)
                 self.add_collection_metrics(finished_episodes)
                 new_episodes += len(finished_episodes)
-            self.train_minibatch()
+            while new_episodes >= threshold_for_training_step:
+                threshold_for_training_step += self.config.episodes_per_minibatch
+                self.train_minibatch()
     
     def fill_replay_memory(self):
         while self.replay_memory.size() < self.config.replay_memory_min_size:
@@ -169,8 +170,9 @@ class Trainer:
             if self.tester.config.episodes_per_epoch > 0:
                 self.tester.collect_test_batch()
             self.save_checkpoint()
-        logging.info('Populating replay memory...')
-        self.fill_replay_memory()
+        if self.replay_memory.size() <= self.config.replay_memory_min_size:
+            logging.info('Populating replay memory...')
+            self.fill_replay_memory()
 
         while self.history.cur_epoch < epochs + 1 if epochs is not None else True:
             self.history.start_new_epoch()
