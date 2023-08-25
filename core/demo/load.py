@@ -4,7 +4,7 @@ import torch
 from core.algorithms.load import init_evaluator
 
 from core.demo.demo import Demo
-from utils.checkpoint import load_checkpoint, load_model_and_optimizer_from_checkpoint
+from core.utils.checkpoint import load_checkpoint, load_model_and_optimizer_from_checkpoint
 from envs.load import init_env
 from envs.othello.demo import OthelloDemo
 
