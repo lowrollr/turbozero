@@ -4,15 +4,10 @@ env_config: {
   board_size: 8
 }
 model_config: { # overwritten if loading a checkpoint
-  res_channels: 64,
+  res_channels: 128,
   res_blocks: 12,
-  value_head_res_channels: 64,
-  value_head_res_blocks: 2,
-  policy_head_res_channels: 64,
-  policy_head_res_blocks: 2,
   kernel_size: 3,
-  policy_fc_size: 32,
-  value_fc_size: 32,
+  value_fc_size: 256,
   value_output_activation: "tanh0to1"
 }
 train_mode_config: {
@@ -25,17 +20,17 @@ train_mode_config: {
     dirichlet_alpha: 0.45,
     dirichlet_epsilon: 0.25
   },
-  learning_rate: 0.2,
-  lr_decay_gamma: 0.75,
+  learning_rate: 0.02,
+  lr_decay_gamma: 0.9,
   momentum: 0.9,
   c_reg: 0.0001,
-  replay_memory_max_size: 50000,
-  replay_memory_min_size: 50000,
+  replay_memory_max_size: 75000,
+  replay_memory_min_size: 75000,
   parallel_envs: 8192,
   policy_factor: 1.0,
   minibatch_size: 2048,
   episodes_per_epoch: 25000,
-  episodes_per_minibatch: 50,
+  episodes_per_minibatch: 25,
   test_config: {
     algo_config: {
       name: 'alphazero',
@@ -46,7 +41,7 @@ train_mode_config: {
       dirichlet_alpha: 0.01,
       dirichlet_epsilon: 0.0
     },
-    episodes_per_epoch: 256,
+    episodes_per_epoch: 2048,
     baselines: [
       {
         name: 'greedy',

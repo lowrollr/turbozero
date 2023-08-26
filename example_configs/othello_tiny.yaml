@@ -4,14 +4,13 @@ env_config: {
   board_size: 8
 }
 model_config: { # overwritten if loading a checkpoint
-  res_channels: 8,
-  res_blocks: 2,
-  value_head_res_channels: 8,
+  res_channels: 16,
+  res_blocks: 4,
+  value_head_res_channels: 16,
   value_head_res_blocks: 1,
-  policy_head_res_channels: 8,
+  policy_head_res_channels: 16,
   policy_head_res_blocks: 1,
   kernel_size: 3,
-  policy_fc_size: 32,
   value_fc_size: 32,
   value_output_activation: "tanh0to1"
 }
@@ -19,8 +18,8 @@ train_mode_config: {
   algo_config: {
     name: "alphazero",
     temperature: 1.0,
-    num_iters: 50,
-    max_nodes: 50,
+    num_iters: 100,
+    max_nodes: 100,
     puct_coeff: 1.0,
     dirichlet_alpha: 0.45,
     dirichlet_epsilon: 0.25
@@ -28,25 +27,25 @@ train_mode_config: {
   learning_rate: 0.1,
   lr_decay_gamma: 0.8,
   momentum: 0.9,
-  c_reg: 0.0001,
+  c_reg: 0.01,
   replay_memory_max_size: 1000,
-  replay_memory_min_size: 10,
-  parallel_envs: 128,
+  replay_memory_min_size: 1000,
+  parallel_envs: 256,
   policy_factor: 1.0,
   minibatch_size: 256,
-  episodes_per_epoch: 128,
-  episodes_per_minibatch: 4,
+  episodes_per_epoch: 256,
+  episodes_per_minibatch: 16,
   test_config: {
     algo_config: {
       name: "alphazero",
       temperature: 0.0,
-      num_iters: 50,
-      max_nodes: 50,
+      num_iters: 100,
+      max_nodes: 100,
       puct_coeff: 1.0,
       dirichlet_alpha: 0.1,
       dirichlet_epsilon: 0.0
     },
-    episodes_per_epoch: 128,
+    episodes_per_epoch: 256,
     baselines: [
       {
         name: 'greedy',

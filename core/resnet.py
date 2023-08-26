@@ -18,7 +18,6 @@ class ResNetConfig:
     policy_head_res_channels: int
     policy_head_res_blocks: int
     kernel_size: int
-    policy_fc_size: int = 32
     value_fc_size: int = 32
     value_output_activation: str = ''
     
@@ -72,24 +71,23 @@ class TurboZeroResnet(nn.Module):
         )
 
         self.policy_head = nn.Sequential(
-            *[ResidualBlock(config.res_channels, config.policy_head_res_channels, config.kernel_size) \
-            for _ in range(config.policy_head_res_blocks)],
-            nn.Flatten(start_dim=1),
-            nn.Linear(config.policy_head_res_channels * self.input_height * self.input_width, config.policy_fc_size, bias=False),
-            nn.BatchNorm1d(config.policy_fc_size),
+            nn.Conv2d(config.res_channels, 2, kernel_size = 1, stride = 1, padding = 0, bias=False),
+            nn.BatchNorm2d(2),
             nn.ReLU(),
-            nn.Linear(config.policy_fc_size, output_shape[0]),
+            nn.Flatten(start_dim=1),
+            nn.Linear(2 * self.input_height * self.input_width, output_shape[0])
             # we use cross entropy loss so no need for softmax
         )
 
         self.value_head = nn.Sequential(
-            *[ResidualBlock(config.res_channels, config.value_head_res_channels, config.kernel_size) \
-            for _ in range(config.value_head_res_blocks)],
+            nn.Conv2d(config.res_channels, 1, kernel_size = 1, stride = 1, padding = 0, bias = False),
+            nn.BatchNorm2d(1),
+            nn.ReLU(),
             nn.Flatten(start_dim=1),
-            nn.Linear(config.value_head_res_channels * self.input_height * self.input_width, config.value_fc_size, bias=False),
-            nn.BatchNorm1d(config.value_fc_size),
+            nn.Linear(self.input_height * self.input_width, config.value_fc_size),
             nn.ReLU(),
             nn.Linear(config.value_fc_size, 1)
+            # value head activation handled in forward
         )
 
         self.config = config
