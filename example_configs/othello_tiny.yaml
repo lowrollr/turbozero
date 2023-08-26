@@ -6,10 +6,6 @@ env_config: {
 model_config: { # overwritten if loading a checkpoint
   res_channels: 16,
   res_blocks: 4,
-  value_head_res_channels: 16,
-  value_head_res_blocks: 1,
-  policy_head_res_channels: 16,
-  policy_head_res_blocks: 1,
   kernel_size: 3,
   value_fc_size: 32,
   value_output_activation: "tanh0to1"
