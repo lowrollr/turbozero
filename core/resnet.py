@@ -13,10 +13,6 @@ from core.utils.custom_activations import load_activation
 class ResNetConfig:
     res_channels: int
     res_blocks: int
-    value_head_res_channels: int
-    value_head_res_blocks: int
-    policy_head_res_channels: int
-    policy_head_res_blocks: int
     kernel_size: int
     value_fc_size: int = 32
     value_output_activation: str = ''
