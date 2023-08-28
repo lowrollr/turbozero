@@ -20,7 +20,7 @@ def init_history(log_results: bool = True):
             Metric(name='value_loss', xlabel='Step', ylabel='Loss', addons={'running_mean': 25}, maximize=False, alert_on_best=log_results, proper_name='Value Loss'),
             Metric(name='policy_loss', xlabel='Step', ylabel='Loss', addons={'running_mean': 25}, maximize=False, alert_on_best=log_results, proper_name='Policy Loss'),
             Metric(name='policy_accuracy', xlabel='Step', ylabel='Accuracy (%)', addons={'running_mean': 25}, maximize=True, alert_on_best=log_results, proper_name='Policy Accuracy'),
-            Metric(name='replay_memory_similarity', xlabel='Step', ylabel='Cos Similarity', addons={'running_mean': 25}, maximize=False, alert_on_best=log_results, proper_name='Replay Memory Similarity'),
+            Metric(name='replay_memory_similarity', xlabel='Step', ylabel='Jaccard Centroid Similarity', addons={'running_mean': 25}, maximize=False, alert_on_best=log_results, proper_name='Replay Memory Similarity'),
         ],
         episode_metrics=[],
         eval_metrics=[],
