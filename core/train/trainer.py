@@ -20,6 +20,7 @@ def init_history(log_results: bool = True):
             Metric(name='value_loss', xlabel='Step', ylabel='Loss', addons={'running_mean': 25}, maximize=False, alert_on_best=log_results, proper_name='Value Loss'),
             Metric(name='policy_loss', xlabel='Step', ylabel='Loss', addons={'running_mean': 25}, maximize=False, alert_on_best=log_results, proper_name='Policy Loss'),
             Metric(name='policy_accuracy', xlabel='Step', ylabel='Accuracy (%)', addons={'running_mean': 25}, maximize=True, alert_on_best=log_results, proper_name='Policy Accuracy'),
+            Metric(name='replay_memory_similarity', xlabel='Step', ylabel='Cos Similarity', addons={'running_mean': 25}, maximize=False, alert_on_best=log_results, proper_name='Replay Memory Similarity'),
         ],
         episode_metrics=[],
         eval_metrics=[],
@@ -89,12 +90,13 @@ class Trainer:
     def add_collection_metrics(self, episodes):
         raise NotImplementedError()
     
-    def add_train_metrics(self, policy_loss, value_loss, policy_accuracy, loss):
+    def add_train_metrics(self, policy_loss, value_loss, policy_accuracy, loss, similarity):
         self.history.add_training_data({
             'policy_loss': policy_loss,
             'value_loss': value_loss,
             'policy_accuracy': policy_accuracy,
-            'loss': loss
+            'loss': loss,
+            'replay_memory_similarity': similarity
         }, log=self.log_results)
 
     def add_epoch_metrics(self):
@@ -135,7 +137,8 @@ class Trainer:
         memory_size = self.replay_memory.size()
         if memory_size >= self.config.replay_memory_min_size:
             policy_loss, value_loss, polcy_accuracy, loss = self.training_step()
-            self.add_train_metrics(policy_loss, value_loss, polcy_accuracy, loss)
+            similarity = self.replay_memory.similarity()
+            self.add_train_metrics(policy_loss, value_loss, polcy_accuracy, loss, similarity)
         else:
             logging.info(f'Replay memory samples ({memory_size}) <= min samples ({self.config.replay_memory_min_size}), skipping training step')
         
