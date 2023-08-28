@@ -20,16 +20,9 @@ def jaccard_similarity(tensor1, tensor2):
     return jaccard
 
 
-def jaccard_centroid_similarity(data):
+def cosine_centroid_similarity(data):
+    centroid = data.mean(dim=0)
     
-    # Compute the centroid of the dataset
-    centroid = data.float().mean(dim=0).bool()
+    centroid_similarity = torch.nn.functional.cosine_similarity(data, centroid.unsqueeze(0), dim=1).mean().item()
     
-    # Compute the intersection and union
-    intersection = (data.bool() & centroid).float().sum(dim=(1, 2))
-    union = (data.bool() | centroid).float().sum(dim=(1, 2))
-    
-    # Compute the Jaccard similarities
-    jaccard_similarities = intersection / union
-    
-    return jaccard_similarities.mean().item()
+    return centroid_similarity

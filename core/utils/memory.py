@@ -1,6 +1,6 @@
 import random
 from typing import Optional
-from core.utils.utils import jaccard_centroid_similarity
+from core.utils.utils import cosine_centroid_similarity
 
 import torch
 from collections import deque
@@ -22,7 +22,7 @@ class ReplayMemory:
     
     def similarity(self):
         episodes = torch.stack([x[0] for x in self.sample(4096)])
-        return jaccard_centroid_similarity(episodes)
+        return cosine_centroid_similarity(episodes)
             
 class GameReplayMemory(ReplayMemory):
     def __init__(self, max_size=10000) -> None:
