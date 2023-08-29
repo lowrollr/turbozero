@@ -1,9 +1,7 @@
 cff-version: 1.2.0
-message: "If you use this software, please cite it using these metadata"
 authors:
-- family-names: "Jacob"
-  given-names: "Marshall"
-  orcid: "https://orcid.org/0000-0000-0000-0000"
-title: "My Research Software"
-abstract: vectorized implementation of AlphaZero written in PyTorch
+- family-names: "Marshall"
+  given-names: "Jacob"
+title: "TurboZero: Vectorized AlphaZero, MCTS, and Environments"
+abstract: vectorized implementations of RL algorithms and environments, including AlphaZero/MCTS
 url: "https://github.com/lowrollr/turbozero"
