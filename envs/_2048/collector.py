@@ -19,15 +19,15 @@ class _2048Collector(Collector):
         for episode in terminated_episodes:
             episode_with_rewards = []
             moves = len(episode)
-            for (inputs, visits) in episode:
-                episode_with_rewards.append((inputs, visits, torch.tensor(moves, dtype=torch.float32, requires_grad=False, device=inputs.device)))
+            for (inputs, visits, legal_actions) in episode:
+                episode_with_rewards.append((inputs, visits, torch.tensor(moves, dtype=torch.float32, requires_grad=False, device=inputs.device), legal_actions))
                 moves -= 1
             episodes.append(episode_with_rewards)
         return episodes
 
     def postprocess(self, terminated_episodes):
         # TODO: too many lists
-        inputs, probs, rewards = zip(*terminated_episodes)
+        inputs, probs, rewards, legal_actions = zip(*terminated_episodes)
         rotated_inputs = []
         for i in inputs:
             for k in range(4):
@@ -40,9 +40,13 @@ class _2048Collector(Collector):
             # up -> left
             for k in range(4):
                 rotated_probs.append(torch.roll(p, k))
+        rotated_legal_actions = []
+        for l in legal_actions:
+            for k in range(4):
+                rotated_legal_actions.append(torch.roll(l, k))
         rotated_rewards = []
         for r in rewards:
             rotated_rewards.extend([r] * 4)
         
-        return list(zip(rotated_inputs, rotated_probs, rotated_rewards))
+        return list(zip(rotated_inputs, rotated_probs, rotated_rewards, rotated_legal_actions))
             

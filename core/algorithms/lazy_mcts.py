@@ -82,8 +82,9 @@ class LazyMCTS(Evaluator):
                 return final_values
             else:
                 legal_actions = self.env.get_legal_actions()
+                policy_logits = (policy_logits * legal_actions) + (torch.finfo(torch.float32).min * (~legal_actions))
                 distribution = torch.nn.functional.softmax(
-                    policy_logits, dim=1) * legal_actions
+                    policy_logits, dim=1)
                 next_actions = torch.multinomial(distribution + self.env.is_terminal().unsqueeze(1), 1, replacement=True).flatten()
                 self.env.step(next_actions)
 
@@ -92,6 +93,7 @@ class LazyMCTS(Evaluator):
         with torch.no_grad():
             policy_logits, initial_values = evaluation_fn(self.env)
         policy_logits = torch.nn.functional.softmax(policy_logits, dim=1)
+        policy_logits = (policy_logits * legal_actions) + (torch.finfo(torch.float32).min * (~legal_actions))
         saved = self.env.save_node()
 
         for _ in range(iters):
@@ -106,4 +108,4 @@ class LazyMCTS(Evaluator):
             self.action_scores[self.env.env_indices, actions] += values
             self.env.load_node(self.all_nodes, saved)
 
-        return self.visit_counts, initial_values
+        return self.visit_counts / self.visit_counts.sum(dim=1, keepdim=True), initial_values

@@ -36,8 +36,9 @@ class Collector:
     
     def collect_step(self):
         self.evaluator.model.eval()
+        legal_actions = self.evaluator.env.get_legal_actions().clone()
         initial_states, probs, _, actions, terminated = self.evaluator.step()
-        self.episode_memory.insert(initial_states, probs)
+        self.episode_memory.insert(initial_states, probs, legal_actions)
         return actions, terminated
     
     def assign_rewards(self, terminated_episodes, terminated):

@@ -152,18 +152,21 @@ def load_tester(args, interactive: bool) -> Tester:
     else:
         device = torch.device('cpu')
     episode_memory_device = torch.device('cpu')
-
+    parallel_envs = test_config['episodes_per_epoch']
     if args.checkpoint:
-        model, _, history, run_tag, _, env_config = load_checkpoint(args.checkpoint)
-        
+        checkpoint = load_checkpoint(args.checkpoint)
+        env_config = checkpoint['raw_env_config']
+        env = init_env(device, parallel_envs, env_config, args.debug)
+        model, _ = load_model_and_optimizer_from_checkpoint(checkpoint, env, device)
+        history = checkpoint['history']
+
     else:
         print('No checkpoint provided, please provide a checkpoint with --checkpoint')
         exit(1)
 
-    parallel_envs = test_config['episodes_per_epoch']
+    
     model = model.to(device)
-    run_tag = raw_config.get('run_tag', run_tag)
-    env = init_env(device, parallel_envs, env_config, args.debug)
+    
     evaluator = init_evaluator(test_config['algo_config'], env, model)
     collector = init_collector(episode_memory_device, env_config['env_type'], evaluator)
     tester = init_tester(test_config, collector, model, history, None, args.verbose)

@@ -29,14 +29,14 @@ class OthelloCollector(Collector):
                 ti = term_indices[i]
                 p1_reward = rewards[ti]
                 p2_reward = 1 - p1_reward
-                for ei, (inputs, visits) in enumerate(episode):
+                for ei, (inputs, visits, legal_actions) in enumerate(episode):
                     if visits.sum(): # only append states where a move was possible
-                        episode_with_rewards.append((inputs, visits, torch.tensor(p2_reward if ei%2 else p1_reward, dtype=torch.float32, requires_grad=False, device=inputs.device)))
+                        episode_with_rewards.append((inputs, visits, torch.tensor(p2_reward if ei%2 else p1_reward, dtype=torch.float32, requires_grad=False, device=inputs.device), legal_actions))
                 episodes.append(episode_with_rewards)
         return episodes
     
     def postprocess(self, terminated_episodes):
-        inputs, probs, rewards = zip(*terminated_episodes)
+        inputs, probs, rewards, legal_actions = zip(*terminated_episodes)
         rotated_inputs = []
         for i in inputs:
             for k in range(4):
@@ -52,8 +52,15 @@ class OthelloCollector(Collector):
                 rotated_probs.append(new_p)
                 new_p = new_p[self.rotated_action_ids]
 
+        rotated_legal_actions = []
+        for l in legal_actions:
+            new_l = l
+            for k in range(4):
+                rotated_legal_actions.append(new_l)
+                new_l = new_l[self.rotated_action_ids]
+
         rotated_rewards = []
         for r in rewards:
             rotated_rewards.extend([r] * 4)
         
-        return list(zip(rotated_inputs, rotated_probs, rotated_rewards))
+        return list(zip(rotated_inputs, rotated_probs, rotated_rewards, rotated_legal_actions))

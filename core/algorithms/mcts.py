@@ -163,6 +163,9 @@ class MCTS(Evaluator):
             policy_logits, _ = evaluation_fn(self.env)
 
         # set root node policy, apply dirilecht noise
+        legal_actions = self.env.get_legal_actions()
+        policy_logits = (policy_logits * legal_actions) + (torch.finfo(torch.float32).min * (~legal_actions))
+
         self.p_vals[self.env_indices, self.cur_nodes] = (torch.softmax(policy_logits, dim=1) * (1 - self.dirichlet_e)) \
                 + (self.dirilecht.rsample(torch.Size((self.parallel_envs,))) * self.dirichlet_e)
         
@@ -211,6 +214,9 @@ class MCTS(Evaluator):
             with torch.no_grad():
                 policy_logits, values = evaluation_fn(self.env)
 
+            legal_actions = self.env.get_legal_actions()
+
+            policy_logits = (policy_logits * legal_actions) + (torch.finfo(torch.float32).min * (~legal_actions))
             # store the policy
             self.p_vals[self.env_indices, self.cur_nodes] = torch.softmax(policy_logits, dim=1)
 
@@ -259,7 +265,8 @@ class MCTS(Evaluator):
         # return visited counts at the root node
         max_inds = self.n_vals[self.env_indices, self.cur_nodes].argmax(dim=1)
         max_q_vals = self.w_vals[self.env_indices, self.cur_nodes, max_inds] / self.n_vals[self.env_indices, self.cur_nodes, max_inds]
-        return self.n_vals[self.env_indices, self.cur_nodes], max_q_vals
+        n_vals_sum = self.n_vals[self.env_indices, self.cur_nodes].sum(dim=1, keepdim=True)
+        return self.n_vals[self.env_indices, self.cur_nodes] / n_vals_sum, max_q_vals
     
     def propogate_root_subtrees(self):
         self.subtrees.zero_()

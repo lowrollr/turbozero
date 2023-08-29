@@ -42,12 +42,13 @@ class EpisodeMemory:
         self.parallel_envs = parallel_envs
         self.device = device
 
-    def insert(self, inputs: torch.Tensor, action_visits: torch.Tensor):
+    def insert(self, inputs: torch.Tensor, action_visits: torch.Tensor, legal_actions: torch.Tensor):
         inputs = inputs.clone().to(device=self.device)
         action_visits = action_visits.clone().to(device=self.device)
+        legal_actions = legal_actions.clone().to(device=self.device)
 
         for i in range(self.parallel_envs):
-            self.memory[i].append((inputs[i], action_visits[i]))
+            self.memory[i].append((inputs[i], action_visits[i], legal_actions[i]))
 
     def pop_terminated_episodes(self, terminated: torch.Tensor):
         episodes = []

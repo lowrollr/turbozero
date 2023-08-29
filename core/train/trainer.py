@@ -90,20 +90,19 @@ class Trainer:
     def add_collection_metrics(self, episodes):
         raise NotImplementedError()
     
-    def add_train_metrics(self, policy_loss, value_loss, policy_accuracy, loss, similarity):
+    def add_train_metrics(self, policy_loss, value_loss, policy_accuracy, loss):
         self.history.add_training_data({
             'policy_loss': policy_loss,
             'value_loss': value_loss,
             'policy_accuracy': policy_accuracy,
-            'loss': loss,
-            'replay_memory_similarity': similarity
+            'loss': loss
         }, log=self.log_results)
 
     def add_epoch_metrics(self):
         raise NotImplementedError()
     
     def training_step(self):
-        inputs, target_policy, target_value = zip(*self.replay_memory.sample(self.config.minibatch_size))
+        inputs, target_policy, target_value, legal_actions = zip(*self.replay_memory.sample(self.config.minibatch_size))
         inputs = torch.stack(inputs).to(device=self.device)
 
         target_policy = torch.stack(target_policy).to(device=self.device)
@@ -112,14 +111,21 @@ class Trainer:
         target_value = torch.stack(target_value).to(device=self.device)
         target_value = self.value_transform(target_value)
 
-        self.optimizer.zero_grad()
-        policy, value = self.model(inputs)
+        legal_actions = torch.stack(legal_actions).to(device=self.device)
 
-        policy_loss = self.config.policy_factor * torch.nn.functional.cross_entropy(policy, target_policy)
-        value_loss = torch.nn.functional.mse_loss(value.flatten(), target_value)
+        self.optimizer.zero_grad()
+        policy_logits, values = self.model(inputs)
+        # multiply policy logits by legal actions mask, set illegal actions to smallest possible negative float32
+        # consistent with open_spiel implementation
+        policy_logits = (policy_logits * legal_actions) + (torch.finfo(torch.float32).min * (~legal_actions))
+
+        policy_loss = self.config.policy_factor * torch.nn.functional.cross_entropy(policy_logits, target_policy)
+        # multiply by 2 since most other implementations have values rangeing from -1 to 1 whereas ours range from 0 to 1
+        # this makes values loss a bit more comparable
+        value_loss = torch.nn.functional.mse_loss(values.flatten() * 2, target_value * 2)
         loss = policy_loss + value_loss
 
-        policy_accuracy = torch.eq(torch.argmax(target_policy, dim=1), torch.argmax(policy, dim=1)).float().mean()
+        policy_accuracy = torch.eq(torch.argmax(target_policy, dim=1), torch.argmax(policy_logits, dim=1)).float().mean()
 
         loss.backward()
         self.optimizer.step()
@@ -127,7 +133,7 @@ class Trainer:
         return policy_loss.item(), value_loss.item(), policy_accuracy.item(), loss.item()
     
     def policy_transform(self, policy):
-        return policy.float().softmax(dim=1)
+        return policy
     
     def value_transform(self, value):
         return value
@@ -137,8 +143,7 @@ class Trainer:
         memory_size = self.replay_memory.size()
         if memory_size >= self.config.replay_memory_min_size:
             policy_loss, value_loss, polcy_accuracy, loss = self.training_step()
-            similarity = self.replay_memory.similarity()
-            self.add_train_metrics(policy_loss, value_loss, polcy_accuracy, loss, similarity)
+            self.add_train_metrics(policy_loss, value_loss, polcy_accuracy, loss)
         else:
             logging.info(f'Replay memory samples ({memory_size}) <= min samples ({self.config.replay_memory_min_size}), skipping training step')
         
