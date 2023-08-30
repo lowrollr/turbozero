@@ -86,9 +86,9 @@ class TwoPlayerTester(Tester):
         actions, terminated = self.collector.collect_step()
         envs_to_reset = terminated | reset
         
-        baseline.step_evaluator(actions, envs_to_reset)
         self.collector.evaluator.env.terminated[:split] = True
         self.collector.evaluator.env.reset_terminated_states()
+        self.collector.evaluator.reset_terminated_envs(envs_to_reset)
         starting_players = (self.collector.evaluator.env.cur_players.clone() - 1) % self.collector.evaluator.env.num_players
         use_other_evaluator = True
         while not completed_episodes.all():

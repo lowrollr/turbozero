@@ -68,9 +68,11 @@ class Tournament:
         scores = torch.zeros(self.n_games, dtype=torch.float32, device=self.env.device, requires_grad=False)
         _, _, _, actions, terminated = evaluator1.step()
         envs_to_reset = terminated | reset
-        evaluator2.step_evaluator(actions, envs_to_reset)
+        
         evaluator1.env.terminated[:split] = True
         evaluator1.env.reset_terminated_states()
+        evaluator1.reset_terminated_envs(envs_to_reset)
+        
         starting_players = (evaluator1.env.cur_players.clone() - 1) % 2
         use_second_evaluator = True
         while not completed_episodes.all():
@@ -195,8 +197,9 @@ def load_tournament(path: str, device: torch.device):
         device,
         tournament_data.get('name', 'tournament')
     )
+    tournament.results = tournament_data['results']
     for competitor_config in tournament_data['competitor_configs'].values():
         tournament.competitors.append(tournament.init_competitor(competitor_config))
     tournament.competitors_dict = {competitor.name: competitor for competitor in tournament.competitors}
-    tournament.results = tournament_data['results']
+    
     return tournament
