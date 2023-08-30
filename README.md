@@ -42,9 +42,7 @@ Evaluating against these algorithms can be baked into the evaluation step of a t
 
 ### Tournaments / Calculating Elo
 
-Available for multi-player environments, tournaments provide a great way to gauge the relative strength of an algorithm in relation to various opponents. This allows the user to evaluate the effectiveness of adjusting parameters of an algorithm, or analyze how effective increasing the size of a neural network is in terms of performance. In addition, tournaments allow algorithms to be compared against a large cohort of baseline algorithms. Where applicable, I provide tournament data for each environment that will allow you to test your algorithms and models against a pre-populated field. Tournaments are simulated many times in order to generate accurate Elo ratings. Once simulation is complete, in addition to ratings a matchup heatmap is also generated:
-
-![heatmap](./misc/heatmap.png)
+Available for multi-player environments, tournaments provide a great way to gauge the relative strength of an algorithm in relation to various opponents. This allows the user to evaluate the effectiveness of adjusting parameters of an algorithm, or analyze how effective increasing the size of a neural network is in terms of performance. In addition, tournaments allow algorithms to be compared against a large cohort of baseline algorithms. Where applicable, I provide tournament data for each environment that will allow you to test your algorithms and models against a pre-populated field. 
 
 For more about tournaments, and configuration options, see the [Tournaments](https://github.com/lowrollr/turbozero/wiki/Tournaments) wiki page.
 
