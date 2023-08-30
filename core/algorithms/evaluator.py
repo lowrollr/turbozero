@@ -42,6 +42,9 @@ class Evaluator:
         actions = self.choose_actions(probs)
         terminated = self.step_env(actions)
         return initial_states, probs, values, actions, terminated
+    
+    def reset_terminated_envs(self, terminated) -> None:
+        pass
 
 class TrainableEvaluator(Evaluator):
     def __init__(self, env: Env, config: EvaluatorConfig, model: torch.nn.Module):
