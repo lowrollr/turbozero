@@ -67,11 +67,13 @@ class Tournament:
         completed_episodes = torch.zeros(self.n_games, dtype=torch.bool, device=self.env.device, requires_grad=False)
         scores = torch.zeros(self.n_games, dtype=torch.float32, device=self.env.device, requires_grad=False)
         _, _, _, actions, terminated = evaluator1.step()
+        
         envs_to_reset = terminated | reset
         
         evaluator1.env.terminated[:split] = True
         evaluator1.env.reset_terminated_states()
         evaluator1.reset_terminated_envs(envs_to_reset)
+        evaluator2.step_evaluator(actions, envs_to_reset)
         
         starting_players = (evaluator1.env.cur_players.clone() - 1) % 2
         use_second_evaluator = True

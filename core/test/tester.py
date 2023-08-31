@@ -85,6 +85,7 @@ class TwoPlayerTester(Tester):
         scores = torch.zeros(self.config.episodes_per_epoch, dtype=torch.float, device=self.collector.evaluator.env.device, requires_grad=False)
         actions, terminated = self.collector.collect_step()
         envs_to_reset = terminated | reset
+        baseline.step_evaluator(actions, terminated)
         
         self.collector.evaluator.env.terminated[:split] = True
         self.collector.evaluator.env.reset_terminated_states()
