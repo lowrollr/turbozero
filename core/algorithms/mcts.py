@@ -146,7 +146,7 @@ class MCTS(Evaluator):
         n_sum = visits.sum(dim=1, keepdim=True)
         probs = self.p_vals[self.env_indices, self.cur_nodes]
         puct_scores = q_values + (self.puct_coeff * probs * torch.sqrt(1 + n_sum) / (1 + visits))
-
+        puct_scores *= self.env.get_legal_actions()
         return torch.argmax(puct_scores, dim=1)
 
     def evaluate(self, evaluation_fn: Callable) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
