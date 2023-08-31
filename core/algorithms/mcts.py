@@ -78,7 +78,7 @@ class MCTS(Evaluator):
         self.actions = torch.zeros(
             (self.parallel_envs, self.max_nodes), dtype=torch.int64, device=self.device, requires_grad=False)
         # stores the indices of each node visited since leaving the root node
-        self.visits = torch.zeros((self.parallel_envs, self.max_nodes),
+        self.visits = torch.zeros((self.parallel_envs, 1 + self.max_nodes),
                                   dtype=torch.int64, device=self.device, requires_grad=False)
         self.visits[:, 0] = 1
         # stores the next empty node index for each env, used for expansion
