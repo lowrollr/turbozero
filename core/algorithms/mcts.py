@@ -76,7 +76,7 @@ class MCTS(Evaluator):
         # MCTS
         # stores actions taken since leaving the root node, used for backpropagation
         self.actions = torch.zeros(
-            (self.parallel_envs, self.max_nodes), dtype=torch.int64, device=self.device, requires_grad=False)
+            (self.parallel_envs, self.max_nodes + 1), dtype=torch.int64, device=self.device, requires_grad=False)
         # stores the indices of each node visited since leaving the root node
         self.visits = torch.zeros((self.parallel_envs, 1 + self.max_nodes),
                                   dtype=torch.int64, device=self.device, requires_grad=False)
@@ -106,8 +106,8 @@ class MCTS(Evaluator):
         self.slots_aranged = torch.arange(self.total_slots, dtype=torch.int64, device=self.device, requires_grad=False)
 
     def build_reward_indices(self, num_players: int) -> torch.Tensor:
-        num_repeats = math.ceil(self.max_nodes / num_players)
-        return torch.tensor([1] + [0] * (num_players - 1), dtype=torch.bool, device=self.device).repeat(num_repeats)[:self.max_nodes].view(1, -1)
+        num_repeats = math.ceil((self.max_nodes + 1) / num_players)
+        return torch.tensor([1] + [0] * (num_players - 1), dtype=torch.bool, device=self.device).repeat(num_repeats)[:self.max_nodes+1].view(1, -1)
     
     def step_evaluator(self, actions, terminated):
         self.load_subtree(actions)
