@@ -1,5 +1,6 @@
 
 
+from envs.othello.evaluators.edax import Edax, EdaxConfig
 import torch
 from core.algorithms.alphazero import AlphaZero, AlphaZeroConfig
 from core.algorithms.baselines.greedy import GreedyBaseline, GreedyConfig
@@ -32,6 +33,9 @@ def init_evaluator(algo_config: dict, env: Env, *args, **kwargs):
     elif algo_type == 'greedy_mcts':
         config = GreedyMCTSConfig(**algo_config)
         return GreedyMCTS(env, config, *args, **kwargs)
+    elif algo_type == 'edax':
+        config = EdaxConfig(**algo_config)
+        return Edax(env, config, *args, **kwargs)
     elif algo_type == 'greedy':
         config = GreedyConfig(**algo_config)
         return GreedyBaseline(env, config, *args, **kwargs)
