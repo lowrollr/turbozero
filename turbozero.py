@@ -186,7 +186,7 @@ def load_tournament(args, interactive: bool) -> Tuple[Tournament, List[dict]]:
     else:
         env = init_env(device, tournament_config['num_games'], raw_config['env_config'], args.debug)
         tournament_name = tournament_config.get('tournament_name', 'tournament')
-        tournament = Tournament(env, tournament_config['num_games'], tournament_config['num_tournaments'], device, tournament_name, raw_config['env_config'])
+        tournament = Tournament(env, tournament_config['num_games'], tournament_config['num_tournaments'], device, tournament_name)
 
     competitors = tournament_config['competitors']
         

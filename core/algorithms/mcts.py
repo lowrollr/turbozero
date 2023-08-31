@@ -142,18 +142,12 @@ class MCTS(Evaluator):
         zero_visits = (visits == 0)
         visits_augmented = visits + zero_visits
         q_values = self.w_vals[self.env_indices, self.cur_nodes] / visits_augmented
-        # always prioritize unvisited nodes (TODO: is this desired behavior?)
-        q_values += self.very_positive_value * zero_visits
 
         n_sum = visits.sum(dim=1, keepdim=True)
         probs = self.p_vals[self.env_indices, self.cur_nodes]
-        puct_scores = q_values + (self.puct_coeff * probs * torch.sqrt(n_sum + 1) / (1 + visits))
+        puct_scores = q_values + (self.puct_coeff * probs * torch.sqrt(1 + n_sum) / (1 + visits))
 
-        legal_actions = self.env.get_legal_actions()
-        # even with puct score of zero only a legal action will be chosen
-        legal_puct_scores = (puct_scores * legal_actions) + (self.epsilon * legal_actions)
-
-        return rand_argmax_2d(legal_puct_scores).flatten()
+        return torch.argmax(puct_scores, dim=1)
 
     def evaluate(self, evaluation_fn: Callable) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         self.reset_search()

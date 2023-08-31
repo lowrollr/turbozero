@@ -54,6 +54,8 @@ class TwoPlayerDemo(Demo):
         self.evaluator2.reset()
         p1_turn = random.choice([True, False])
         p1_started = p1_turn
+        p1_evaluation = 0.5
+        p2_evaluation = 0.5
         actions = None
         while True:
             
@@ -65,13 +67,21 @@ class TwoPlayerDemo(Demo):
             if self.manual_step:
                 input('Press any key to continue...')
             _, _, value, actions, terminated = active_evaluator.step()
+            terminated = terminated.clone()
+            if p1_turn:
+                p1_evaluation = value[0] if value is not None else None
+            else:
+                p2_evaluation = value[0] if value is not None else None
             other_evaluator.step_evaluator(actions, terminated)
             if interactive:
                 clear_output(wait=True)
             else:
                 os.system('clear')
-            if print_evaluation and value is not None:
-                print(f'Evaluation: {value[0]}')
+            if print_evaluation:
+                if p1_evaluation is not None:
+                    print(f'{self.evaluator.__class__.__name__} Evaluation: {p1_evaluation}')
+                if p2_evaluation is not None:
+                    print(f'{self.evaluator2.__class__.__name__} Evaluation: {p2_evaluation}')
             if terminated:
                 print('Game over!')
                 print('Final state:')
