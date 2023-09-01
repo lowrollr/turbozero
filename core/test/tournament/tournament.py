@@ -5,6 +5,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 import logging
 from random import shuffle
+import random
 from typing import Dict, List, Optional, Tuple
 
 import torch
@@ -16,6 +17,7 @@ from core.algorithms.load import init_evaluator
 from core.env import Env
 from core.utils.checkpoint import load_checkpoint, load_model_and_optimizer_from_checkpoint
 from core.utils.heatmap import annotate_heatmap, heatmap
+from core.test.tester import collect_games
 
 from envs.load import init_env
 
@@ -55,40 +57,6 @@ class Tournament:
         self.results: List[GameResult] = []
         self.device = device
         self.name = name
-
-    def play_games(self, evaluator1, evaluator2) -> List[float]: # assumes zero-sum, 2 player game
-        evaluator1.env = self.env
-        evaluator2.env = self.env
-        evaluator1.reset()
-        evaluator2.reset()
-        split = self.n_games // 2
-        reset = torch.zeros(self.n_games, dtype=torch.bool, device=self.env.device, requires_grad=False)
-        reset[:split] = True
-        completed_episodes = torch.zeros(self.n_games, dtype=torch.bool, device=self.env.device, requires_grad=False)
-        scores = torch.zeros(self.n_games, dtype=torch.float32, device=self.env.device, requires_grad=False)
-        _, _, _, actions, terminated = evaluator1.step()
-        
-        envs_to_reset = terminated | reset
-        
-        evaluator1.env.terminated[:split] = True
-        evaluator1.env.reset_terminated_states()
-        evaluator1.reset_terminated_envs(envs_to_reset)
-        evaluator2.step_evaluator(actions, envs_to_reset)
-        
-        starting_players = (evaluator1.env.cur_players.clone() - 1) % 2
-        use_second_evaluator = True
-        while not completed_episodes.all():
-            if use_second_evaluator:
-                _, _, _, actions, terminated = evaluator2.step()
-                evaluator1.step_evaluator(actions, terminated)
-            else:
-                _, _, _, actions, terminated = evaluator1.step()
-                evaluator2.step_evaluator(actions, terminated)
-            rewards = evaluator1.env.get_rewards(starting_players)
-            scores += rewards * terminated * (~completed_episodes)
-            completed_episodes |= terminated
-            use_second_evaluator = not use_second_evaluator
-        return scores.cpu().tolist()
     
     def init_competitor(self, config: dict) -> TournamentPlayer:
         if config.get('checkpoint'):
@@ -102,7 +70,9 @@ class Tournament:
         new_competitor = self.init_competitor(new_competitor_config)
         if new_competitor.name not in self.competitors_dict:
             for competitor in self.competitors:
-                p1_scores = self.play_games(competitor.evaluator, new_competitor.evaluator)
+                competitor.evaluator.env = self.env
+                new_competitor.evaluator.env = self.env
+                p1_scores = collect_games(competitor.evaluator, new_competitor.evaluator, self.n_games, self.device)
                 new_results = []
                 for p1_score in p1_scores:
                     new_results.append(GameResult(
@@ -181,7 +151,6 @@ class Tournament:
             fig.tight_layout()
             plt.show()
 
-
         return final_ratings
     
     def run(self, competitors: List[dict], interactive: bool = True): 
@@ -205,3 +174,7 @@ def load_tournament(path: str, device: torch.device):
     tournament.competitors_dict = {competitor.name: competitor for competitor in tournament.competitors}
     
     return tournament
+
+
+
+    

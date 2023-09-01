@@ -111,16 +111,16 @@ class MCTS(Evaluator):
     
     def step_evaluator(self, actions, terminated):
         self.load_subtree(actions)
-        self.reset_terminated_envs(terminated)
+        self.reset_evaluator_states(terminated)
 
-    def reset_terminated_envs(self, terminated: torch.Tensor) -> None:
-        self.next_idx[terminated] = 0
-        self.n_vals[terminated] = 0
-        self.w_vals[terminated] = 0
-        self.p_vals[terminated] = 0
-        self.next_empty[terminated] = 2
-        self.max_depths[terminated] = 1
-        self.parents[terminated] = 0
+    def reset_evaluator_states(self, evals_to_reset: torch.Tensor) -> None:
+        self.next_idx[evals_to_reset] = 0
+        self.n_vals[evals_to_reset] = 0
+        self.w_vals[evals_to_reset] = 0
+        self.p_vals[evals_to_reset] = 0
+        self.next_empty[evals_to_reset] = 2
+        self.max_depths[evals_to_reset] = 1
+        self.parents[evals_to_reset] = 0
 
     def reset(self, seed=None) -> None:
         self.env.reset(seed=seed)

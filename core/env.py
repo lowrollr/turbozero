@@ -41,7 +41,7 @@ class Env:
     def __str__(self):
         return str(self.states)
         
-    def reset(self, seed=None):
+    def reset(self, seed: Optional[int] = None):
         raise NotImplementedError()
     
     def step(self, actions) -> torch.Tensor:
@@ -83,7 +83,7 @@ class Env:
     def get_stochastic_progressions(self) -> Tuple[torch.Tensor, torch.Tensor]:
         raise NotImplementedError()
     
-    def reset_terminated_states(self):
+    def reset_terminated_states(self, seed: Optional[int] = None):
         raise NotImplementedError()
     
     def next_player(self):

@@ -1,6 +1,7 @@
 
 
 from copy import deepcopy
+import random
 import torch
 from typing import List, Optional
 from core.algorithms.baselines.baseline import Baseline
@@ -75,44 +76,13 @@ class TwoPlayerTester(Tester):
             baseline: Baseline = init_evaluator(baseline_config, collector.evaluator.env, evaluator=collector.evaluator, best_model=model, best_model_optimizer=optimizer)
             self.baselines.append(baseline)
             baseline.add_metrics(self.history)
-
-    def evaluate_against_baseline(self, baseline: Evaluator):
-        self.collector.reset()
-        split = self.config.episodes_per_epoch // 2
-        reset = torch.zeros(self.config.episodes_per_epoch, dtype=torch.bool, device=self.collector.evaluator.env.device, requires_grad=False)
-        reset[:split] = True
-        completed_episodes = torch.zeros(self.config.episodes_per_epoch, dtype=torch.bool, device=self.collector.evaluator.env.device, requires_grad=False)
-        scores = torch.zeros(self.config.episodes_per_epoch, dtype=torch.float, device=self.collector.evaluator.env.device, requires_grad=False)
-        actions, terminated = self.collector.collect_step()
-        envs_to_reset = terminated | reset
-        baseline.step_evaluator(actions, terminated)
-        
-        self.collector.evaluator.env.terminated[:split] = True
-        self.collector.evaluator.env.reset_terminated_states()
-        self.collector.evaluator.reset_terminated_envs(envs_to_reset)
-        starting_players = (self.collector.evaluator.env.cur_players.clone() - 1) % self.collector.evaluator.env.num_players
-        use_other_evaluator = True
-        while not completed_episodes.all():
-            if use_other_evaluator:
-                _, _, _, actions, terminated = baseline.step()
-                self.collector.evaluator.step_evaluator(actions, terminated)
-            else:
-                actions, terminated = self.collector.collect_step()
-                baseline.step_evaluator(actions, terminated)
-            rewards = self.collector.evaluator.env.get_rewards(starting_players)
-            scores += rewards * terminated * (~completed_episodes)
-            completed_episodes |= terminated
-            use_other_evaluator = not use_other_evaluator
-
-        wins = (scores == 1).sum().cpu().clone()
-        draws = (scores == 0.5).sum().cpu().clone()
-        losses = (scores == 0).sum().cpu().clone()
-
-        return wins, draws, losses
     
     def collect_test_batch(self):
         for baseline in self.baselines:
-            wins, draws, losses = self.evaluate_against_baseline(baseline)
+            scores = collect_games(self.collector.evaluator, baseline, self.config.episodes_per_epoch, self.device)
+            wins = (scores == 1).sum().cpu().clone()
+            draws = (scores == 0.5).sum().cpu().clone()
+            losses = (scores == 0).sum().cpu().clone()
             win_pct = wins / self.config.episodes_per_epoch
             if isinstance(baseline, BestModelBaseline):
                 if win_pct > self.config.improvement_threshold_pct:
@@ -126,4 +96,41 @@ class TwoPlayerTester(Tester):
 
 
 
-        
+def collect_games(evaluator1: Evaluator, evaluator2: Evaluator, num_games: int, device: torch.device) -> torch.Tensor:
+    
+    seed = random.randint(0, 2**32 - 1)
+    evaluator1.reset(seed)
+    evaluator2.reset(seed)
+    split = num_games // 2
+    reset = torch.zeros(num_games, dtype=torch.bool, device=device, requires_grad=False)
+    reset[:split] = True
+
+    completed_episodes = torch.zeros(num_games, dtype=torch.bool, device=device, requires_grad=False)
+    scores = torch.zeros(num_games, dtype=torch.float32, device=device, requires_grad=False)
+
+    _, _, _, actions, terminated = evaluator1.step()
+
+    envs_to_reset = terminated | reset
+
+    evaluator1.env.terminated[:split] = True
+    evaluator1.env.reset_terminated_states(seed)
+    evaluator1.reset_evaluator_states(envs_to_reset)
+    evaluator2.step_evaluator(actions, envs_to_reset)
+
+    starting_players = (evaluator1.env.cur_players.clone() - 1) % 2
+    use_second_evaluator = True
+    while not completed_episodes.all():
+        if use_second_evaluator:
+            _, _, _, actions, terminated = evaluator2.step()
+            evaluator1.step_evaluator(actions, terminated)
+        else:
+            _, _, _, actions, terminated = evaluator1.step()
+            evaluator2.step_evaluator(actions, terminated)
+        rewards = evaluator1.env.get_rewards(starting_players)
+        scores += rewards * terminated * (~completed_episodes)
+        completed_episodes |= terminated
+        use_second_evaluator = not use_second_evaluator
+    
+    
+
+    return scores

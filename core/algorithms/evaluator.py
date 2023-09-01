@@ -19,8 +19,8 @@ class Evaluator:
         self.args = args
         self.kwargs = kwargs
 
-    def reset(self, seed=None) -> None:
-        self.env.reset(seed=seed)
+    def reset(self, seed=None) -> int:
+        return self.env.reset(seed=seed)
 
     def evaluate(self, *args) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         # returns probability distribution over actions, and optionally the value of the current state
@@ -45,7 +45,7 @@ class Evaluator:
         terminated = self.step_env(actions)
         return initial_states, probs, values, actions, terminated
     
-    def reset_terminated_envs(self, terminated) -> None:
+    def reset_evaluator_states(self, evals_to_reset: torch.Tensor) -> None:
         pass
 
 class TrainableEvaluator(Evaluator):

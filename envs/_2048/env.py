@@ -69,19 +69,27 @@ class _2048Env(Env):
 
         self.saved_states = self.states.clone()
 
-    def reset(self, seed=None) -> None:
+    def reset(self, seed=None) -> int:
         if seed is not None:
             torch.manual_seed(seed)
+        else:
+            seed = 0
         self.states.zero_()
         self.terminated.zero_()
         self.apply_stochastic_progressions()
         self.apply_stochastic_progressions()
+        return seed
     
-    def reset_terminated_states(self):
+    def reset_terminated_states(self, seed: Optional[int] = None) -> int:
+        if seed is not None:
+            torch.manual_seed()
+        else:
+            seed = 0
         self.states *= torch.logical_not(self.terminated).view(self.parallel_envs, 1, 1, 1)
         self.apply_stochastic_progressions(self.terminated)
         self.apply_stochastic_progressions(self.terminated)
         self.terminated.zero_()
+        return seed
 
     def next_turn(self):
         self.apply_stochastic_progressions(torch.logical_not(self.terminated))
