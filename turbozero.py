@@ -3,6 +3,7 @@ from typing import List, Tuple, Union
 import torch
 import logging
 import argparse
+import sys
 from core.algorithms.load import init_evaluator
 from core.demo.demo import Demo
 from core.demo.load import init_demo
@@ -11,11 +12,16 @@ from core.test.tester import  Tester
 from core.test.tournament.tournament import Tournament, TournamentPlayer, load_tournament as load_tournament_checkpoint
 from core.train.trainer import Trainer, init_history
 from core.utils.checkpoint import load_checkpoint, load_model_and_optimizer_from_checkpoint
-
+import matplotlib.pyplot as plt
 import yaml
 
 from envs.load import init_collector, init_env, init_tester, init_trainer
 
+def setup_logging(logfile: str):
+    if logfile:
+        logging.basicConfig(filename=logfile, filemode='a', level=logging.INFO, format='%(asctime)s %(message)s')
+    else:
+        logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s', handlers=[logging.StreamHandler(sys.stdout)])
 
 def load_trainer_nb(
     config_file: str,
@@ -33,11 +39,11 @@ def load_trainer_nb(
         verbose=verbose_logging,
         checkpoint=checkpoint
     )
+    setup_logging(args.logfile)
     
-    if not args.logfile:
-        args.logfile = 'turbozero.log'
-    logging.basicConfig(filename=args.logfile, filemode='a', level=logging.INFO, format='%(asctime)s %(message)s')
-    return load_trainer(args, interactive=True)
+    trainer = load_trainer(args, interactive=True)
+    plt.close('all')
+    return trainer
 
 def load_tester_nb(
     config_file: str,
@@ -55,11 +61,10 @@ def load_tester_nb(
         verbose=verbose_logging,
         checkpoint=checkpoint
     )
-    
-    if not args.logfile:
-        args.logfile = 'turbozero.log'
-    logging.basicConfig(filename=args.logfile, filemode='a', level=logging.INFO, format='%(asctime)s %(message)s')
-    return load_tester(args, interactive=True)
+    setup_logging(args.logfile)
+    tester = load_tester(args, interactive=True)
+    plt.close('all')
+    return tester
 
 def load_tournament_nb(
     config_file: str,
@@ -77,9 +82,7 @@ def load_tournament_nb(
         verbose=verbose_logging,
         checkpoint=tournament_checkpoint
     )
-    if not args.logfile:
-        args.logfile = 'turbozero.log'
-    logging.basicConfig(filename=args.logfile, filemode='a', level=logging.INFO, format='%(asctime)s %(message)s')
+    setup_logging(args.logfile)
     return load_tournament(args, interactive=True)
 
 def load_demo_nb(
@@ -193,7 +196,6 @@ def load_tournament(args, interactive: bool) -> Tuple[Tournament, List[dict]]:
     return tournament, competitors
 
 def load_demo(args) -> Demo:
-    device = torch.device('cpu')
     raw_config = load_config(args.config)
     return init_demo(raw_config['env_config'], raw_config['demo_config'], torch.device('cpu'))
 
@@ -217,9 +219,7 @@ if __name__ == '__main__':
         print('No config file provided, please provide a config file with --config')
         exit(1)
 
-    if not args.logfile:
-        args.logfile = 'turbozero.log'
-    logging.basicConfig(filename=args.logfile, filemode='a', level=logging.INFO, format='%(asctime)s %(message)s')
+    setup_logging(args.logfile)
 
     if args.mode == 'train':
         trainer = load_trainer(args, interactive=False)

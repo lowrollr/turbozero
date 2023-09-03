@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 from typing import List, Optional, Tuple, Type
+
+from tqdm import tqdm
 import torch
 import logging
 from pathlib import Path
@@ -150,6 +152,7 @@ class Trainer:
     def train_epoch(self):
         new_episodes = 0
         threshold_for_training_step = self.config.episodes_per_minibatch
+        progress_bar = tqdm(total=self.config.episodes_per_epoch, desc='Collecting self-play episodes...')
         while new_episodes < self.config.episodes_per_epoch:
             while new_episodes < threshold_for_training_step:
                 finished_episodes, _ = self.collector.collect()
@@ -157,6 +160,7 @@ class Trainer:
                     for episode in finished_episodes:
                         episode = self.collector.postprocess(episode)
                         self.replay_memory.insert(episode)
+                        progress_bar.update(1)
                 self.add_collection_metrics(finished_episodes)
                 new_episodes += len(finished_episodes)
             while new_episodes >= threshold_for_training_step:
@@ -164,27 +168,30 @@ class Trainer:
                 self.train_minibatch()
     
     def fill_replay_memory(self):
+        progress_bar = tqdm(total=self.config.replay_memory_min_size, desc='Populating Replay Memory...')
         while self.replay_memory.size() < self.config.replay_memory_min_size:
             finished_episodes, _ = self.collector.collect()
             if finished_episodes:
                 for episode in finished_episodes:
                     episode = self.collector.postprocess(episode)
                     self.replay_memory.insert(episode)
+                    progress_bar.update(1)
         
 
     def training_loop(self, epochs: Optional[int] = None):
+        total_epochs = self.history.cur_epoch + epochs if epochs is not None else None
         if self.history.cur_epoch == 0:
             # run initial test batch with untrained model
             if self.tester.config.episodes_per_epoch > 0:
                 self.tester.collect_test_batch()
             self.save_checkpoint()
+            
         if self.replay_memory.size() <= self.config.replay_memory_min_size:
             logging.info('Populating replay memory...')
             self.fill_replay_memory()
 
-        while self.history.cur_epoch < epochs + 1 if epochs is not None else True:
+        while self.history.cur_epoch < total_epochs if total_epochs is not None else True:
             self.history.start_new_epoch()
-
             self.train_epoch()
 
             if self.tester.config.episodes_per_epoch > 0:

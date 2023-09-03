@@ -2,6 +2,7 @@
 
 from copy import deepcopy
 import random
+from tqdm import tqdm
 import torch
 from typing import List, Optional
 from core.algorithms.baselines.baseline import Baseline
@@ -97,7 +98,7 @@ class TwoPlayerTester(Tester):
 
 
 def collect_games(evaluator1: Evaluator, evaluator2: Evaluator, num_games: int, device: torch.device) -> torch.Tensor:
-    
+    progress_bar = tqdm(total=num_games, desc='Collecting games...')
     seed = random.randint(0, 2**32 - 1)
     evaluator1.reset(seed)
     evaluator2.reset(seed)
@@ -128,6 +129,8 @@ def collect_games(evaluator1: Evaluator, evaluator2: Evaluator, num_games: int, 
             evaluator2.step_evaluator(actions, terminated)
         rewards = evaluator1.env.get_rewards(starting_players)
         scores += rewards * terminated * (~completed_episodes)
+        new_completed = (terminated & (~completed_episodes)).long().sum().item()
+        progress_bar.update(new_completed)
         completed_episodes |= terminated
         use_second_evaluator = not use_second_evaluator
     
