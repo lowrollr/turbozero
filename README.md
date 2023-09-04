@@ -53,7 +53,7 @@ Demo mode provides the option to step through a game alongside an algorithm, whi
 
 ## Quickstart
 ### Google Colab
-I've included a *Hello World* Google Colab notebook that runs through all of the main features of TurboZero and lets the user train and play against their own *Othello* AlphaZero model in only a few hours: [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](LINK TO HELLO WORLD HERE)
+I've included a *Hello World* Google Colab notebook that runs through all of the main features of TurboZero and lets the user train and play against their own *Othello* AlphaZero model in only a few hours: [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/lowrollr/turbozero/blob/main/notebooks/hello_world_colab.ipynb)
 
 If you'd rather run TurboZero on your own machine, follow the setup instructions below.
 
