@@ -152,7 +152,7 @@ class Trainer:
     def train_epoch(self):
         new_episodes = 0
         threshold_for_training_step = self.config.episodes_per_minibatch
-        progress_bar = tqdm(total=self.config.episodes_per_epoch, desc='Collecting self-play episodes...', leave=True)
+        progress_bar = tqdm(total=self.config.episodes_per_epoch, desc='Collecting self-play episodes...', leave=True, position=0)
         while new_episodes < self.config.episodes_per_epoch:
             while new_episodes < threshold_for_training_step:
                 finished_episodes, _ = self.collector.collect()
@@ -168,7 +168,7 @@ class Trainer:
                 self.train_minibatch()
     
     def fill_replay_memory(self):
-        progress_bar = tqdm(total=self.config.replay_memory_min_size, desc='Populating Replay Memory...', leave=True)
+        progress_bar = tqdm(total=self.config.replay_memory_min_size, desc='Populating Replay Memory...', leave=True, position=0)
         while self.replay_memory.size() < self.config.replay_memory_min_size:
             finished_episodes, _ = self.collector.collect()
             if finished_episodes:
