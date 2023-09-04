@@ -119,7 +119,7 @@ python turbozero.py --mode=demo --config=./example_configs/othello_demo.yaml
 For more information on demo coniguration, see the [Demo](https://github.com/lowrollr/turbozero/wiki/Demo) wiki page.
 ## Future Work
 Major future initiatives include:
-* implementing AZ improvements from [Clausen et al., 2021](https://www.scitepress.org/Papers/2021/102459/102459.pdf) as optinal configurations
+* implementing AZ improvements from [Clausen et al., 2021](https://www.scitepress.org/Papers/2021/102459/102459.pdf) as optional configurations
 * Stochastic AlphaZero
 * MuZero
 * Investigate integration with 3rd-party vectorized environments
@@ -131,7 +131,7 @@ Major future initiatives include:
 If you use this project and encounter an issue, error, or undesired behavior, please submit a [GitHub Issue](https://github.com/lowrollr/turbozero/issues) and I will do my best to resolve it as soon as I can. You may also contact me directly via `hello@jacob.land`.
 
 ## Contributing 
-Contributions, imrpovements, and fixes are more than welcome! I've written a lot in the [Wiki](https://github.com/lowrollr/turbozero/wiki), I hope it provides enough information to get started. For now I don't have a formal process for this, other than creating a [Pull Request](https://github.com/lowrollr/turbozero/pulls).
+Contributions, improvements, and fixes are more than welcome! I've written a lot in the [Wiki](https://github.com/lowrollr/turbozero/wiki), I hope it provides enough information to get started. For now I don't have a formal process for this, other than creating a [Pull Request](https://github.com/lowrollr/turbozero/pulls).
 
 ## Cite This Work
 If you found this work useful, please cite it with:
