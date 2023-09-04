@@ -82,7 +82,7 @@ class OthelloEnv(Env):
         book_actions = []
         while ind < len(lines[0]):
 
-            actions = torch.tensor([coord_to_action_id(line[ind:ind+2]) for line in lines], dtype=torch.long)
+            actions = torch.tensor([coord_to_action_id(line[ind:ind+2]) for line in lines], dtype=torch.long, device=self.device)
             book_actions.append(actions)
             ind += 2
         return torch.stack(book_actions)
