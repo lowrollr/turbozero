@@ -19,9 +19,9 @@ from envs.load import init_collector, init_env, init_tester, init_trainer
 
 def setup_logging(logfile: str):
     if logfile:
-        logging.basicConfig(filename=logfile, filemode='a', level=logging.INFO, format='%(asctime)s %(message)s')
+        logging.basicConfig(filename=logfile, filemode='a', level=logging.INFO, format='%(asctime)s %(message)s', force=True)
     else:
-        logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s', handlers=[logging.StreamHandler(sys.stdout)])
+        logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s', handlers=[logging.StreamHandler(sys.stdout)], force=True)
 
 def load_trainer_nb(
     config_file: str,
