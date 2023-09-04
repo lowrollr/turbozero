@@ -63,6 +63,8 @@ The following commands will install poetry (dependency managaement), clone the r
 ```terminal
 curl -sSL https://install.python-poetry.org | python3 - && export PATH="/root/.local/bin:$PATH" && git clone https://github.com/lowrollr/turbozero.git && cd turbozero && poetry install && poetry run python -m ipykernel install --user --name turbozero
 ```
+This will allow you to have access to the proper dependencies in Jupyter Notebooks by connecting to the `turbozero` kernel.
+
 You can run scripts on the command-line by creating a shell using 
 ```terminal
 poetry shell
