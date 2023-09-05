@@ -65,10 +65,9 @@ class LazyMCTS(Evaluator):
         puct_scores = q_values + \
             (self.puct_coeff * probs * torch.sqrt(n_sum + 1) / (1 + self.visit_counts))
 
-        # even with puct score of zero only a legal action will be chosen
-        puct_scores *= self.env.get_legal_actions()
+        puct_scores *= legal_actions
         return torch.argmax(puct_scores, dim=1)
-
+    
     def iterate(self, evaluation_fn: Callable, depth: int, rewards: torch.Tensor) -> torch.Tensor:  # type: ignore
         while depth > 0:
             with torch.no_grad():
@@ -91,8 +90,8 @@ class LazyMCTS(Evaluator):
         legal_actions = self.env.get_legal_actions()
         with torch.no_grad():
             policy_logits, initial_values = evaluation_fn(self.env)
-        policy_logits = torch.nn.functional.softmax(policy_logits, dim=1)
         policy_logits = (policy_logits * legal_actions) + (torch.finfo(torch.float32).min * (~legal_actions))
+        policy_logits = torch.nn.functional.softmax(policy_logits, dim=1)
         saved = self.env.save_node()
 
         for _ in range(iters):
