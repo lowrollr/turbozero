@@ -29,9 +29,7 @@ class MCTS(Evaluator):
         self.max_nodes = config.max_nodes if config.max_nodes is not None else self.iters
         # C in the PUCT formula, controls exploration vs exploitation
         self.puct_coeff = config.puct_coeff
-        # a positive value outside of the reward domain (e.g. 1e8) used to initialize the W-values of newly expanded nodes while preserving exploration order according to P-values
-        self.very_positive_value = env.very_positive_value
-
+        
         self.dirichlet_a = config.dirichlet_alpha
         self.dirichlet_e = config.dirichlet_epsilon
 

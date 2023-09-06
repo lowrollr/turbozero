@@ -17,8 +17,7 @@ class Env:
         state_shape: torch.Size, 
         policy_shape: torch.Size, 
         value_shape: torch.Size,
-        debug: bool = False,
-        very_positive_value: float = 1e8
+        debug: bool = False
     ):
         self.config = config
         self.parallel_envs = parallel_envs
@@ -36,7 +35,6 @@ class Env:
         self.env_indices = torch.arange(self.parallel_envs, device=device, requires_grad=False)
 
         self.device = device
-        self.very_positive_value = very_positive_value
     
     def __str__(self):
         return str(self.states)

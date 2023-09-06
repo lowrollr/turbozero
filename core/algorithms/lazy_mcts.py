@@ -37,10 +37,6 @@ class LazyMCTS(Evaluator):
         self.policy_rollouts = config.num_policy_rollouts
         self.rollout_depth = config.rollout_depth
 
-        # TODO: this is not an elegant solution at all but we need a large, positive, non-infinite value
-        # this requires implementations to think carefully about choosing this value, which should be unnecessary
-        self.very_positive_value = env.very_positive_value
-
         self.all_nodes = torch.ones(env.parallel_envs, dtype=torch.bool, device=self.device)
 
     def reset(self, seed=None) -> None:
