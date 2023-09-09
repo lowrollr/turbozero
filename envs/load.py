@@ -51,7 +51,8 @@ def init_tester(
     model: torch.nn.Module,
     history: TrainingMetrics,
     optimizer: Optional[torch.optim.Optimizer],
-    log_results: bool
+    log_results: bool,
+    debug: bool
 ):
     if collector.evaluator.env.num_players == 2:
         return OthelloTester(
@@ -60,7 +61,8 @@ def init_tester(
             model=model,
             optimizer=optimizer,
             history=history,
-            log_results=log_results
+            log_results=log_results,
+            debug=debug
         )
     elif collector.evaluator.env.num_players == 1:
         return _2048Tester(
@@ -69,7 +71,8 @@ def init_tester(
             model=model,
             optimizer=optimizer,
             history=history,
-            log_results=log_results
+            log_results=log_results,
+            debug=debug
         )
     else:
         raise NotImplementedError(f'Tester for {collector.evaluator.env.num_players} players not supported')
@@ -86,7 +89,8 @@ def init_trainer(
     history: TrainingMetrics,
     log_results: bool,
     interactive: bool,
-    run_tag: str = ''
+    run_tag: str = '',
+    debug: bool = False
 ):
     trainer_config = TrainerConfig(**train_config)
     if env_type == 'othello':
@@ -104,7 +108,8 @@ def init_trainer(
             history = history,
             log_results=log_results,
             interactive=interactive,
-            run_tag = run_tag
+            run_tag = run_tag,
+            debug = debug
         )
     elif env_type == '2048':
         assert isinstance(collector, _2048Collector)
@@ -120,7 +125,8 @@ def init_trainer(
             history = history,
             log_results=log_results,
             interactive=interactive,
-            run_tag = run_tag
+            run_tag = run_tag,
+            debug = debug
         )
     else:
         logging.warn(f'No trainer found for environment {env_type}')
@@ -136,6 +142,7 @@ def init_trainer(
             history = history,
             log_results=log_results,
             interactive=interactive,
-            run_tag = run_tag
+            run_tag = run_tag,
+            debug = debug
         )
             

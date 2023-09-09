@@ -62,6 +62,7 @@ class Trainer:
         log_results: bool = True,
         interactive: bool = True,
         run_tag: str = 'model',
+        debug: bool = False
     ):
         self.collector = collector
         self.tester = tester
@@ -76,6 +77,7 @@ class Trainer:
         self.raw_train_config = raw_train_config
         self.raw_env_config = raw_env_config
         self.scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=self.config.lr_decay_gamma)
+        self.debug = debug
         
 
         self.history = history 
@@ -152,7 +154,8 @@ class Trainer:
     def train_epoch(self):
         new_episodes = 0
         threshold_for_training_step = self.config.episodes_per_minibatch
-        progress_bar = tqdm(total=self.config.episodes_per_epoch, desc='Collecting self-play episodes...', leave=True, position=0)
+        if not self.debug:
+            progress_bar = tqdm(total=self.config.episodes_per_epoch, desc='Collecting self-play episodes...', leave=True, position=0)
         while new_episodes < self.config.episodes_per_epoch:
             while new_episodes < threshold_for_training_step:
                 finished_episodes, _ = self.collector.collect()
@@ -160,7 +163,8 @@ class Trainer:
                     for episode in finished_episodes:
                         episode = self.collector.postprocess(episode)
                         self.replay_memory.insert(episode)
-                        progress_bar.update(1)
+                        if not self.debug:
+                            progress_bar.update(1)
                 self.add_collection_metrics(finished_episodes)
                 new_episodes += len(finished_episodes)
             while new_episodes >= threshold_for_training_step:
@@ -168,14 +172,16 @@ class Trainer:
                 self.train_minibatch()
     
     def fill_replay_memory(self):
-        progress_bar = tqdm(total=self.config.replay_memory_min_size, desc='Populating Replay Memory...', leave=True, position=0)
+        if not self.debug:
+            progress_bar = tqdm(total=self.config.replay_memory_min_size, desc='Populating Replay Memory...', leave=True, position=0)
         while self.replay_memory.size() < self.config.replay_memory_min_size:
             finished_episodes, _ = self.collector.collect()
             if finished_episodes:
                 for episode in finished_episodes:
                     episode = self.collector.postprocess(episode)
                     self.replay_memory.insert(episode)
-                    progress_bar.update(1)
+                    if not self.debug:
+                        progress_bar.update(1)
         
 
     def training_loop(self, epochs: Optional[int] = None):

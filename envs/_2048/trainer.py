@@ -23,6 +23,7 @@ class _2048Trainer(Trainer):
         log_results: bool = True,
         interactive: bool = True,
         run_tag: str = '2048',
+        debug: bool = False
     ):
         super().__init__(
             config=config,
@@ -36,7 +37,8 @@ class _2048Trainer(Trainer):
             history=history,
             log_results=log_results,
             interactive=interactive,
-            run_tag=run_tag
+            run_tag=run_tag,
+            debug=debug
         )
         if self.history.cur_epoch == 0:
             self.history.episode_metrics.update({

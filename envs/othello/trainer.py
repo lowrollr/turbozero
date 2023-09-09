@@ -27,7 +27,8 @@ class OthelloTrainer(Trainer):
         history: TrainingMetrics,
         log_results: bool = True,
         interactive: bool = True,
-        run_tag: str = 'othello'
+        run_tag: str = 'othello',
+        debug: bool = False
     ):
         super().__init__(
             config=config,
@@ -41,7 +42,8 @@ class OthelloTrainer(Trainer):
             history=history,
             log_results=log_results,
             interactive=interactive,
-            run_tag=run_tag
+            run_tag=run_tag,
+            debug=debug
         )
     
     def add_collection_metrics(self, episodes):

@@ -28,6 +28,7 @@ class Tester:
         history: TrainingMetrics,
         optimizer: Optional[torch.optim.Optimizer] = None,
         log_results: bool = True,
+        debug: bool = False
     ):
         self.config = config
         self.model = model
@@ -36,6 +37,7 @@ class Tester:
         self.device = self.collector.evaluator.env.device
         self.history = history
         self.log_results = log_results
+        self.debug = debug
 
     def add_evaluation_metrics(self, episodes):
         raise NotImplementedError()
@@ -68,9 +70,10 @@ class TwoPlayerTester(Tester):
         model: torch.nn.Module, 
         history: TrainingMetrics,
         optimizer: Optional[torch.optim.Optimizer] = None,
-        log_results: bool = True
+        log_results: bool = True,
+        debug: bool = False
     ):
-        super().__init__(collector, config, model, history, optimizer, log_results)
+        super().__init__(collector, config, model, history, optimizer, log_results, debug)
         self.config: TwoPlayerTesterConfig
         self.baselines = []
         for baseline_config in config.baselines:
@@ -80,7 +83,7 @@ class TwoPlayerTester(Tester):
     
     def collect_test_batch(self):
         for baseline in self.baselines:
-            scores = collect_games(self.collector.evaluator, baseline, self.config.episodes_per_epoch, self.device)
+            scores = collect_games(self.collector.evaluator, baseline, self.config.episodes_per_epoch, self.device, debug=self.debug)
             wins = (scores == 1).sum().cpu().clone()
             draws = (scores == 0.5).sum().cpu().clone()
             losses = (scores == 0).sum().cpu().clone()
@@ -97,8 +100,9 @@ class TwoPlayerTester(Tester):
 
 
 
-def collect_games(evaluator1: Evaluator, evaluator2: Evaluator, num_games: int, device: torch.device) -> torch.Tensor:
-    progress_bar = tqdm(total=num_games, desc='Collecting games...', leave=True, position=0)
+def collect_games(evaluator1: Evaluator, evaluator2: Evaluator, num_games: int, device: torch.device, debug: bool) -> torch.Tensor:
+    if not debug:
+        progress_bar = tqdm(total=num_games, desc='Collecting games...', leave=True, position=0)
     seed = random.randint(0, 2**32 - 1)
     evaluator1.reset(seed)
     evaluator2.reset(seed)
@@ -129,11 +133,11 @@ def collect_games(evaluator1: Evaluator, evaluator2: Evaluator, num_games: int, 
             evaluator2.step_evaluator(actions, terminated)
         rewards = evaluator1.env.get_rewards(starting_players)
         scores += rewards * terminated * (~completed_episodes)
-        new_completed = (terminated & (~completed_episodes)).long().sum().item()
-        progress_bar.update(new_completed)
         completed_episodes |= terminated
         use_second_evaluator = not use_second_evaluator
-    
+        if not debug:
+            new_completed = (terminated & (~completed_episodes)).long().sum().item()
+            progress_bar.update(new_completed)
     
 
     return scores

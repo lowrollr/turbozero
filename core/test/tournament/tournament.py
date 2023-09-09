@@ -48,7 +48,7 @@ class GameResult:
 
 
 class Tournament:
-    def __init__(self, env: Env, n_games: int, n_tournaments: int, device: torch.device, name: str):
+    def __init__(self, env: Env, n_games: int, n_tournaments: int, device: torch.device, name: str, debug: bool = False):
         self.competitors = []
         self.competitors_dict = dict()
         self.env = env
@@ -57,6 +57,7 @@ class Tournament:
         self.results: List[GameResult] = []
         self.device = device
         self.name = name
+        self.debug = debug
     
     def init_competitor(self, config: dict) -> TournamentPlayer:
         if config.get('checkpoint'):
@@ -72,7 +73,7 @@ class Tournament:
             for competitor in self.competitors:
                 competitor.evaluator.env = self.env
                 new_competitor.evaluator.env = self.env
-                p1_scores = collect_games(competitor.evaluator, new_competitor.evaluator, self.n_games, self.device)
+                p1_scores = collect_games(competitor.evaluator, new_competitor.evaluator, self.n_games, self.device, self.debug)
                 new_results = []
                 for p1_score in p1_scores:
                     new_results.append(GameResult(

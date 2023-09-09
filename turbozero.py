@@ -141,8 +141,8 @@ def load_trainer(args, interactive: bool) -> Trainer:
     train_collector = init_collector(episode_memory_device, env_type, train_evaluator)
     test_evaluator = init_evaluator(train_config['test_config']['algo_config'], env_test, model)
     test_collector = init_collector(episode_memory_device, env_type, test_evaluator)
-    tester = init_tester(train_config['test_config'], test_collector, model, history, optimizer, args.verbose)
-    trainer = init_trainer(device, env_type, train_collector, tester, model, optimizer, train_config, env_config, history, args.verbose, interactive, run_tag)
+    tester = init_tester(train_config['test_config'], test_collector, model, history, optimizer, args.verbose, args.debug)
+    trainer = init_trainer(device, env_type, train_collector, tester, model, optimizer, train_config, env_config, history, args.verbose, interactive, run_tag, debug=args.debug)
     return trainer
 
 def load_tester(args, interactive: bool) -> Tester:
@@ -172,7 +172,7 @@ def load_tester(args, interactive: bool) -> Tester:
     
     evaluator = init_evaluator(test_config['algo_config'], env, model)
     collector = init_collector(episode_memory_device, env_config['env_type'], evaluator)
-    tester = init_tester(test_config, collector, model, history, None, args.verbose)
+    tester = init_tester(test_config, collector, model, history, None, args.verbose, args.debug)
     return tester
 
 def load_tournament(args, interactive: bool) -> Tuple[Tournament, List[dict]]:
@@ -189,7 +189,7 @@ def load_tournament(args, interactive: bool) -> Tuple[Tournament, List[dict]]:
     else:
         env = init_env(device, tournament_config['num_games'], raw_config['env_config'], args.debug)
         tournament_name = tournament_config.get('tournament_name', 'tournament')
-        tournament = Tournament(env, tournament_config['num_games'], tournament_config['num_tournaments'], device, tournament_name)
+        tournament = Tournament(env, tournament_config['num_games'], tournament_config['num_tournaments'], device, tournament_name, args.debug)
 
     competitors = tournament_config['competitors']
         
