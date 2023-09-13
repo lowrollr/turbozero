@@ -133,11 +133,10 @@ def collect_games(evaluator1: Evaluator, evaluator2: Evaluator, num_games: int, 
             evaluator2.step_evaluator(actions, terminated)
         rewards = evaluator1.env.get_rewards(starting_players)
         scores += rewards * terminated * (~completed_episodes)
+        new_completed = (terminated & (~completed_episodes)).long().sum().item()
         completed_episodes |= terminated
         use_second_evaluator = not use_second_evaluator
         if not debug:
-            new_completed = (terminated & (~completed_episodes)).long().sum().item()
             progress_bar.update(new_completed)
-    
 
     return scores
