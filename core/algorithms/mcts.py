@@ -92,7 +92,7 @@ class MCTS(Evaluator):
         
         self.reward_indices = self.build_reward_indices(env.num_players)
         assert self.dirichlet_a != 0
-        self.dirilecht = torch.distributions.dirichlet.Dirichlet(torch.full((self.policy_size,), self.dirichlet_a, device=self.device, dtype=torch.float32, requires_grad=False))
+        self.dirichlet = torch.distributions.dirichlet.Dirichlet(torch.full((self.policy_size,), self.dirichlet_a, device=self.device, dtype=torch.float32, requires_grad=False))
         
         self.max_depths = torch.ones(
             (self.parallel_envs,), dtype=torch.int64, device=self.device, requires_grad=False
@@ -158,12 +158,12 @@ class MCTS(Evaluator):
         with torch.no_grad():
             policy_logits, _ = evaluation_fn(self.env)
 
-        # set root node policy, apply dirilecht noise
+        # set root node policy, apply dirichlet noise
         legal_actions = self.env.get_legal_actions()
         policy_logits = (policy_logits * legal_actions) + (torch.finfo(torch.float32).min * (~legal_actions))
 
         self.p_vals[self.env_indices, self.cur_nodes] = (torch.softmax(policy_logits, dim=1) * (1 - self.dirichlet_e)) \
-                + (self.dirilecht.rsample(torch.Size((self.parallel_envs,))) * self.dirichlet_e)
+                + (self.dirichlet.rsample(torch.Size((self.parallel_envs,))) * self.dirichlet_e)
         
         # save root node, so that we can load it again when a leaf node is reached
         saved = self.env.save_node()
