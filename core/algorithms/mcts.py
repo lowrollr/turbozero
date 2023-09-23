@@ -109,6 +109,7 @@ class MCTS(Evaluator):
     
     def step_evaluator(self, actions, terminated):
         self.load_subtree(actions)
+        # self.reset()
         self.reset_evaluator_states(terminated)
 
     def reset_evaluator_states(self, evals_to_reset: torch.Tensor) -> None:
@@ -126,6 +127,9 @@ class MCTS(Evaluator):
         self.n_vals.zero_()
         self.w_vals.zero_()
         self.p_vals.zero_()
+        self.next_empty.fill_(2)
+        self.max_depths.fill_(1)
+        self.parents.zero_()
         self.reset_search()
 
     def reset_search(self) -> None:
@@ -281,9 +285,8 @@ class MCTS(Evaluator):
         old_subtree_idxs = self.slots_aranged * new_nodes
 
         self.next_empty = torch.amax(translation, dim=1) + 1
-        self.next_empty.clamp_(min=2)
-
         erase = self.slots_aranged * (self.slots_aranged >= self.next_empty.view(-1, 1))
+        self.next_empty.clamp_(min=2)
         
         self.w_vals[self.env_indices_expnd, translation] = self.w_vals[self.env_indices_expnd, old_subtree_idxs]
         self.w_vals[self.env_indices_expnd, erase] = 0
