@@ -141,7 +141,7 @@ def load_trainer(args, interactive: bool) -> Trainer:
     train_collector = init_collector(episode_memory_device, env_type, train_evaluator)
     test_evaluator = init_evaluator(train_config['test_config']['algo_config'], env_test, model)
     test_collector = init_collector(episode_memory_device, env_type, test_evaluator)
-    tester = init_tester(train_config['test_config'], test_collector, model, history, optimizer, args.verbose, args.debug)
+    tester = init_tester(train_config['test_config'], env_type, test_collector, model, history, optimizer, args.verbose, args.debug)
     trainer = init_trainer(device, env_type, train_collector, tester, model, optimizer, train_config, env_config, history, args.verbose, interactive, run_tag, debug=args.debug)
     return trainer
 
@@ -169,10 +169,10 @@ def load_tester(args, interactive: bool) -> Tester:
 
     
     model = model.to(device)
-    
+    env_type = env_config['env_type']
     evaluator = init_evaluator(test_config['algo_config'], env, model)
-    collector = init_collector(episode_memory_device, env_config['env_type'], evaluator)
-    tester = init_tester(test_config, collector, model, history, None, args.verbose, args.debug)
+    collector = init_collector(episode_memory_device, env_type, evaluator)
+    tester = init_tester(test_config, env_type, collector, model, history, None, args.verbose, args.debug)
     return tester
 
 def load_tournament(args, interactive: bool) -> Tuple[Tournament, List[dict]]:

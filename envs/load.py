@@ -1,11 +1,10 @@
 
-from dataclasses import dataclass
+
 import logging
+from typing import Optional
 import torch
-from typing import Optional, Tuple, Union
 from core.algorithms.evaluator import Evaluator
 
-from core.env import EnvConfig
 from core.resnet import TurboZeroResnet
 from core.test.tester import TesterConfig, Tester, TwoPlayerTesterConfig, TwoPlayerTester
 from core.train.collector import Collector
@@ -14,6 +13,10 @@ from core.utils.history import TrainingMetrics
 from envs._2048.collector import _2048Collector
 from envs._2048.tester import _2048Tester
 from envs._2048.trainer import _2048Trainer
+from envs.connect_x.collector import ConnectXCollector
+from envs.connect_x.env import ConnectXConfig, ConnectXEnv
+from envs.connect_x.tester import ConnectXTester
+from envs.connect_x.trainer import ConnectXTrainer
 from envs.othello.collector import OthelloCollector
 from envs.othello.tester import OthelloTester
 from envs.othello.trainer import OthelloTrainer
@@ -28,6 +31,9 @@ def init_env(device: torch.device, parallel_envs: int, env_config: dict, debug: 
     elif env_type == '2048':
         config = _2048EnvConfig(**env_config)
         return _2048Env(parallel_envs, config, device, debug)
+    elif env_type == 'connect_x':
+        config = ConnectXConfig(**env_config)
+        return ConnectXEnv(parallel_envs, config, device, debug)
     else:
         raise NotImplementedError(f'Environment {env_type} not implemented')
     
@@ -42,11 +48,17 @@ def init_collector(episode_memory_device: torch.device, env_type: str, evaluator
             evaluator=evaluator,
             episode_memory_device=episode_memory_device
         )
+    elif env_type == 'connect_x':
+        return ConnectXCollector(
+            evaluator=evaluator,
+            episode_memory_device=episode_memory_device
+        )
     else:
         raise NotImplementedError(f'Collector for environment {env_type} not supported')
     
 def init_tester(
     test_config: dict,
+    env_type: str,
     collector: Collector,
     model: torch.nn.Module,
     history: TrainingMetrics,
@@ -54,7 +66,7 @@ def init_tester(
     log_results: bool,
     debug: bool
 ):
-    if collector.evaluator.env.num_players == 2:
+    if env_type == 'othello':
         return OthelloTester(
             config=TwoPlayerTesterConfig(**test_config),
             collector=collector,
@@ -64,7 +76,7 @@ def init_tester(
             log_results=log_results,
             debug=debug
         )
-    elif collector.evaluator.env.num_players == 1:
+    elif env_type == '2048':
         return _2048Tester(
             config=TesterConfig(**test_config),
             collector=collector,
@@ -74,8 +86,18 @@ def init_tester(
             log_results=log_results,
             debug=debug
         )
+    elif env_type == 'connect_x':
+        return ConnectXTester(
+            config=TwoPlayerTesterConfig(**test_config),
+            collector=collector,
+            model=model,
+            optimizer=optimizer,
+            history=history,
+            log_results=log_results,
+            debug=debug
+        )
     else:
-        raise NotImplementedError(f'Tester for {collector.evaluator.env.num_players} players not supported')
+        raise NotImplementedError(f'Tester for {env_type} not supported')
 
 def init_trainer(
     device: torch.device, 
@@ -114,6 +136,24 @@ def init_trainer(
     elif env_type == '2048':
         assert isinstance(collector, _2048Collector)
         return _2048Trainer(
+            config = trainer_config,
+            collector = collector,
+            tester = tester,
+            model = model,
+            optimizer = optimizer,
+            device = device,
+            raw_train_config = train_config,
+            raw_env_config = raw_env_config,
+            history = history,
+            log_results=log_results,
+            interactive=interactive,
+            run_tag = run_tag,
+            debug = debug
+        )
+    elif env_type == 'connect_x':
+        assert isinstance(collector, ConnectXCollector)
+        assert isinstance(tester, TwoPlayerTester)
+        return ConnectXTrainer(
             config = trainer_config,
             collector = collector,
             tester = tester,
