@@ -113,7 +113,6 @@ class OthelloEnv(Env):
         seed = 0
         self.states.zero_()
         self.ray_tensor.zero_()
-        self.rewards.zero_()
         self.terminated.zero_()
         self.cur_players.zero_()
         self.consecutive_passes.zero_()
@@ -137,8 +136,6 @@ class OthelloEnv(Env):
         super().update_terminated()
     
     def get_rewards(self, player_ids: Optional[torch.Tensor] = None):
-        self.rewards.zero_()
-
         if player_ids is None:
             player_ids = self.cur_players
         idx = ((player_ids == self.cur_players).int() - 1) % 2
@@ -146,9 +143,8 @@ class OthelloEnv(Env):
 
         p1_sum = self.states[self.env_indices, idx].sum(dim=(1, 2))
         p2_sum = self.states[self.env_indices, other_idx].sum(dim=(1, 2))
-        self.rewards += 1 * (p1_sum > p2_sum)
-        self.rewards += 0.5 * (p1_sum == p2_sum)
-        return self.rewards
+        rewards = (1 * (p1_sum > p2_sum)) + (0.5 * (p1_sum == p2_sum))
+        return rewards
 
     def reset_terminated_states(self, seed: Optional[int] = None) -> int:
         if seed is not None:

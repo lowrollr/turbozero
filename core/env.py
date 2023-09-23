@@ -30,7 +30,6 @@ class Env:
 
         self.states = torch.zeros((self.parallel_envs, *state_shape), dtype=torch.float32, device=device, requires_grad=False)
         self.terminated = torch.zeros(self.parallel_envs, dtype=torch.bool, device=device, requires_grad=False)
-        self.rewards = torch.zeros((self.parallel_envs, ), dtype=torch.float32, device=device, requires_grad=False)
         self.cur_players = torch.zeros((self.parallel_envs, ), dtype=torch.long, device=device, requires_grad=False)
         self.env_indices = torch.arange(self.parallel_envs, device=device, requires_grad=False)
 

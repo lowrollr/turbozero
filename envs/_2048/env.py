@@ -68,6 +68,8 @@ class _2048Env(Env):
             ))
 
         self.saved_states = self.states.clone()
+        # self.rewards is just a dummy tensor here
+        self.rewards = torch.zeros((self.parallel_envs, ), dtype=torch.float32, device=device, requires_grad=False)
 
     def reset(self, seed=None) -> int:
         if seed is not None:
@@ -98,6 +100,7 @@ class _2048Env(Env):
         return torch.amax(self.states, dim=(1, 2, 3))
     
     def get_rewards(self, player_ids: Optional[torch.Tensor] = None) -> torch.Tensor:
+        # TODO: handle rewards in env instead of collector postprocessing
         return self.rewards
         
     def update_terminated(self) -> None:
