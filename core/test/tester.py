@@ -135,6 +135,7 @@ def collect_games(evaluator1: Evaluator, evaluator2: Evaluator, num_games: int, 
         scores += rewards * terminated * (~completed_episodes)
         new_completed = (terminated & (~completed_episodes)).long().sum().item()
         completed_episodes |= terminated
+        evaluator1.env.reset_terminated_states(seed)
         use_second_evaluator = not use_second_evaluator
         if not debug:
             progress_bar.update(new_completed)
