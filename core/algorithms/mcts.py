@@ -109,7 +109,6 @@ class MCTS(Evaluator):
     
     def step_evaluator(self, actions, terminated):
         self.load_subtree(actions)
-        # self.reset()
         self.reset_evaluator_states(terminated)
 
     def reset_evaluator_states(self, evals_to_reset: torch.Tensor) -> None:
