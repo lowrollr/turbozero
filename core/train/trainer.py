@@ -10,6 +10,7 @@ from core.resnet import TurboZeroResnet
 from core.test.tester import TesterConfig, Tester
 from core.train.collector import Collector
 from core.utils.history import Metric, TrainingMetrics
+from collections import deque
 
 from core.utils.memory import GameReplayMemory, ReplayMemory
 import time
@@ -78,7 +79,7 @@ class Trainer:
         self.raw_env_config = raw_env_config
         self.scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=self.config.lr_decay_gamma)
         self.debug = debug
-        
+        self.collection_queue = deque()
 
         self.history = history 
 
@@ -157,19 +158,32 @@ class Trainer:
         if not self.debug:
             progress_bar = tqdm(total=self.config.episodes_per_epoch, desc='Collecting self-play episodes...', leave=True, position=0)
         while new_episodes < self.config.episodes_per_epoch:
-            while new_episodes < threshold_for_training_step:
+            if self.collection_queue:
+                episode = self.collection_queue.popleft()
+                self.replay_memory.insert(episode)
+                if not self.debug:
+                    progress_bar.update(1)
+                new_episodes += 1
+                if new_episodes >= threshold_for_training_step:
+                    threshold_for_training_step += self.config.episodes_per_minibatch
+                    self.train_minibatch()
+            else:
                 finished_episodes, _ = self.collector.collect()
                 if finished_episodes:
                     for episode in finished_episodes:
                         episode = self.collector.postprocess(episode)
-                        self.replay_memory.insert(episode)
-                        if not self.debug:
-                            progress_bar.update(1)
+                        if new_episodes >= self.config.episodes_per_epoch:
+                            self.collection_queue.append(episode)
+                        else:
+                            self.replay_memory.insert(episode)
+                            if not self.debug:
+                                progress_bar.update(1)
+                            new_episodes += 1
+                            if new_episodes >= threshold_for_training_step:
+                                threshold_for_training_step += self.config.episodes_per_minibatch
+                                self.train_minibatch()
+                    
                 self.add_collection_metrics(finished_episodes)
-                new_episodes += len(finished_episodes)
-            while new_episodes >= threshold_for_training_step:
-                threshold_for_training_step += self.config.episodes_per_minibatch
-                self.train_minibatch()
     
     def fill_replay_memory(self):
         if not self.debug:
