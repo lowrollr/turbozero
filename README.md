@@ -87,11 +87,11 @@ The configuration files I've included train very small models and do not run man
 If you have access to a GPU with CUDA, you can use the following commands to train slightly larger models. 
 ##### AlphaZero for Othello (GPU)
 ```terminal
-python turbozero.py --verbose --gpu --mode=train --config=./example_configs/2048_mini.yaml --logfile=./othello_mini.log
+python turbozero.py --verbose --gpu --mode=train --config=./example_configs/othello_mini.yaml --logfile=./othello_mini.log
 ```
 ##### LazyZero for 2048 (GPU)
 ```terminal
-python turbozero.py --verbose --gpu --mode=train --config=./example_configs/2048_tiny.yaml --logfile=./2048_mini.log
+python turbozero.py --verbose --gpu --mode=train --config=./example_configs/2048_mini.yaml --logfile=./2048_mini.log
 ```
 With proper hardware these should not take long to train, as they are still relatively small. These commands will train on 4096 environments in parallel as opposed to 32 for the CPU configuration.
 
@@ -121,13 +121,9 @@ python turbozero.py --mode=demo --config=./example_configs/othello_demo.yaml
 For more information on demo coniguration, see the [Demo](https://github.com/lowrollr/turbozero/wiki/Demo) wiki page.
 ## Future Work
 Major future initiatives include:
-* implementing AZ improvements from [Clausen et al., 2021](https://www.scitepress.org/Papers/2021/102459/102459.pdf) as optional configurations
-* Stochastic AlphaZero
-* MuZero
-* Investigate integration with 3rd-party vectorized environments
-* Multi-GPU/Distributed support
-* Additional vectorized environments
-* Support for automated hyperparameter tuning
+* porting to JAX to fall in line with the rest of the RL ecosystem
+* support 3rd-party JAX environments
+* ditch homemade metrics library for tensorboard
 
 ## Issues
 If you use this project and encounter an issue, error, or undesired behavior, please submit a [GitHub Issue](https://github.com/lowrollr/turbozero/issues) and I will do my best to resolve it as soon as I can. You may also contact me directly via `hello@jacob.land`.
