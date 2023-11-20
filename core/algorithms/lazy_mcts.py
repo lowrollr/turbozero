@@ -61,7 +61,7 @@ class LazyMCTS(Evaluator):
         puct_scores = q_values + \
             (self.puct_coeff * probs * torch.sqrt(n_sum + 1) / (1 + self.visit_counts))
 
-        puct_scores *= legal_actions
+        puct_scores = (puct_scores * legal_actions) + (torch.finfo(torch.float32).min * (~legal_actions))
         return torch.argmax(puct_scores, dim=1)
     
     def iterate(self, evaluation_fn: Callable, depth: int, rewards: torch.Tensor) -> torch.Tensor:  # type: ignore
