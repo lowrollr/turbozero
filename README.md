@@ -1,7 +1,9 @@
 
 
 ![alphazero turns the tide!](./misc/othello_game.gif) ![2048](./misc/2048.gif)
-# 🏁 TurboZero 
+
+📣 [JAX is coming](https://github.com/lowrollr/turbozero/discussions/4)
+# 🏁 TurboZero
 The TurboZero project contains vectorized, hardware-accelerated implementations of AlphaZero-esque algorithms, alongside vectorized implementations of single-player and multi-player environments. Basic training infrastructure is also included, which means models can be trained for supported environments straight out of the box. This project is similar to DeepMind's [mctx](https://github.com/deepmind/mctx), but as of now is more focused on model-based algorithms like AlphaZero rather than model-free implementations such as MuZero, and is written with PyTorch instead of JAX. Due to this focus, TurboZero includes additional features relavant to model-based algorithms, such as persisting MCTS subtrees. I hope to eventually expand this project and implemented hardware-accelerated adaptations of other RL algorithms, like *MuZero* and *Stochastic AlphaZero*. 
 
 This project has been a labor of love but is still a little rough around the edges. I've done my best to fully explain all configuration options in this file as well as in the [wiki](https://github.com/lowrollr/turbozero/wiki). The [wiki](https://github.com/lowrollr/turbozero/wiki) also provides notes on implementation and vectorization for each of the environments as well as Monte Carlo Tree Search. While as of writing this I believe the project is in a usable, useful state, I still intend to do a great deal of work expanding functionaltiy, fixing issues, and improving performance. I cannot garauntee that data models or workflows will not drastically change as the project matures.
