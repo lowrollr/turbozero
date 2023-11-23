@@ -3,6 +3,11 @@ import jax.numpy as jnp
 import jax
 from functools import partial
 
+def expand_dims_to_match(array_to_expand, reference_array):
+    target_shape = list(reference_array.shape)
+    expand_shape = [-1 if i < len(array_to_expand.shape) else 1 for i in range(len(target_shape))]
+    return jnp.broadcast_to(array_to_expand.reshape(expand_shape), target_shape)
+
 @struct.dataclass
 class EndRewardReplayBufferState:
     next_index: jnp.ndarray # next index to write experience to
@@ -47,7 +52,9 @@ class EndRewardReplayBuffer:
 
     def sample(self, rng: jax.random.PRNGKey) -> struct.PyTreeNode:
         return sample(self.state, rng, self.batch_size, self.max_len_per_batch, self.sample_batch_size)
-
+    
+    def truncate(self, select_batch: jnp.ndarray) -> None:
+        self.state = truncate(self.state, select_batch)
 
 
 
@@ -120,3 +127,28 @@ def sample(
         lambda x: x[batch_indices, item_indices],
         buffer_state.buffer
     ), buffer_state.reward_buffer[batch_indices, item_indices]
+
+
+@jax.jit
+def truncate(
+    buffer_state: EndRewardReplayBufferState,
+    select_batch: jnp.ndarray,
+) -> EndRewardReplayBufferState:
+    
+    def truncate_items(items):
+        return jnp.where(
+            select_batch.reshape(-1, *([1] * (items.ndim - 1))),
+            items * (~buffer_state.needs_reward),
+            items
+        )
+
+    return buffer_state.replace(
+        buffer = jax.tree_map(truncate_items, buffer_state.buffer),
+        needs_reward = truncate_items(buffer_state.needs_reward),
+        populated = truncate_items(buffer_state.populated),
+        next_index = jnp.where(
+            select_batch,
+            buffer_state.next_reward_index,
+            buffer_state.next_index
+        )
+    )
