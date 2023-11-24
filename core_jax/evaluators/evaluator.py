@@ -1,25 +1,21 @@
 
 from typing import Tuple
-from chex import PRNGKey
 from flax import struct
 from dataclasses import dataclass
+import jax
 import jax.numpy as jnp
+
+from core_jax.envs.env import Env
 
 
 @dataclass
 class EvaluatorConfig:
-    name: str
     epsilon: float = 1e-8
 
 
 @struct.dataclass
 class EvaluatorState:
-    pass
-
-@struct.dataclass
-class EnvState:
-    pass
-
+    key: jax.random.PRNGKey
 
 class Evaluator:
     def __init__(self,
@@ -31,22 +27,42 @@ class Evaluator:
         self.args = args
         self.kwargs = kwargs
 
-        self.state = EvaluatorState()
+    def reset(self, key: jax.random.PRNGKey) -> EvaluatorState:
+        return EvaluatorState(key=key)
     
-    def evaluate(self, env_state: EnvState) -> Tuple[jnp.ndarray, jnp.ndarray]:
-        # returns probability distribution over actions, and the value estimation for the current state
-        raise NotImplementedError()
+    def evaluate(self, 
+        evaluator_state: EvaluatorState, 
+        env: Env, 
+        env_state: struct.PyTreeNode, 
+        observation: struct.PyTreeNode, 
+        *args
+    ) -> Tuple[EvaluatorState, jnp.ndarray, jnp.ndarray]:
+        # returns policy logits, and value estimation for the current state
+        key, _ = jax.random.split(evaluator_state.key)
+        return (
+            evaluator_state,
+            jax.random.normal(key, (*observation.action_mask.shape,)),
+            jnp.zeros((1,))
+        )
     
-    def choose_action(self, evaluator_state: EvaluatorState, legal_actions_mask: jnp.ndarray):
-        raise NotImplementedError()
+    def choose_action(self, 
+        evaluator_state: EvaluatorState, 
+        env: Env,
+        env_state: struct.PyTreeNode,
+        observation: struct.PyTreeNode,
+        policy_logits: jnp.ndarray    
+    ):
+        return env.get_random_legal_action(
+            env_state,
+            observation
+        )
     
-    def update_evaluator_state(
+    def step_evaluator(
             self, 
             evaluator_state: EvaluatorState, 
             actions: jnp.ndarray, 
             terminated: jnp.ndarray
         ) -> EvaluatorState:
 
-        
         return evaluator_state
     

@@ -14,22 +14,22 @@ class JumanjiEnv(Env):
     def __init__(self, jumanji_env: JEnv):
         super().__init__(env = jumanji_env)
         self._env: JEnv
+        self.num_values = self._env.action_spec().num_values
     
     def step(self, state: JState, actions: jnp.ndarray,) -> Tuple[JState, Observation, jnp.ndarray, jnp.ndarray]:
         # returns state, observation, reward, terminated
         state, timestep = self._env.step(state, actions)
         return state, timestep.observation, timestep.reward, timestep.last()
     
-    def reset(self, key: jax.random.PRNGKeyArray) -> Tuple[JState, Observation, jnp.ndarray, jnp.ndarray]:
+    def reset(self, key: jax.random.PRNGKey) -> Tuple[JState, Observation, jnp.ndarray, jnp.ndarray]:
         state, timestep = self._env.reset(key)
         return state, timestep.observation, timestep.reward, timestep.last()
     
-    def reset_if_terminated(self, state: JState, timestep: TimeStep) -> Tuple[JState, Observation, jnp.ndarray, jnp.ndarray]:
-        key, _ = jax.random.split(state.key)
+    def reset_if_terminated(self, state: JState, observation: struct.PyTreeNode, reward: jnp.ndarray, terminated: jnp.ndarray, key: jax.random.PRNGKey) -> Tuple[JState, Observation, jnp.ndarray, jnp.ndarray]:
         return jax.lax.cond(
-            timestep.last(),
-            lambda _: self._env.reset(key),
-            lambda _: (state, timestep)
+            terminated,
+            lambda: self.reset(key),
+            lambda: (state, observation, reward, terminated)
         )
     
     def get_legal_actions(self, state: JState, observation: struct.PyTreeNode) -> jnp.ndarray:
@@ -48,7 +48,7 @@ class JumanjiEnv(Env):
         return jax.lax.scan(
             lambda value, size: (value // size, value % size),
             action,
-            self._env.action_spec().num_values
+            self.num_values
         )[1][::-1].reshape(-1)
 
 

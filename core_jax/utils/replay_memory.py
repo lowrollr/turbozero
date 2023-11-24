@@ -34,7 +34,7 @@ class EndRewardReplayBuffer:
         return add_experience(state, experience, self.batch_size, self.max_len_per_batch)    
 
     def assign_rewards(self, state: EndRewardReplayBufferState, rewards: jnp.ndarray, select_batch: jnp.ndarray) -> EndRewardReplayBufferState:
-        return assign_rewards(state, rewards, select_batch, self.max_len_per_batch)
+        return assign_rewards(state, rewards, select_batch.astype(jnp.bool_), self.max_len_per_batch)
 
     def sample(self, state: EndRewardReplayBufferState, rng: jax.random.PRNGKey) -> struct.PyTreeNode:
         return sample(state, rng, self.batch_size, self.max_len_per_batch, self.sample_batch_size)
@@ -70,7 +70,7 @@ def assign_rewards(
     max_len_per_batch: int
 ) -> EndRewardReplayBufferState:
     rolled = jax.vmap(jnp.roll, in_axes=(0, 0))(rewards, buffer_state.next_reward_index)
-    tiled = jnp.tile(rolled, (1, max_len_per_batch // rewards.shape[1]))
+    tiled = jnp.tile(rolled, (1, max_len_per_batch // rewards.shape[-1]))
     
     return buffer_state.replace(
         reward_buffer = jnp.where(
