@@ -19,7 +19,6 @@ class EndRewardReplayBufferState:
 
 class EndRewardReplayBuffer:
     def __init__(self,
-        template_experience: struct.PyTreeNode,
         batch_size: int,
         max_len_per_batch: int,
         sample_batch_size: int,
@@ -28,33 +27,20 @@ class EndRewardReplayBuffer:
         self.max_len_per_batch = max_len_per_batch
         self.batch_size = batch_size
 
-        experience = jax.tree_map(
-            lambda x: jnp.broadcast_to(
-                x, (batch_size, max_len_per_batch, *x.shape)
-            ),
-            template_experience,
-        )
+    def init(self, template_experience: struct.PyTreeNode) -> EndRewardReplayBufferState:
+        return init(template_experience, self.batch_size, self.max_len_per_batch)
 
-        self.state = EndRewardReplayBufferState(
-            next_index=jnp.zeros((batch_size,), dtype=jnp.int32),
-            next_reward_index=jnp.zeros((batch_size,), dtype=jnp.int32),
-            reward_buffer=jnp.zeros((batch_size, max_len_per_batch, 1), dtype=jnp.float32),
-            buffer=experience,
-            needs_reward=jnp.zeros((batch_size, max_len_per_batch, 1), dtype=jnp.bool_),
-            populated=jnp.zeros((batch_size, max_len_per_batch, 1), dtype=jnp.bool_),
-        )
+    def add_experience(self, state: EndRewardReplayBufferState, experience: struct.PyTreeNode) -> EndRewardReplayBufferState:
+        return add_experience(state, experience, self.batch_size, self.max_len_per_batch)    
 
-    def add_experience(self, experience: struct.PyTreeNode) -> None:
-        self.state = add_experience(self.state, experience, self.batch_size, self.max_len_per_batch)    
+    def assign_rewards(self, state: EndRewardReplayBufferState, rewards: jnp.ndarray, select_batch: jnp.ndarray) -> EndRewardReplayBufferState:
+        return assign_rewards(state, rewards, select_batch, self.max_len_per_batch)
 
-    def assign_rewards(self, rewards: jnp.ndarray, select_batch: jnp.ndarray) -> None:
-        self.state = assign_rewards(self.state, rewards, select_batch, self.max_len_per_batch)
-
-    def sample(self, rng: jax.random.PRNGKey) -> struct.PyTreeNode:
-        return sample(self.state, rng, self.batch_size, self.max_len_per_batch, self.sample_batch_size)
+    def sample(self, state: EndRewardReplayBufferState, rng: jax.random.PRNGKey) -> struct.PyTreeNode:
+        return sample(state, rng, self.batch_size, self.max_len_per_batch, self.sample_batch_size)
     
-    def truncate(self, select_batch: jnp.ndarray) -> None:
-        self.state = truncate(self.state, select_batch)
+    def truncate(self, state: EndRewardReplayBufferState, select_batch: jnp.ndarray) -> EndRewardReplayBufferState:
+        return truncate(state, select_batch)
 
 
 
@@ -151,4 +137,26 @@ def truncate(
             buffer_state.next_reward_index,
             buffer_state.next_index
         )
+    )
+
+@partial(jax.jit, static_argnums=(1,2))
+def init(
+    template_experience: struct.PyTreeNode,
+    batch_size: int,
+    max_len_per_batch: int,
+) -> EndRewardReplayBufferState:
+    experience = jax.tree_map(
+        lambda x: jnp.broadcast_to(
+            x, (batch_size, max_len_per_batch, *x.shape)
+        ),
+        template_experience,
+    )
+
+    return EndRewardReplayBufferState(
+        next_index=jnp.zeros((batch_size,), dtype=jnp.int32),
+        next_reward_index=jnp.zeros((batch_size,), dtype=jnp.int32),
+        reward_buffer=jnp.zeros((batch_size, max_len_per_batch, 1), dtype=jnp.float32),
+        buffer=experience,
+        needs_reward=jnp.zeros((batch_size, max_len_per_batch, 1), dtype=jnp.bool_),
+        populated=jnp.zeros((batch_size, max_len_per_batch, 1), dtype=jnp.bool_),
     )

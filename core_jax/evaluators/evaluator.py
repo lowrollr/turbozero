@@ -16,6 +16,10 @@ class EvaluatorConfig:
 class EvaluatorState:
     pass
 
+@struct.dataclass
+class EnvState:
+    pass
+
 
 class Evaluator:
     def __init__(self,
@@ -27,10 +31,9 @@ class Evaluator:
         self.args = args
         self.kwargs = kwargs
 
-    def init(self, key: PRNGKey) -> EvaluatorState:
-        return EvaluatorState()
+        self.state = EvaluatorState()
     
-    def evaluate(self, *args) -> Tuple[jnp.ndarray, jnp.ndarray]:
+    def evaluate(self, env_state: EnvState) -> Tuple[jnp.ndarray, jnp.ndarray]:
         # returns probability distribution over actions, and the value estimation for the current state
         raise NotImplementedError()
     
