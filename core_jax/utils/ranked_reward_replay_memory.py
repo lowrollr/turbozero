@@ -64,9 +64,9 @@ def assign_rewards(
     episode_reward_memory_len_per_batch: int,
 ) -> RankedRewardReplayBufferState:
     rand_key, new_key = jax.random.split(buffer_state.key)
-    rand_bools = jax.random.uniform(rand_key, rewards.shape) < 0.5
+    rand_bools = jax.random.bernoulli(rand_key, 0.5, rewards.shape)
 
-    quantile_value = jnp.quantile(buffer_state.raw_reward_buffer, quantile, axis=-1).mean()
+    quantile_value = jnp.quantile(buffer_state.raw_reward_buffer, quantile, axis=1).mean()
 
 
     def rank_rewards(reward, boolean):
@@ -93,7 +93,6 @@ def assign_rewards(
     
     return buffer_state.replace(
         key=new_key,
-        next_raw_reward_index = (buffer_state.next_raw_reward_index + 1) % episode_reward_memory_len_per_batch,
         reward_buffer = jnp.where(
             select_batch[..., None, None] & buffer_state.needs_reward,
             ranked_rewards[..., None],
@@ -110,6 +109,11 @@ def assign_rewards(
             select_batch,
             buffer_state.next_index,
             buffer_state.next_reward_index
+        ),
+        next_raw_reward_index = jnp.where(
+            select_batch,
+            (buffer_state.next_raw_reward_index + 1) % episode_reward_memory_len_per_batch,
+            buffer_state.next_raw_reward_index
         ),
         needs_reward = jnp.where(
             select_batch[..., None, None],
