@@ -35,10 +35,8 @@ class JumanjiEnv(Env):
     def get_legal_actions(self, state: JState, observation: struct.PyTreeNode) -> jnp.ndarray:
         return observation.action_mask
     
-    def get_random_legal_action(self, state: JState, observation: struct.PyTreeNode) -> jnp.ndarray:
-        key, _ = jax.random.split(state.key)
+    def get_random_legal_action(self, state: JState, observation: struct.PyTreeNode, key: jax.random.PRNGKey) -> jnp.ndarray:
         action_mask = observation.action_mask.reshape(-1)
-        
         action = jax.random.choice(
             key,
             jnp.arange(action_mask.shape[0]),

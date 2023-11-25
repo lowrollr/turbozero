@@ -38,10 +38,12 @@ class Evaluator:
         *args
     ) -> Tuple[EvaluatorState, jnp.ndarray, jnp.ndarray]:
         # returns policy logits, and value estimation for the current state
-        key, _ = jax.random.split(evaluator_state.key)
+        random_key, new_key = jax.random.split(evaluator_state.key)
         return (
-            evaluator_state,
-            jax.random.normal(key, (*observation.action_mask.shape,)),
+            evaluator_state.replace(
+                key=new_key
+            ),
+            jax.random.normal(random_key, (*observation.action_mask.shape,)),
             jnp.zeros((1,))
         )
     
@@ -51,11 +53,13 @@ class Evaluator:
         env_state: struct.PyTreeNode,
         observation: struct.PyTreeNode,
         policy_logits: jnp.ndarray    
-    ):
-        return env.get_random_legal_action(
+    ) -> Tuple[EvaluatorState, jnp.ndarray]:
+        random_key, new_key = jax.random.split(evaluator_state.key)
+        return (evaluator_state.replace(key=new_key), env.get_random_legal_action(
             env_state,
-            observation
-        )
+            observation,
+            random_key
+        ))
     
     def step_evaluator(
             self, 
