@@ -1,3 +1,4 @@
+from typing import Tuple
 from flax import struct
 import jax.numpy as jnp
 import jax
@@ -16,6 +17,7 @@ class EndRewardReplayBufferState:
     reward_buffer: jnp.ndarray # buffer of rewards
     needs_reward: jnp.ndarray # does experience need reward
     populated: jnp.ndarray # is experience populated
+    key: jax.random.PRNGKey
 
 class EndRewardReplayBuffer:
     def __init__(self,
@@ -36,8 +38,8 @@ class EndRewardReplayBuffer:
     def assign_rewards(self, state: EndRewardReplayBufferState, rewards: jnp.ndarray, select_batch: jnp.ndarray) -> EndRewardReplayBufferState:
         return assign_rewards(state, rewards, select_batch.astype(jnp.bool_), self.max_len_per_batch)
 
-    def sample(self, state: EndRewardReplayBufferState, rng: jax.random.PRNGKey) -> struct.PyTreeNode:
-        return sample(state, rng, self.batch_size, self.max_len_per_batch, self.sample_batch_size)
+    def sample(self, state: EndRewardReplayBufferState) -> Tuple[EndRewardReplayBufferState, struct.PyTreeNode]:
+        return sample(state, self.batch_size, self.max_len_per_batch, self.sample_batch_size)
     
     def truncate(self, state: EndRewardReplayBufferState, select_batch: jnp.ndarray) -> EndRewardReplayBufferState:
         return truncate(state, select_batch)
@@ -90,17 +92,17 @@ def assign_rewards(
         )
     )
 
-@partial(jax.jit, static_argnums=(2,3,4))
+@partial(jax.jit, static_argnums=(1,2,3))
 def sample(
     buffer_state: EndRewardReplayBufferState,
-    rng: jax.random.PRNGKey,
     batch_size: int,
     max_len_per_batch: int,
     sample_batch_size: int
-) -> struct.PyTreeNode:
+) -> Tuple[EndRewardReplayBufferState, struct.PyTreeNode]:
+    sample_key, new_key = jax.random.split(buffer_state.key)
     probs = ((~buffer_state.needs_reward).reshape(-1) * buffer_state.populated.reshape(-1)).astype(jnp.float32)
     indices = jax.random.choice(
-        rng,
+        sample_key,
         max_len_per_batch * batch_size,
         shape=(sample_batch_size,),
         replace=False,
@@ -109,7 +111,7 @@ def sample(
     batch_indices = indices // max_len_per_batch
     item_indices = indices % max_len_per_batch
 
-    return jax.tree_util.tree_map(
+    return buffer_state.replace(key=new_key), jax.tree_util.tree_map(
         lambda x: x[batch_indices, item_indices],
         buffer_state.buffer
     ), buffer_state.reward_buffer[batch_indices, item_indices]
@@ -159,4 +161,5 @@ def init(
         buffer=experience,
         needs_reward=jnp.zeros((batch_size, max_len_per_batch, 1), dtype=jnp.bool_),
         populated=jnp.zeros((batch_size, max_len_per_batch, 1), dtype=jnp.bool_),
+        key=jax.random.PRNGKey(0) # should probably take a seed
     )
