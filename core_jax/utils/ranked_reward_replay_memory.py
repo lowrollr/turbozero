@@ -40,7 +40,7 @@ def init(
     template_experience: struct.PyTreeNode,
     batch_size: int,
     max_len_per_batch: int,
-) -> EndRewardReplayBufferState:
+) -> RankedRewardReplayBufferState:
     buffer_state = super_init(template_experience, batch_size, max_len_per_batch)
     return RankedRewardReplayBufferState(
         **buffer_state.__dict__, 
@@ -49,40 +49,58 @@ def init(
     
 
 
-# @partial(jax.jit, static_argnums=(3,4))
+@partial(jax.jit, static_argnums=(3,4))
 def assign_rewards(
-    buffer_state: EndRewardReplayBufferState,
+    buffer_state: RankedRewardReplayBufferState,
     rewards: jnp.ndarray,
     select_batch: jnp.ndarray,
     max_len_per_batch: int,
     percentile: int
-) -> EndRewardReplayBufferState:
+) -> RankedRewardReplayBufferState:
     rand_key, new_key = jax.random.split(buffer_state.key)
     rand_bools = jax.random.uniform(rand_key, rewards.shape) < 0.5
-    percentile_value = jnp.percentile(rewards, percentile)
-    rewards = jnp.where(
-        rewards < percentile_value, 
-        -1,
-        jnp.where(
-            rewards > percentile_value,
-            1,
+    percentile_value = jax.vmap(jnp.percentile, in_axes=(0,None,None))(
+        buffer_state.raw_reward_buffer, 
+        percentile, 
+        1
+    ).mean()
+    
+    def rank_rewards(reward, boolean):
+        return jnp.where(
+            reward < percentile_value, 
+            -1,
             jnp.where(
-                rand_bools,
+                reward > percentile_value,
                 1,
-                -1
+                jnp.where(
+                    boolean,
+                    1,
+                    -1
+                )
             )
         )
-    )
+    
+    
+    ranked_rewards = jax.vmap(rank_rewards)(rewards, rand_bools)
+    
+    rewards = jax.vmap(jnp.roll, in_axes=(0, 0))(rewards, buffer_state.next_reward_index)
+    rewards = jnp.tile(rewards, (1, max_len_per_batch // rewards.shape[-1]))
 
-    rolled = jax.vmap(jnp.roll, in_axes=(0, 0))(rewards, buffer_state.next_reward_index)
-    tiled = jnp.tile(rolled, (1, max_len_per_batch // rewards.shape[-1]))
+    ranked_rewards = jax.vmap(jnp.roll, in_axes=(0, 0))(ranked_rewards, buffer_state.next_reward_index)
+    ranked_rewards = jnp.tile(ranked_rewards, (1, max_len_per_batch // ranked_rewards.shape[-1]))
+    
     
     return buffer_state.replace(
         key=new_key,
         reward_buffer = jnp.where(
             select_batch[..., None, None] & buffer_state.needs_reward,
-            tiled[..., None],
+            ranked_rewards[..., None],
             buffer_state.reward_buffer
+        ),
+        raw_reward_buffer = jnp.where(
+            select_batch[..., None, None] & buffer_state.needs_reward,
+            rewards[..., None],
+            buffer_state.raw_reward_buffer
         ),
         next_reward_index = jnp.where(
             select_batch,

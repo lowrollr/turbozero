@@ -19,11 +19,11 @@ class JumanjiEnv(Env):
     def step(self, state: JState, actions: jnp.ndarray,) -> Tuple[JState, Observation, jnp.ndarray, jnp.ndarray]:
         # returns state, observation, reward, terminated
         state, timestep = self._env.step(state, actions)
-        return state, timestep.observation, timestep.reward, timestep.last()
+        return state, timestep.observation, timestep.reward.reshape(-1), timestep.last()
     
     def reset(self, key: jax.random.PRNGKey) -> Tuple[JState, Observation, jnp.ndarray, jnp.ndarray]:
         state, timestep = self._env.reset(key)
-        return state, timestep.observation, timestep.reward, timestep.last()
+        return state, timestep.observation, timestep.reward.reshape(-1), timestep.last()
     
     def reset_if_terminated(self, state: JState, observation: struct.PyTreeNode, reward: jnp.ndarray, terminated: jnp.ndarray, key: jax.random.PRNGKey) -> Tuple[JState, Observation, jnp.ndarray, jnp.ndarray]:
         return jax.lax.cond(
