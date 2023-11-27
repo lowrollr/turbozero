@@ -34,7 +34,7 @@ class RankedRewardReplayBuffer(EndRewardReplayBuffer):
         return init(template_experience, self.batch_size, self.max_len_per_batch, self.episode_reward_memory_len_per_batch)
 
     def assign_rewards(self, state: RankedRewardReplayBufferState, rewards: jnp.ndarray, select_batch: jnp.ndarray) -> RankedRewardReplayBufferState:
-        return assign_rewards(state, rewards, select_batch.astype(jnp.bool_), self.max_len_per_batch, self.quantile, self.episode_reward_memory_len_per_batch)
+        return assign_rewards(state, rewards, select_batch.astype(jnp.bool_), self.max_len_per_batch, self.batch_size, self.quantile, self.episode_reward_memory_len_per_batch)
 
 
 
@@ -53,12 +53,13 @@ def init(
     )
     
 
-# @partial(jax.jit, static_argnums=(3,4,5))
+# @partial(jax.jit, static_argnums=(3,4,5,6))
 def assign_rewards(
     buffer_state: RankedRewardReplayBufferState,
     rewards: jnp.ndarray,
     select_batch: jnp.ndarray,
     max_len_per_batch: int,
+    batch_size: int,
     quantile: float,
     episode_reward_memory_len_per_batch: int,
 ) -> RankedRewardReplayBufferState:
@@ -97,11 +98,11 @@ def assign_rewards(
             ranked_rewards[..., None],
             buffer_state.reward_buffer
         ),
-        raw_reward_buffer = buffer_state.raw_reward_buffer.at[:, buffer_state.next_raw_reward_index, 0].set(
+        raw_reward_buffer = buffer_state.raw_reward_buffer.at[jnp.arange(batch_size), buffer_state.next_raw_reward_index].set(
             jnp.where(
-                select_batch,
+                select_batch[..., None],
                 rewards,
-                buffer_state.raw_reward_buffer[:, buffer_state.next_raw_reward_index, 0]
+                buffer_state.raw_reward_buffer[jnp.arange(batch_size), buffer_state.next_raw_reward_index]
             )    
         ),
         next_reward_index = jnp.where(
