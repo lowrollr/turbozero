@@ -171,7 +171,7 @@ class MCTS(Evaluator):
 
         value = jnp.where(
             terminated,
-            env_state.reward,
+            env_state.reward[env_state.cur_player_id],
             evaluation
         )
 

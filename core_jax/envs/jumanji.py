@@ -27,7 +27,7 @@ class JumanjiEnv(Env):
         self._env: JEnv
         
     
-    def step(self, state: EnvState, action: jnp.ndarray,) -> Tuple[EnvState, jnp.ndarray]:
+    def step(self, state: EnvState, action: jnp.ndarray) -> Tuple[EnvState, jnp.ndarray]:
         # returns state, observation, reward, terminated
         env_state, timestep = self._env.step(state._state, self.unflatten(action, self.action_space_dims))
         return state.replace(
@@ -50,15 +50,7 @@ class JumanjiEnv(Env):
         ), timestep.last()
 
 
-    def reset_if_terminated(self, state: EnvState, terminated: jnp.ndarray) -> Tuple[EnvState, jnp.ndarray]:
-        reset_key, new_key = jax.random.split(state.key)
-        reset_state, terminated = jax.lax.cond(
-            terminated,
-            lambda: self.reset(reset_key),
-            lambda: (state, terminated)
-        )
-
-        return reset_state.replace(key=new_key), terminated
+    
     
     
 

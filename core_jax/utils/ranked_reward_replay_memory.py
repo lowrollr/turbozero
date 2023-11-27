@@ -53,7 +53,7 @@ def init(
     )
     
 
-# @partial(jax.jit, static_argnums=(3,4,5,6))
+@partial(jax.jit, static_argnums=(3,4,5,6))
 def assign_rewards(
     buffer_state: RankedRewardReplayBufferState,
     rewards: jnp.ndarray,

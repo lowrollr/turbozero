@@ -33,8 +33,15 @@ class Env:
     def reset(self, key: jax.random.PRNGKey) -> Tuple[EnvState, jnp.ndarray]:
         raise NotImplementedError()
 
-    def reset_if_terminated(self, state: EnvState, terminated: jnp.ndarray) -> Tuple[EnvState, jnp.ndarray]:       
-        raise NotImplementedError()
+    def reset_if_terminated(self, state: EnvState, terminated: jnp.ndarray) -> Tuple[EnvState, jnp.ndarray]:
+        reset_key, new_key = jax.random.split(state.key)
+        reset_state, terminated = jax.lax.cond(
+            terminated,
+            lambda: self.reset(reset_key),
+            lambda: (state, terminated)
+        )
+
+        return reset_state.replace(key=new_key), terminated
 
     def get_random_legal_action(self, state: EnvState) -> Tuple[EnvState, jnp.ndarray]:
         rand_key, new_key = jax.random.split(state.key)

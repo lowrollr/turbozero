@@ -15,13 +15,13 @@ class Randotron(MCTS):
     def evaluate_leaf(self,
         env: Env,
         state: MCTSState,
-        observation: struct.PyTreeNode
+        observation: struct.PyTreeNode,
     ) -> MCTSState:
         random_key, new_key = jax.random.split(state.key)
 
         return state.replace(
             key=new_key,
-        ), jax.random.normal(random_key, (*observation.action_mask.shape,)).flatten(), jnp.zeros((1,))
+        ), jax.random.normal(random_key, (*env.action_space_dims,)).flatten(), jnp.zeros((1,))
         
     def evaluate(self, state: MCTSState, env: Env, env_state: EnvState) -> MCTSState:
         return super().evaluate(state, env, env_state, num_iters=100)
