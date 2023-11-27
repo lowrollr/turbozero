@@ -30,10 +30,10 @@ class RankedRewardReplayBuffer(EndRewardReplayBuffer):
         self.quantile = quantile
         self.episode_reward_memory_len_per_batch = episode_reward_memory_len_per_batch
 
-    def init(self, template_experience: struct.PyTreeNode) -> EndRewardReplayBufferState:
+    def init(self, template_experience: struct.PyTreeNode) -> RankedRewardReplayBufferState:
         return init(template_experience, self.batch_size, self.max_len_per_batch, self.episode_reward_memory_len_per_batch)
 
-    def assign_rewards(self, state: EndRewardReplayBufferState, rewards: jnp.ndarray, select_batch: jnp.ndarray) -> EndRewardReplayBufferState:
+    def assign_rewards(self, state: RankedRewardReplayBufferState, rewards: jnp.ndarray, select_batch: jnp.ndarray) -> RankedRewardReplayBufferState:
         return assign_rewards(state, rewards, select_batch.astype(jnp.bool_), self.max_len_per_batch, self.quantile, self.episode_reward_memory_len_per_batch)
 
 
@@ -53,8 +53,7 @@ def init(
     )
     
 
-
-@partial(jax.jit, static_argnums=(3,4,5))
+# @partial(jax.jit, static_argnums=(3,4,5))
 def assign_rewards(
     buffer_state: RankedRewardReplayBufferState,
     rewards: jnp.ndarray,

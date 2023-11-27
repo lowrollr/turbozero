@@ -5,12 +5,12 @@ from dataclasses import dataclass
 import jax
 import jax.numpy as jnp
 
-from core_jax.envs.env import Env
+from core_jax.envs.env import Env, EnvState
 
 
 @dataclass
 class EvaluatorConfig:
-    epsilon: float = 1e-8
+    epsilon: float
 
 
 @struct.dataclass
@@ -33,40 +33,24 @@ class Evaluator:
     def evaluate(self, 
         evaluator_state: EvaluatorState, 
         env: Env, 
-        env_state: struct.PyTreeNode, 
-        observation: struct.PyTreeNode, 
+        env_state: EnvState, 
         *args
-    ) -> Tuple[EvaluatorState, jnp.ndarray, jnp.ndarray]:
-        # returns policy logits, and value estimation for the current state
-        random_key, new_key = jax.random.split(evaluator_state.key)
-        return (
-            evaluator_state.replace(
-                key=new_key
-            ),
-            jax.random.normal(random_key, (*observation.action_mask.shape,)),
-            jnp.zeros((1,))
-        )
+    ) -> Tuple[EvaluatorState]:
+        raise NotImplementedError() 
     
     def choose_action(self, 
         evaluator_state: EvaluatorState, 
         env: Env,
-        env_state: struct.PyTreeNode,
-        observation: struct.PyTreeNode,
-        policy_logits: jnp.ndarray    
+        env_state: EnvState,
     ) -> Tuple[EvaluatorState, jnp.ndarray]:
-        random_key, new_key = jax.random.split(evaluator_state.key)
-        return (evaluator_state.replace(key=new_key), env.get_random_legal_action(
-            env_state,
-            observation,
-            random_key
-        ))
+        raise NotImplementedError()
     
-    def step_evaluator(
-            self, 
-            evaluator_state: EvaluatorState, 
-            actions: jnp.ndarray, 
-            terminated: jnp.ndarray
-        ) -> EvaluatorState:
-
+    def step_evaluator(self, 
+        evaluator_state: EvaluatorState, 
+        actions: jnp.ndarray, 
+        terminated: jnp.ndarray
+    ) -> EvaluatorState:
         return evaluator_state
     
+    def get_raw_policy(self, evaluator_state: EvaluatorState) -> jnp.ndarray:
+        raise NotImplementedError()
