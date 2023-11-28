@@ -106,7 +106,7 @@ class MCTS(Evaluator):
         puct_score = jnp.where(
             legal_actions,
             puct_score,
-            jnp.finfo(jnp.float32).min
+            -jnp.inf
         )
         return jnp.argmax(puct_score)
     
@@ -163,7 +163,7 @@ class MCTS(Evaluator):
         policy_logits = jnp.where(
             legal_actions,
             policy_logits,
-            jnp.finfo(jnp.float32).min
+            -jnp.inf
         )
 
         policy = jax.nn.softmax(policy_logits)
@@ -260,7 +260,7 @@ class MCTS(Evaluator):
         policy_logits = jnp.where(
             legal_actions,
             policy_logits,
-            jnp.finfo(jnp.float32).min
+            -jnp.inf
         )
         policy = jax.nn.softmax(policy_logits)
 
@@ -386,7 +386,7 @@ class MCTS(Evaluator):
         )
 
     def get_raw_policy(self, evaluator_state: EvaluatorState) -> jnp.ndarray:
-        return evaluator_state.p_vals[1]
+        return evaluator_state.n_vals[1]
 
 
 

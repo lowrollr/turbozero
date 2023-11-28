@@ -55,10 +55,15 @@ class AlphaZero(MCTS):
     ) -> Tuple[MCTSState, jnp.ndarray]:
         if self.config.temperature > 0:
             rand_key, new_key = jax.random.split(state.key)
-            action = jax.random.categorical(rand_key, jnp.power(state.p_vals[1], 1/self.config.temperature), shape=())
+            action_visit_counts = jnp.where(
+                env_state.legal_action_mask,
+                state.n_vals[1],
+                -jnp.inf
+            )
+            action = jax.random.categorical(rand_key, jnp.power(action_visit_counts, 1/self.config.temperature), shape=())
             return state.replace(key=new_key), action
         else:
-            action = jnp.argmax(state.p_vals[1])
+            action = jnp.argmax(state.n_vals[1])
             return state, action
         
     def evaluate(self, 
