@@ -55,12 +55,8 @@ class AlphaZero(MCTS):
     ) -> Tuple[MCTSState, jnp.ndarray]:
         if self.config.temperature > 0:
             rand_key, new_key = jax.random.split(state.key)
-            action_visit_counts = jnp.where(
-                env_state.legal_action_mask,
-                state.n_vals[1],
-                -jnp.inf
-            )
-            action = jax.random.categorical(rand_key, jnp.power(action_visit_counts, 1/self.config.temperature), shape=())
+            policy = self.get_policy(state)
+            action = jax.random.choice(rand_key, len(policy), p=policy)
             return state.replace(key=new_key), action
         else:
             action = jnp.argmax(state.n_vals[1])
@@ -74,4 +70,7 @@ class AlphaZero(MCTS):
     ) -> MCTSState:
         return super().evaluate(state, env, env_state, num_iters=self.config.mcts_iters, model_params=model_params)
 
-        
+    def get_policy(self, state: MCTSState) -> jnp.ndarray:
+        action_visits = state.n_vals[1]
+        action_visits = action_visits ** (1/self.config.temperature)
+        return action_visits / action_visits.sum()

@@ -132,7 +132,7 @@ class MCTS(Evaluator):
                 state.next_empty + 1,
                 state.next_empty
             ),
-            idx_action_map=state.idx_action_map.at[state.cur_node].set(master_action_idx),
+            idx_action_map=state.idx_action_map.at[state.cur_node, action].set(master_action_idx),
             visits=state.visits.at[state.depth, None].set(master_action_idx),
             actions=state.actions.at[state.depth-1, None].set(action),
             parents=state.parents.at[master_action_idx].set(state.cur_node),
@@ -148,17 +148,19 @@ class MCTS(Evaluator):
     ) -> Tuple[IterationState, any]:
         state, env_state, root_state = iter_state.state, iter_state.env_state, iter_state.root_state
 
-        legal_actions = iter_state.env_state.legal_action_mask.flatten()
+        legal_actions = env_state.legal_action_mask.flatten()
         
         action = self.choose_with_puct(state, legal_actions)
     
         env_state, terminated = env.step(env_state, action)
         
         state, unvisited = self.traverse(state, action)
+
+
         
         state, policy_logits, evaluation = self.evaluate_leaf(env, state, env_state._observation, **kwargs)
         
-        legal_actions = iter_state.env_state.legal_action_mask.flatten()
+        legal_actions = env_state.legal_action_mask.flatten()
         
         policy_logits = jnp.where(
             legal_actions,
@@ -195,7 +197,10 @@ class MCTS(Evaluator):
         ).reshape(-1)
 
 
-        backprop_rewards = (value * leaf_inc * state.reward_indices) + ((-value) * leaf_inc * (1-state.reward_indices)) 
+        backprop_rewards = leaf_inc * (
+            (value * state.reward_indices) + 
+            ((-value) * (1-state.reward_indices))
+        )
 
         return (iter_state.replace(
             state = state.replace(
@@ -385,8 +390,9 @@ class MCTS(Evaluator):
             lambda: evaluator_state
         )
 
-    def get_raw_policy(self, evaluator_state: EvaluatorState) -> jnp.ndarray:
-        return evaluator_state.n_vals[1]
+    def get_policy(self, evaluator_state: EvaluatorState) -> jnp.ndarray:
+        action_vists = evaluator_state.n_vals[1]
+        return action_vists / action_vists.sum()
 
 
 
