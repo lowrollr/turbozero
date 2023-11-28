@@ -19,13 +19,9 @@ class EvaluatorState:
 
 class Evaluator:
     def __init__(self,
-        config: EvaluatorConfig,
-        *args,
-        **kwargs
+        config: EvaluatorConfig
     ):
         self.config = config
-        self.args = args
-        self.kwargs = kwargs
 
     def reset(self, key: jax.random.PRNGKey) -> EvaluatorState:
         return EvaluatorState(key=key)

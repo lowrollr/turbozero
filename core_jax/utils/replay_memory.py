@@ -64,7 +64,7 @@ def add_experience(
         populated = buffer_state.populated.at[:, buffer_state.next_index, 0].set(True)
     )
 
-# @partial(jax.jit, static_argnums=(3,))
+@partial(jax.jit, static_argnums=(3,))
 def assign_rewards(
     buffer_state: EndRewardReplayBufferState,
     rewards: jnp.ndarray,
@@ -153,6 +153,7 @@ def init(
         ),
         template_experience,
     )
+
 
     return EndRewardReplayBufferState(
         next_index=jnp.zeros((batch_size,), dtype=jnp.int32),

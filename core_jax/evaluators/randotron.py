@@ -27,13 +27,13 @@ class Randotron(MCTS):
         return super().evaluate(state, env, env_state, num_iters=100)
     
     def choose_action(self, 
-        evaluator_state: EvaluatorState, 
+        state: EvaluatorState, 
         env: Env, 
         env_state: EnvState
     ) -> Tuple[EvaluatorState, jnp.ndarray]:
-        return evaluator_state, jnp.argmax(jnp.where(
+        return state, jnp.argmax(jnp.where(
             env_state.legal_action_mask.reshape(-1),
-            self.get_raw_policy(evaluator_state),
+            self.get_raw_policy(state),
             -jnp.inf
         ))
         

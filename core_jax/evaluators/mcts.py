@@ -44,15 +44,13 @@ class IterationState:
 class MCTS(Evaluator):
     def __init__(self,
         config: MCTSConfig,
-        policy_size: Tuple[int, ...],
-        num_players: int,
-        *args,
-        **kwargs
+        policy_shape: Tuple[int, ...],
+        num_players: int
     ):
-        super().__init__(config, *args, **kwargs)
+        super().__init__(config)
         self.config: MCTSConfig
-        self.policy_size: Tuple[int, ...] = policy_size
-        self.flat_policy_size: int = jnp.prod(jnp.array(policy_size))
+        self.policy_shape: Tuple[int, ...] = policy_shape
+        self.flat_policy_size: int = jnp.prod(jnp.array(policy_shape))
         self.policy_reshape_fn = None
         self.num_players = num_players
         self.valid_slots = self.config.max_nodes - 1
@@ -146,6 +144,7 @@ class MCTS(Evaluator):
         iter_state: IterationState, 
         carry: any,
         env: Env,
+        **kwargs
     ) -> Tuple[IterationState, any]:
         state, env_state, root_state = iter_state.state, iter_state.env_state, iter_state.root_state
 
@@ -157,7 +156,7 @@ class MCTS(Evaluator):
         
         state, unvisited = self.traverse(state, action)
         
-        state, policy_logits, evaluation = self.evaluate_leaf(env, state, env_state._observation)
+        state, policy_logits, evaluation = self.evaluate_leaf(env, state, env_state._observation, **kwargs)
         
         legal_actions = iter_state.env_state.legal_action_mask.flatten()
         
@@ -244,17 +243,19 @@ class MCTS(Evaluator):
         state: MCTSState,
         env: Env,
         env_state: EnvState,
-        num_iters: int
+        num_iters: int,
+        **kwargs
     ) -> MCTSState:
         
         state = self.reset_search(state)
 
         iteration_fn = partial(self.iterate,
-            env = env
+            env = env,
+            **kwargs
         )
     
         # initialize root node p_vals
-        state, policy_logits, _ = self.evaluate_leaf(env, state, env_state._observation)
+        state, policy_logits, _ = self.evaluate_leaf(env, state, env_state._observation, **kwargs)
         legal_actions = env_state.legal_action_mask.flatten()
         policy_logits = jnp.where(
             legal_actions,
