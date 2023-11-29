@@ -393,15 +393,3 @@ class MCTS(Evaluator):
     def get_policy(self, evaluator_state: EvaluatorState) -> jnp.ndarray:
         action_vists = evaluator_state.n_vals[1]
         return action_vists / action_vists.sum()
-
-
-
-
-
-
-
-
-        
-
-
-
