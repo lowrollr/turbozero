@@ -18,7 +18,7 @@ class MCTSConfig(EvaluatorConfig):
     dirichlet_epsilon: float
 
 @struct.dataclass
-class MCTSState:
+class MCTSState(EvaluatorState):
     key: jax.random.PRNGKey
     idx_action_map: jnp.ndarray
     p_vals: jnp.ndarray
@@ -43,16 +43,18 @@ class IterationState:
 
 class MCTS(Evaluator):
     def __init__(self,
+        env: Env,
         config: MCTSConfig,
-        policy_shape: Tuple[int, ...],
-        num_players: int
+        **kwargs
     ):
-        super().__init__(config)
+        super().__init__(env, config, **kwargs)
+
+
         self.config: MCTSConfig
-        self.policy_shape: Tuple[int, ...] = policy_shape
-        self.flat_policy_size: int = jnp.prod(jnp.array(policy_shape))
+        self.policy_shape: Tuple[int, ...] = env.get_action_shape()
+        self.flat_policy_size: int = jnp.prod(jnp.array(self.policy_shape))
         self.policy_reshape_fn = None
-        self.num_players = num_players
+        self.num_players = env.num_players()
         self.valid_slots = self.config.max_nodes - 1
         self.reward_indices = self.get_reward_indices()
 
@@ -143,7 +145,6 @@ class MCTS(Evaluator):
     def iterate(self,
         iter_state: IterationState, 
         carry: any,
-        env: Env,
         **kwargs
     ) -> Tuple[IterationState, any]:
         state, env_state, root_state = iter_state.state, iter_state.env_state, iter_state.root_state
@@ -152,13 +153,11 @@ class MCTS(Evaluator):
         
         action = self.choose_with_puct(state, legal_actions)
     
-        env_state, terminated = env.step(env_state, action)
+        env_state, terminated = self.env.step(env_state, action)
         
         state, unvisited = self.traverse(state, action)
 
-
-        
-        state, policy_logits, evaluation = self.evaluate_leaf(env, state, env_state._observation, **kwargs)
+        state, policy_logits, evaluation = self.evaluate_leaf(state, env_state._observation, **kwargs)
         
         legal_actions = env_state.legal_action_mask.flatten()
         
@@ -238,29 +237,23 @@ class MCTS(Evaluator):
         ), None)
         
     def evaluate_leaf(self,
-        env: Env,
         state: MCTSState,
         observation: struct.PyTreeNode,
+        **kwargs
     ) -> Tuple[MCTSState, jnp.ndarray, jnp.ndarray]:
         raise NotImplementedError()
 
     def evaluate(self, 
         state: MCTSState,
-        env: Env,
         env_state: EnvState,
         num_iters: int,
         **kwargs
     ) -> MCTSState:
         
         state = self.reset_search(state)
-
-        iteration_fn = partial(self.iterate,
-            env = env,
-            **kwargs
-        )
     
         # initialize root node p_vals
-        state, policy_logits, _ = self.evaluate_leaf(env, state, env_state._observation, **kwargs)
+        state, policy_logits, _ = self.evaluate_leaf(state, env_state._observation, **kwargs)
         legal_actions = env_state.legal_action_mask.flatten()
         policy_logits = jnp.where(
             legal_actions,
@@ -292,8 +285,10 @@ class MCTS(Evaluator):
             root_state = env_state
         )
 
+        iterate_fn = partial(self.iterate, **kwargs)
+
         iteration_state, _ = jax.lax.scan(
-            f=iteration_fn,
+            f=iterate_fn,
             init=iteration_state,
             xs=jnp.arange(num_iters)
         )

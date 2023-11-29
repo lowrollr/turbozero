@@ -9,12 +9,17 @@ from core_jax.envs.env import Env, EnvState
 
 class PgxEnv(Env):
     def __init__(self, env):
-        super().__init__(
-            env = env,
-            num_players=env.num_players,
-            action_space_dims=(env.num_actions,)
-        )
+        super().__init__(env = env)
         self._env: PgxEnv
+
+    def get_action_shape(self) -> Tuple[int]:
+        return (self._env.num_actions,)
+    
+    def get_observation_shape(self) -> Tuple[int]:
+        return self._env.observation_shape
+    
+    def num_players(self) -> int:
+        return self._env.num_players
 
     def step(self, state: EnvState, action: jnp.ndarray) -> Tuple[EnvState, jnp.ndarray]:
         # returns state, observation, reward, terminated

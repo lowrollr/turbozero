@@ -19,24 +19,25 @@ class EvaluatorState:
 
 class Evaluator:
     def __init__(self,
-        config: EvaluatorConfig
+        env: Env,
+        config: EvaluatorConfig,
+        **kwargs
     ):
         self.config = config
+        self.env = env
 
     def reset(self, key: jax.random.PRNGKey) -> EvaluatorState:
         return EvaluatorState(key=key)
     
     def evaluate(self, 
         evaluator_state: EvaluatorState, 
-        env: Env, 
         env_state: EnvState, 
         *args
     ) -> Tuple[EvaluatorState]:
         raise NotImplementedError() 
     
     def choose_action(self, 
-        evaluator_state: EvaluatorState, 
-        env: Env,
+        evaluator_state: EvaluatorState,
         env_state: EnvState,
     ) -> Tuple[EvaluatorState, jnp.ndarray]:
         raise NotImplementedError()

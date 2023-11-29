@@ -13,19 +13,25 @@ from core_jax.utils.action_utils import unflatten_action
 
 class JumanjiEnv(Env):
     def __init__(self, jumanji_env: JEnv):
-        dims = jumanji_env.action_spec().num_values
+        super().__init__(
+            env = jumanji_env,
+        )
+        self._env: JEnv
+
+        dims = self.get_action_shape()
         self.unflatten = unflatten_action 
         if type(dims) == int:
             dims = (dims,)
             self.unflatten = lambda x, _: x
-
-        super().__init__(
-            env = jumanji_env,
-            action_space_dims = dims,
-            num_players = 1
-        )
-        self._env: JEnv
-        
+    
+    def get_action_shape(self) -> Tuple[int]:
+        return self._env.action_spec().num_values
+    
+    def get_observation_shape(self) -> Tuple[int]:
+        return self._env.observation_spec().shape
+    
+    def num_players(self) -> int:
+        return 1
     
     def step(self, state: EnvState, action: jnp.ndarray) -> Tuple[EnvState, jnp.ndarray]:
         # returns state, observation, reward, terminated
@@ -48,11 +54,6 @@ class JumanjiEnv(Env):
             _state=env_state,
             _observation=timestep.observation,
         ), timestep.last()
-
-
-    
-    
-    
 
 
 def make_jumanji_env(env_name, *args, **kwargs) -> JumanjiEnv:

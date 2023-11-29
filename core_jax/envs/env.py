@@ -16,21 +16,26 @@ class EnvState:
 
 class Env:
     def __init__(self, 
-        env: any,
-        action_space_dims: Tuple[int,...],
-        num_players: int, 
+        env: any, 
         *args, **kwargs
     ):
         self.args = args
         self.kwargs = kwargs
-        self.action_space_dims = action_space_dims
-        self.num_players = num_players
         self._env = env
 
     def step(self, state: EnvState, action: jnp.ndarray,) -> Tuple[EnvState, jnp.ndarray]:
         raise NotImplementedError()
 
     def reset(self, key: jax.random.PRNGKey) -> Tuple[EnvState, jnp.ndarray]:
+        raise NotImplementedError()
+    
+    def get_action_shape(self) -> Tuple[int]:
+        raise NotImplementedError()
+    
+    def get_observation_shape(self) -> Tuple[int]:
+        raise NotImplementedError()
+    
+    def num_players(self) -> int:
         raise NotImplementedError()
 
     def reset_if_terminated(self, state: EnvState, terminated: jnp.ndarray) -> Tuple[EnvState, jnp.ndarray]:
