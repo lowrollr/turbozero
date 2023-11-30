@@ -25,6 +25,7 @@ class CollectorState:
 class BaseExperience(struct.PyTreeNode):
     observation: struct.PyTreeNode
     policy: jnp.ndarray
+    policy_mask: jnp.ndarray
 
 
 class Collector:
@@ -39,12 +40,20 @@ class Collector:
         self.evaluator = evaluator
         self.buff = buff
 
-    def init(self, env_state, eval_state) -> CollectorState:
+    def init(self, 
+        env_state: EnvState, 
+        eval_state: EvaluatorState
+    ) -> CollectorState:
         buff_state = self.buff.init(
-            BaseExperience(
-                observation=env_state._observation,
-                policy=jax.vmap(self.evaluator.get_policy)(eval_state),
+            jax.tree_map(
+                lambda x: jnp.zeros(x.shape[1:], x.dtype),
+                BaseExperience(
+                    observation=env_state._observation,
+                    policy=jax.vmap(self.evaluator.get_policy)(eval_state),
+                    policy_mask=env_state.legal_action_mask
+                )
             )
+            
         )
 
         return CollectorState(
@@ -67,6 +76,7 @@ class Collector:
             BaseExperience(
                 observation=observation,
                 policy=jax.vmap(self.evaluator.get_policy)(eval_state),
+                policy_mask=env_state.legal_action_mask
             )
         )
 

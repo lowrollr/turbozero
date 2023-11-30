@@ -1,7 +1,7 @@
 
 
 from functools import partial
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 from flax import struct
 from flax.training import train_state
 from dataclasses import dataclass
@@ -26,6 +26,7 @@ class TrainerConfig(CollectorConfig):
     epochs_per_checkpoint: int
     learning_rate: float
     momentum: float
+    policy_factor: float
 
 @struct.dataclass
 class TrainerState(CollectorState, train_state.TrainState):
@@ -42,7 +43,7 @@ class Trainer(Collector):
         super().__init__(config, env, evaluator, buff)
         self.model = model
     
-    def unpack_model_params(
+    def pack_model_params(
         self,
         state: TrainerState
     )  -> Dict:
@@ -58,9 +59,13 @@ class Trainer(Collector):
         model_params: Optional[struct.PyTreeNode] = None
     ) -> TrainerState:
         buff_state = self.buff.init(
-            BaseExperience(
-                observation=env_state._observation,
-                policy=jax.vmap(self.evaluator.get_policy)(eval_state),
+            jax.tree_map(
+                lambda x: jnp.zeros(x.shape[1:], x.dtype),
+                BaseExperience(
+                    observation=env_state._observation,
+                    policy=jax.vmap(self.evaluator.get_policy)(eval_state),
+                    policy_mask=env_state.legal_action_mask
+                )
             )
         )
         
@@ -83,7 +88,7 @@ class Trainer(Collector):
     ) -> CollectorState:
         env_state, eval_state, buff_state = state.env_state, state.evaluator_state, state.buff_state
         observation = env_state._observation
-        evaluation_fn = partial(self.evaluator.evaluate, model_params=self.unpack_model_params(state))
+        evaluation_fn = partial(self.evaluator.evaluate, model_params=self.pack_model_params(state))
         eval_state = jax.vmap(evaluation_fn)(eval_state, env_state)
         eval_state, action = jax.vmap(self.evaluator.choose_action)(eval_state, env_state)
         env_state, terminated = jax.vmap(self.env.step)(env_state, action)
@@ -93,6 +98,7 @@ class Trainer(Collector):
             BaseExperience(
                 observation=observation,
                 policy=jax.vmap(self.evaluator.get_policy)(eval_state),
+                policy_mask=env_state.legal_action_mask
             )
         )
 
@@ -105,7 +111,51 @@ class Trainer(Collector):
             buff_state=buff_state
         )
     
-   
+    def train_step(self,
+        state: TrainerState,       
+    ) -> TrainerState:
+        # sample from replay memory
+        buff_state, batch, rewards = self.buff.sample(state.buff_state)
+        batch = jax.tree_util.tree_map(
+            lambda x: x.astype(jnp.float32),
+            batch
+        )
+        rewards = rewards.astype(jnp.float32)
+
+        def loss_fn(params: struct.PyTreeNode):
+            (pred_policy, pred_value), updates = state.apply_fn(
+                {'params': params, 'batch_stats': state.batch_stats}, 
+                x=batch.observation,
+                train=True,
+                mutable=['batch_stats']
+            )
+            pred_policy = jnp.where(
+                batch.policy_mask,
+                pred_policy,
+                0
+            )
+            policy_loss = optax.softmax_cross_entropy(pred_policy, batch.policy).mean() * self.config.policy_factor
+            value_loss = optax.l2_loss(pred_value, rewards).mean()
+
+            loss = policy_loss + value_loss
+            return loss, ((policy_loss, value_loss, pred_policy, pred_value), updates)
+        
+        grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
+        (loss, ((policy_loss, value_loss, pred_policy, pred_value), updates)), grads = grad_fn(state.params)
+        state = state.apply_gradients(grads=grads)
+        state = state.replace(
+            batch_stats=updates['batch_stats'],
+            buff_state=buff_state
+        ) 
+        metrics = {
+            'loss': loss,
+            'policy_loss': policy_loss,
+            'value_loss': value_loss,
+            'policy_accuracy': jnp.mean(jnp.argmax(pred_policy, axis=-1) == jnp.argmax(batch.policy, axis=-1)),
+            'value_accuracy': jnp.mean(jnp.round(pred_value) == jnp.round(rewards))
+        }
+
+        return state, metrics
 
     def warmup(self,
         state: TrainerState,           
@@ -118,14 +168,20 @@ class Trainer(Collector):
     
     def train_epoch(self,
         state: TrainerState,
-    ) -> TrainerState:
+    ) -> Tuple[TrainerState, Any]:
+        # make collection steps
         state, _ = jax.lax.scan(
             lambda s, _: (self.collect_step(s), None),
             state,
             jnp.arange(self.config.collection_steps_per_epoch)
         )
-
-        return state
+        # then make train steps
+        return jax.lax.scan(
+            lambda s, _: self.train_step(s),
+            state,
+            jnp.arange(self.config.train_steps_per_epoch)
+        )
+        
 
 
 
