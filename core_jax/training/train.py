@@ -13,7 +13,7 @@ from core_jax.evaluators.evaluator import Evaluator, EvaluatorState
 from core_jax.utils.replay_memory import EndRewardReplayBufferState
 
 
-
+@
 class TrainState(train_state.TrainState):
     batch_stats: Any
 

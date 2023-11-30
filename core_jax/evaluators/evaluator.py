@@ -12,7 +12,6 @@ from core_jax.envs.env import Env, EnvState
 class EvaluatorConfig:
     epsilon: float
 
-
 @struct.dataclass
 class EvaluatorState:
     key: jax.random.PRNGKey
@@ -49,5 +48,5 @@ class Evaluator:
     ) -> EvaluatorState:
         return evaluator_state
     
-    def get_raw_policy(self, evaluator_state: EvaluatorState) -> jnp.ndarray:
+    def get_policy(self, evaluator_state: EvaluatorState) -> jnp.ndarray:
         raise NotImplementedError()
