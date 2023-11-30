@@ -80,6 +80,12 @@ class Collector:
             )
         )
 
+        buff_state = self.buff.assign_rewards(
+            buff_state, 
+            rewards=env_state.reward, 
+            select_batch=terminated
+        )
+
         eval_state = jax.vmap(self.evaluator.step_evaluator)(eval_state, action, terminated)
         env_state, terminated = jax.vmap(self.env.reset_if_terminated)(env_state, terminated)
 
