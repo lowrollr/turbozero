@@ -39,8 +39,6 @@ class Collector:
         self.evaluator = evaluator
         self.buff = buff
 
-        self.evaluation_fn = self.evaluator.evaluate
-
     def init(self, env_state, eval_state) -> CollectorState:
         buff_state = self.buff.init(
             BaseExperience(
@@ -55,15 +53,12 @@ class Collector:
             buff_state=buff_state
         )
 
-    def collect_step(
-        self,
+    def collect_step(self,
         state: CollectorState,
-        eval_args: dict,
     ) -> CollectorState:
         env_state, eval_state, buff_state = state.env_state, state.evaluator_state, state.buff_state
         observation = env_state._observation
-        evaluation_fn = partial(self.evaluation_fn, **eval_args)
-        eval_state = jax.vmap(evaluation_fn, in_axes=(0,0))(eval_state, env_state)
+        eval_state = jax.vmap(self.evaluator.evaluate)(eval_state, env_state)
         eval_state, action = jax.vmap(self.evaluator.choose_action)(eval_state, env_state)
         env_state, terminated = jax.vmap(self.env.step)(env_state, action)
 

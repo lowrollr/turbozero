@@ -31,7 +31,7 @@ class Evaluator:
     def evaluate(self, 
         evaluator_state: EvaluatorState, 
         env_state: EnvState, 
-        *args
+        **kwargs
     ) -> Tuple[EvaluatorState]:
         raise NotImplementedError() 
     

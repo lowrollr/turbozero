@@ -31,7 +31,7 @@ class NNEvaluator(Evaluator):
         observation: struct.PyTreeNode,
         model_params: struct.PyTreeNode
     ) -> Any:
-        return self.model.apply(model_params, observation[None, ...], training=False)
+        return self.model.apply(model_params, x=observation[None, ...], train=False)
 
 
     def evaluate(self, 
