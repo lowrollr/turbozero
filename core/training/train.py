@@ -245,7 +245,7 @@ class Trainer(Collector):
             if state.epoch % self.config.epochs_per_checkpoint == 0:
                 self.save_checkpoint(state)
 
-            state.replace(epoch=state.epoch + 1)
+            state = state.replace(epoch=state.epoch + 1)
 
         return state
     
