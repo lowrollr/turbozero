@@ -1,5 +1,6 @@
 
 from functools import partial
+from typing import Any
 import jax
 import jax.numpy as jnp
 
@@ -8,7 +9,7 @@ from dataclasses import dataclass
 
 from core.envs.env import EnvState, Env
 from core.evaluators.evaluator import Evaluator, EvaluatorState
-from core.utils.replay_memory import EndRewardReplayBuffer, EndRewardReplayBufferState
+from core.memory.replay_memory import EndRewardReplayBuffer, EndRewardReplayBufferState
 
 
 @dataclass
@@ -20,6 +21,11 @@ class CollectorState:
     evaluator_state: EvaluatorState
     env_state: EnvState
     buff_state: EndRewardReplayBufferState
+
+@struct.dataclass
+class MPEvaluatorCollectorState:
+    evaluators: struct.PyTreeNode
+    env_state: EnvState
 
 @struct.dataclass
 class BaseExperience(struct.PyTreeNode):
@@ -41,10 +47,12 @@ class Collector:
         self.buff = buff
 
     def init(self, 
+        key: jax.random.PRNGKey,
         env_state: EnvState, 
         eval_state: EvaluatorState
     ) -> CollectorState:
         buff_state = self.buff.init(
+            key,
             jax.tree_map(
                 lambda x: jnp.zeros(x.shape[1:], x.dtype),
                 BaseExperience(
@@ -94,3 +102,18 @@ class Collector:
             evaluator_state=eval_state,
             buff_state=buff_state
         )
+    
+    # def evaluate_against(self,
+    #     state: CollectorState,
+    #     opp_evaluator: Evaluator,
+    #     num_episodes: int
+    # ) -> Any:
+    #     two_player_state = MPEvaluatorCollectorState(
+    #         key = state.evaluator_state.key,
+    #         {
+    #             'player_1': (self.evaluator, state.evaluator_state), 
+    #             'player_2': (opp_evaluator, opp_evaluator.init())
+    #         }
+        # )
+
+

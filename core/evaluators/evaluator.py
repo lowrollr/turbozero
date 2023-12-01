@@ -10,6 +10,7 @@ from core.envs.env import Env, EnvState
 
 @dataclass
 class EvaluatorConfig:
+    evaluator_type: str
     epsilon: float
 
 @struct.dataclass

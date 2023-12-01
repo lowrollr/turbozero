@@ -1,9 +1,17 @@
-from typing import Tuple
+from dataclasses import dataclass
+from typing import Callable, Tuple
 import jax
 import jax.numpy as jnp
 from flax import struct
 
 from core.utils.action_utils import unflatten_action
+
+
+@dataclass
+class EnvConfig:
+    env_type: str
+    env_name: str
+    base_config: dict
 
 @struct.dataclass
 class EnvState:
@@ -17,8 +25,10 @@ class EnvState:
 class Env:
     def __init__(self, 
         env: any, 
+        config: EnvConfig,
         *args, **kwargs
     ):
+        self.config = config
         self.args = args
         self.kwargs = kwargs
         self._env = env

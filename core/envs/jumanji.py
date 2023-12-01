@@ -56,6 +56,11 @@ class JumanjiEnv(Env):
         ), timestep.last()
 
 
-def make_jumanji_env(env_name, *args, **kwargs) -> JumanjiEnv:
-    jenv = jumanji.make(env_name, *args, **kwargs)
-    return JumanjiEnv(jenv)
+def make_jumanji_env(env_name, **kwargs) -> JumanjiEnv:
+    jenv = jumanji.make(env_name, **kwargs)
+    config = {
+        'env_type': 'jumanji',
+        'env_name': env_name,
+        'base_config': kwargs
+    }
+    return JumanjiEnv(jenv, config=config)

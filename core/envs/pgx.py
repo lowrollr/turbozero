@@ -4,13 +4,13 @@ from typing import Tuple
 import pgx
 import jax.numpy as jnp
 import jax
-from core.envs.env import Env, EnvState
+from core.envs.env import Env, EnvConfig, EnvState
 
 
 class PgxEnv(Env):
-    def __init__(self, env):
-        super().__init__(env = env)
-        self._env: PgxEnv
+    def __init__(self, env: pgx.core.Env, config: EnvConfig):
+        super().__init__(env = env, config = config)
+        self._env: pgx.core.Env
 
     def get_action_shape(self) -> Tuple[int]:
         return (self._env.num_actions,)
@@ -45,6 +45,10 @@ class PgxEnv(Env):
         ), env_state.terminated
         
 
-def make_pgx_env(env_name, *args, **kwargs) -> PgxEnv:
-    env = pgx.make(env_name, *args, **kwargs)
-    return PgxEnv(env)
+def make_pgx_env(env_name, **kwargs) -> PgxEnv:
+    env = pgx.make(env_name, **kwargs)
+    return PgxEnv(env, config=EnvConfig(
+        env_type='pgx',
+        env_name=env_name,
+        base_config=kwargs
+    ))
