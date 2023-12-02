@@ -25,7 +25,7 @@ import wandb
 
 
 
-@dataclass
+@struct.dataclass
 class TrainerConfig(CollectorConfig):
     warmup_steps: int
     collection_steps_per_epoch: int
@@ -61,7 +61,7 @@ class Trainer(Collector):
         self.model = model
 
         checkpointer = orbax.checkpoint.PyTreeCheckpointer()
-        options = orbax.checkpoint.CheckpointManagerOptions(max_to_keep=self.config.max_checkpoints_to_keep)
+        options = orbax.checkpoint.CheckpointManagerOptions(max_to_keep=self.config.max_checkpoints_to_keep, create=True)
         self.checkpoint_mngr = orbax.checkpoint.CheckpointManager(
             self.config.checkpoint_dir,
             checkpointer, 
@@ -254,17 +254,14 @@ class Trainer(Collector):
         state: TrainerState,
     ) -> None:
         
-        configs = {
-            'train_config': self.config,
-            'env_config': self.env.config,
-            'eval_config': self.evaluator.config,
-            'buff_config': self.buff.config,
-            'model_config': self.model.config
-        }
 
         ckpt = {
             'state': state.train_state,
-            'config': configs
+            'train_config': self.config.__dict__,
+            'env_config': self.env.config.__dict__,
+            'eval_config': self.evaluator.config.__dict__,
+            'buff_config': self.buff.config.__dict__,
+            'model_config': self.model.config.__dict__
         }
 
         save_args = orbax_utils.save_args_from_target(ckpt)
@@ -277,39 +274,55 @@ class Trainer(Collector):
 
 def init_from_checkpoint(
     checkpoint_dir: str,
-    checkpoint_num: Optional[int],
+    checkpoint_num: Optional[int] = None,
     seed: int = 0
 ) -> Tuple[Trainer, TrainerState]:
     checkpointer = orbax.checkpoint.PyTreeCheckpointer()
     checkpoint_mngr = orbax.checkpoint.CheckpointManager(
         checkpoint_dir,
-        checkpointer=checkpointer
+        checkpointer
     )
     if checkpoint_num is None:
         checkpoint_num = checkpoint_mngr.latest_step()
-    
-    ckpt = checkpoint_mngr.restore(checkpoint_num)
-    
-    train_state = ckpt['state']
-    configs = ckpt['config']
 
-    env = make_env(configs['env_config'])
-    model = make_model(configs['model_config'])
-    evaluator = make_evaluator(configs['eval_config'], env, model)
-    buff = make_replay_buffer(configs['buff_config'])
+    # load once to get configs
+    ckpt = checkpoint_mngr.restore(checkpoint_num)
+
+    env = make_env(ckpt['env_config'])
+    model = make_model(ckpt['model_config'])
+    evaluator = make_evaluator(ckpt['eval_config'], env, model=model)
+    buff = make_replay_buffer(ckpt['buff_config'])
 
     trainer = Trainer(
-        configs['train_config'],
+        TrainerConfig(**ckpt['train_config']),
         env,
         evaluator,
         buff,
         model
     )
 
+    # build target
+    target = {
+        'state': BNTrainState.create(
+                apply_fn=model.apply,
+                params=ckpt['state']['params'],
+                batch_stats=ckpt['state'].get('batch_stats'),
+                tx=optax.sgd(learning_rate=trainer.config.learning_rate, momentum=trainer.config.momentum)
+        ),
+        'train_config': None,
+        'env_config': None,
+        'eval_config': None,
+        'buff_config': None,
+        'model_config': None
+    }
+
+    # load again now that we have proper TrainState target
+    ckpt = checkpoint_mngr.restore(checkpoint_num, items=target)
+
     trainer_state = trainer.init(jax.random.PRNGKey(seed))
     
     trainer_state = trainer_state.replace(
-        train_state=train_state
+        train_state=ckpt['state']
     )
 
     return trainer, trainer_state

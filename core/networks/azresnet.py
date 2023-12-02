@@ -1,8 +1,9 @@
 from dataclasses import dataclass
 import flax.linen as nn
+from flax import struct
 
 
-@dataclass
+@struct.dataclass
 class AZResnetConfig:
     model_type: str
     policy_head_out_size: int

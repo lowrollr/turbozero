@@ -6,7 +6,7 @@ import jax.numpy as jnp
 from flax import struct
 from core.memory.replay_memory import EndRewardReplayBuffer, EndRewardReplayBufferConfig, EndRewardReplayBufferState, init as super_init
 
-@dataclass
+@struct.dataclass
 class RankedRewardReplayBufferConfig(EndRewardReplayBufferConfig):
     episode_reward_memory_len_per_batch: int
     quantile: float

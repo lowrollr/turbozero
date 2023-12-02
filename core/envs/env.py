@@ -7,7 +7,7 @@ from flax import struct
 from core.utils.action_utils import unflatten_action
 
 
-@dataclass
+@struct.dataclass
 class EnvConfig:
     env_type: str
     env_name: str

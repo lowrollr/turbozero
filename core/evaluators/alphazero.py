@@ -8,7 +8,7 @@ from core.envs.env import Env, EnvState
 from core.evaluators.mcts import MCTS, MCTSConfig, MCTSState
 from core.evaluators.nn_evaluator import NNEvaluator
 
-@dataclass
+@struct.dataclass
 class AlphaZeroConfig(MCTSConfig):
     mcts_iters: int
     temperature: float

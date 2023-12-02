@@ -10,7 +10,7 @@ def expand_dims_to_match(array_to_expand, reference_array):
     expand_shape = [-1 if i < len(array_to_expand.shape) else 1 for i in range(len(target_shape))]
     return jnp.broadcast_to(array_to_expand.reshape(expand_shape), target_shape)
 
-@dataclass
+@struct.dataclass
 class EndRewardReplayBufferConfig:
     buff_type: str
     batch_size: int

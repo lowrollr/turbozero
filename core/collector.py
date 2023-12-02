@@ -12,7 +12,7 @@ from core.evaluators.evaluator import Evaluator, EvaluatorState
 from core.memory.replay_memory import EndRewardReplayBuffer, EndRewardReplayBufferState
 
 
-@dataclass
+@struct.dataclass
 class CollectorConfig:
     pass
 

@@ -8,7 +8,7 @@ import jax.numpy as jnp
 from core.envs.env import Env, EnvState
 
 
-@dataclass
+@struct.dataclass
 class EvaluatorConfig:
     evaluator_type: str
     epsilon: float
