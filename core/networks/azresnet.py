@@ -3,13 +3,13 @@ import flax.linen as nn
 from flax import struct
 
 
-@struct.dataclass
+@dataclass
 class AZResnetConfig:
     model_type: str
     policy_head_out_size: int
     value_head_out_size: int
     num_blocks: int
-    channels: int
+    num_channels: int
 
 class ResidualBlock(nn.Module):
     channels: int
@@ -28,12 +28,12 @@ class AZResnet(nn.Module):
 
     @nn.compact
     def __call__(self, x, train: bool):
-        x = nn.Conv(features=self.config.channels, kernel_size=(1,1), strides=(1,1), padding='SAME')(x)
+        x = nn.Conv(features=self.config.num_channels, kernel_size=(1,1), strides=(1,1), padding='SAME')(x)
         x = nn.BatchNorm(use_running_average=not train)(x)
         x = nn.relu(x)
 
         for _ in range(self.config.num_blocks):
-            x = ResidualBlock(channels=self.config.channels)(x, train=train)
+            x = ResidualBlock(channels=self.config.num_channels)(x, train=train)
 
         # policy head
         policy = nn.Conv(features=2, kernel_size=(1,1), strides=(1,1), padding='SAME')(x)

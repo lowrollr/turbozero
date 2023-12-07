@@ -4,7 +4,7 @@
 from typing import Tuple
 import jax
 import jax.numpy as jnp
-from core.envs.env import Env, EnvState
+from core.envs.env import Env, EnvConfig, EnvState
 import jumanji
 from jumanji.env import Environment as JEnv
 from flax import struct
@@ -12,9 +12,10 @@ from flax import struct
 from core.utils.action_utils import unflatten_action
 
 class JumanjiEnv(Env):
-    def __init__(self, jumanji_env: JEnv):
+    def __init__(self, jumanji_env: JEnv, config: EnvConfig):
         super().__init__(
             env = jumanji_env,
+            config = config,
         )
         self._env: JEnv
 

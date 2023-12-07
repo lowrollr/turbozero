@@ -10,7 +10,7 @@ from functools import partial
 
 from core.evaluators.evaluator import Evaluator, EvaluatorConfig, EvaluatorState
 
-@struct.dataclass
+@dataclass
 class MCTSConfig(EvaluatorConfig):
     max_nodes: int
     puct_coeff: float

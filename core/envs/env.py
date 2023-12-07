@@ -9,7 +9,7 @@ from core.utils.action_utils import unflatten_action
 
 @struct.dataclass
 class EnvConfig:
-    env_type: str
+    env_pkg: str
     env_name: str
     base_config: dict
 
@@ -32,6 +32,8 @@ class Env:
         self.args = args
         self.kwargs = kwargs
         self._env = env
+        self.action_space_dims = self.get_action_shape()
+        self.num_actions = jnp.prod(jnp.array(self.action_space_dims)).item()
 
     def step(self, state: EnvState, action: jnp.ndarray,) -> Tuple[EnvState, jnp.ndarray]:
         raise NotImplementedError()

@@ -8,9 +8,9 @@ from core.envs.env import Env, EnvState
 from core.evaluators.mcts import MCTS, MCTSConfig, MCTSState
 from core.evaluators.nn_evaluator import NNEvaluator
 
-@struct.dataclass
+@dataclass
 class AlphaZeroConfig(MCTSConfig):
-    mcts_iters: int
+    budget: int
     temperature: float
 
 @struct.dataclass
@@ -57,7 +57,7 @@ class AlphaZero(MCTS, NNEvaluator):
         model_params: struct.PyTreeNode,
         **kwargs
     ) -> AlphaZeroState:
-        return super().evaluate(state, env_state, num_iters=self.config.mcts_iters, model_params=model_params, **kwargs)
+        return super().evaluate(state, env_state, num_iters=self.config.budget, model_params=model_params, **kwargs)
 
     def get_policy(self, state: AlphaZeroState) -> jnp.ndarray:
         action_visits = state.n_vals[1]
