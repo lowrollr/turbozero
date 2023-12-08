@@ -29,7 +29,7 @@ class JumanjiEnv(Env):
         return self._env.action_spec().num_values
     
     def get_observation_shape(self) -> Tuple[int]:
-        return self._env.observation_spec().shape
+        return self._env.observation_spec().grid.shape
     
     def num_players(self) -> int:
         return 1
