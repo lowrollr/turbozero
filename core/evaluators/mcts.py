@@ -24,7 +24,6 @@ class MCTSState(EvaluatorState):
     p_vals: jnp.ndarray
     n_vals: jnp.ndarray
     w_vals: jnp.ndarray
-    actions: jnp.ndarray
     visits: jnp.ndarray
     depth: jnp.ndarray
     max_depth: jnp.ndarray
@@ -73,9 +72,8 @@ class MCTS(Evaluator):
             key=key,
             idx_action_map=jnp.zeros((self.config.max_nodes, self.flat_policy_size), dtype=jnp.int32),
             p_vals=jnp.zeros((self.config.max_nodes, self.flat_policy_size), dtype=jnp.float32),
-            n_vals=jnp.zeros((self.config.max_nodes, self.flat_policy_size), dtype=jnp.float32),
-            w_vals=jnp.zeros((self.config.max_nodes, self.flat_policy_size), dtype=jnp.float32),
-            actions=jnp.zeros((self.valid_slots, ), dtype=jnp.int32),
+            n_vals=jnp.zeros((self.config.max_nodes,), dtype=jnp.float32),
+            w_vals=jnp.zeros((self.config.max_nodes,), dtype=jnp.float32),
             visits=self.init_visits(),
             depth=jnp.ones((1,), dtype=jnp.int32),
             max_depth=jnp.zeros((1,), dtype=jnp.int32),
@@ -91,20 +89,30 @@ class MCTS(Evaluator):
             depth=jnp.ones((1,), dtype=jnp.int32),
             cur_node=jnp.ones((1,), dtype=jnp.int32),
             visits=self.init_visits(),
-            actions=jnp.zeros((self.valid_slots, ), dtype=jnp.int32),
         )
     
     def choose_with_puct(self, state: MCTSState, legal_actions: jnp.ndarray) -> jnp.ndarray:
-        visits = state.n_vals[state.cur_node]
+        # get visit counts for each child node
+        # visits = state.n_vals[state.cur_node]
         visits = jnp.where(
-            jnp.equal(visits, 0),
-            jnp.ones_like(visits),
-            visits
+            state.idx_action_map[state.cur_node] > 0,
+            state.n_vals[state.idx_action_map[state.cur_node]],
+            0
         )
 
-        q_val = state.w_vals[state.cur_node] / visits
-        p_val = state.p_vals[state.cur_node]
-        puct_score = q_val + (self.config.puct_coeff * p_val * jnp.sqrt(visits.sum()) / (1 + visits))
+        visits_nozero = jnp.clip(visits, a_min=1)
+
+        w_vals = jnp.where(
+            state.idx_action_map[state.cur_node] > 0,
+            state.w_vals[state.idx_action_map[state.cur_node]],
+            0
+        )
+
+        q_vals = w_vals / visits_nozero
+        
+        p_vals = state.p_vals[state.cur_node]
+
+        puct_score = q_vals + (self.config.puct_coeff * p_vals * jnp.sqrt(1 + visits.sum()) / (1 + visits))
         puct_score = jnp.where(
             legal_actions,
             puct_score,
@@ -136,7 +144,6 @@ class MCTS(Evaluator):
             ),
             idx_action_map=state.idx_action_map.at[state.cur_node, action].set(master_action_idx),
             visits=state.visits.at[state.depth, None].set(master_action_idx),
-            actions=state.actions.at[state.depth-1, None].set(action),
             parents=state.parents.at[master_action_idx].set(state.cur_node),
             cur_node=master_action_idx
         ), unvisited
@@ -186,12 +193,12 @@ class MCTS(Evaluator):
             unvisited
         )
 
-        visit_path = jnp.roll(state.visits, -1)
-        visit_path = visit_path.at[-1].set(0)
+        # visit_path = jnp.roll(state.visits, -1) > 0
+        # visit_path = visit_path.at[-1].set(0)
 
         leaf_inc = jnp.where(
             is_leaf,
-            visit_path,
+            state.visits > 0,
             0
         ).reshape(-1)
 
@@ -201,11 +208,13 @@ class MCTS(Evaluator):
             ((-value) * (1-state.reward_indices))
         )
 
+        
+
         return (iter_state.replace(
             state = state.replace(
                 p_vals = state.p_vals.at[state.cur_node].set(policy),
-                n_vals = state.n_vals.at[state.visits, state.actions].add(leaf_inc),
-                w_vals = state.w_vals.at[state.visits, state.actions].add(backprop_rewards),
+                n_vals = state.n_vals.at[state.visits].add(leaf_inc),
+                w_vals = state.w_vals.at[state.visits].add(backprop_rewards),
                 depth = jnp.where(
                     is_leaf,
                     1,
@@ -217,11 +226,6 @@ class MCTS(Evaluator):
                     0,
                     state.visits[1:]
                 )),
-                actions = jnp.where(
-                    is_leaf,
-                    0,
-                    state.actions
-                ),
                 cur_node = jnp.where(
                     is_leaf,
                     1,

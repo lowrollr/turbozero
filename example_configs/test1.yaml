@@ -1,0 +1,71 @@
+
+run_name: 'test123'
+run_description: 'This is a test run'
+evaluator_config: { # same for single/multi player
+  type: 'alphazero',
+  train: {
+    budget: 25,
+    max_nodes: 50,
+    temperature: 1.0,
+    epsilon: 0.00000001,
+    puct_coeff: 1.0,
+    dirichlet_alpha: 0.3,
+    dirichlet_epsilon: 0.25,
+  },
+  test: {
+    budget: 50,
+    max_nodes: 50,
+    temperature: 1.0,
+    epsilon: 0.00000001,
+    puct_coeff: 1.0,
+    dirichlet_alpha: 0.3,
+    dirichlet_epsilon: 0.25,
+  },
+  model: {
+    type: 'az_resnet',
+    config: {
+      num_blocks: 10,
+      num_channels: 128
+    }
+  }
+}
+env_config: {
+  name: 'othello',
+  pkg: 'pgx',
+  config: {}
+}
+training_config: {
+  # misc
+  seed: 0,
+  disk_store_location: '/tmp',
+  # train
+  selfplay_batch_size: 1,
+  warmup_steps: 1,
+  collection_steps_per_epoch: 1,
+  train_steps_per_epoch: 1,
+  learning_rate: 0.001,
+  momentum: 0.9,
+  policy_factor: 1.0,
+  checkpoint_every_n_epochs: 5,
+  checkpoint_dir: './checkpoints', # path to checkpoint dir, will be created if not exists
+  retain_n_checkpoints: 3,
+  max_episode_steps: 80,
+
+  # replay buffer
+  replay_buffer_config: {
+    type: 'end_reward',
+    config: {
+      capacity: 1000,
+      sample_size: 100,
+      # quantile: 0.75,
+      # episode_reward_memory_len: 20
+    }
+  },
+
+  # eval
+  test_every_n_epochs: 1,
+  test_batch_size: 10, # this may need to be set lower for 2P envs as we need to maintain 2 separate evaluator states per env state
+  test_episodes: 30,
+}
+
+

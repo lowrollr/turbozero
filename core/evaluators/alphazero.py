@@ -48,7 +48,7 @@ class AlphaZero(MCTS, NNEvaluator):
             action = jax.random.choice(rand_key, len(policy), p=policy)
             return state.replace(key=new_key), action
         else:
-            action = jnp.argmax(state.n_vals[1])
+            action = jnp.argmax(state.n_vals[state.idx_action_map[1]])
             return state, action
 
     def evaluate(self, 
@@ -60,6 +60,10 @@ class AlphaZero(MCTS, NNEvaluator):
         return super().evaluate(state, env_state, num_iters=self.config.budget, model_params=model_params, **kwargs)
 
     def get_policy(self, state: AlphaZeroState) -> jnp.ndarray:
-        action_visits = state.n_vals[1]
+        action_visits = jnp.where(
+            state.idx_action_map[1] > 0,
+            state.n_vals[state.idx_action_map[1]],
+            0
+        )
         action_visits = action_visits ** (1/self.config.temperature)
         return action_visits / action_visits.sum()
