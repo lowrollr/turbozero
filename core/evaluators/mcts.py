@@ -59,7 +59,7 @@ class MCTS(Evaluator):
 
     def get_reward_indices(self) -> jnp.ndarray:
         num_repeats = int(jnp.ceil(self.valid_slots / self.num_players).item())
-        return jnp.array([1] + [0] * (self.num_players - 1), dtype=jnp.int32).repeat(num_repeats)[:self.valid_slots]
+        return jnp.tile(jnp.array([1] + [0] * (self.num_players - 1), dtype=jnp.int32), num_repeats)[:self.valid_slots]
 
     def init_visits(self) -> jnp.ndarray:
         visits = jnp.zeros((self.valid_slots, ), dtype=jnp.int32)
@@ -178,14 +178,8 @@ class MCTS(Evaluator):
 
         value = jnp.where(
             terminated,
-            env_state.reward[env_state.cur_player_id],
+            env_state.reward[root_state.cur_player_id],
             evaluation
-        )
-
-        value = jnp.where(
-            jnp.equal(root_state.cur_player_id, env_state.cur_player_id),
-            value,
-            -value
         )
 
         is_leaf = jnp.logical_or(
@@ -193,22 +187,16 @@ class MCTS(Evaluator):
             unvisited
         )
 
-        # visit_path = jnp.roll(state.visits, -1) > 0
-        # visit_path = visit_path.at[-1].set(0)
-
         leaf_inc = jnp.where(
             is_leaf,
             state.visits > 0,
             0
         ).reshape(-1)
 
-
         backprop_rewards = leaf_inc * (
             (value * state.reward_indices) + 
             ((-value) * (1-state.reward_indices))
         )
-
-        
 
         return (iter_state.replace(
             state = state.replace(
@@ -291,11 +279,13 @@ class MCTS(Evaluator):
 
         iterate_fn = partial(self.iterate, **kwargs)
 
-        iteration_state, _ = jax.lax.scan(
-            f=iterate_fn,
-            init=iteration_state,
-            xs=jnp.arange(num_iters)
-        )
+        # iteration_state, _ = jax.lax.scan(
+        #     f=iterate_fn,
+        #     init=iteration_state,
+        #     xs=jnp.arange(num_iters)
+        # )
+        for _ in range(num_iters):
+            iteration_state, _ = iterate_fn(iteration_state, None)
 
         return iteration_state.state.replace(
             key = new_key,

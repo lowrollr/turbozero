@@ -91,12 +91,8 @@ class TwoPlayerTrainer(Trainer):
                 lambda: active_eval_state
             ),
             outcomes = jnp.where(
-                terminated & ~state.completed,
-                jnp.where(
-                    use_best_model,
-                    env_state.reward[:,0],
-                    env_state.reward[:,1]
-                ).flatten(),
+                (terminated & ~state.completed)[..., None],
+                env_state.reward,
                 state.outcomes
             ),
             completed = state.completed | terminated,
@@ -116,12 +112,14 @@ class TwoPlayerTrainer(Trainer):
         eval_keys = jax.random.split(eval_key, self.test_batch_size)
         op_eval_keys = jax.random.split(op_eval_key, self.test_batch_size)
         
+        test_env_state = jax.vmap(self.env.reset)(env_keys)[0]
+
         state = TwoPlayerTestState(
             trainer_state = state.replace(key=new_key),
-            test_env_state = jax.vmap(self.env.reset)(env_keys)[0],
+            test_env_state = test_env_state,
             test_eval_state = jax.vmap(self.test_evaluator.reset)(eval_keys),
             opponent_eval_state = jax.vmap(self.test_evaluator.reset)(op_eval_keys),
-            outcomes = jnp.zeros((self.test_batch_size,)),
+            outcomes = jnp.zeros_like(test_env_state.reward),
             completed = jnp.zeros((self.test_batch_size,), dtype=jnp.bool_),
         )
 
@@ -143,8 +141,8 @@ class TwoPlayerTrainer(Trainer):
                 reset
             ),
             outcomes = jnp.where(
-                reset,
-                jnp.zeros((self.test_batch_size,)),
+                reset[..., None],
+                jnp.zeros_like(state.outcomes),
                 state.outcomes
             ),
             completed = jnp.where(
@@ -154,13 +152,17 @@ class TwoPlayerTrainer(Trainer):
             )
         )
         
+        new_model_player_id = state.test_env_state.cur_player_id
+
         state, _ = jax.lax.scan(
             self.test_step,
             state,
-            jnp.repeat(jnp.array([True, False]), self.config.max_episode_steps // 2)
+            jnp.tile(jnp.array([False, True]), self.config.max_episode_steps // 2)
         )
 
-        win_margin = jnp.sum(state.outcomes)
+        cur_player_rewards = state.outcomes[jnp.arange(self.test_batch_size), new_model_player_id]
+
+        win_margin = jnp.sum(cur_player_rewards)
         
         metrics = {
             'win_margin': win_margin / self.test_batch_size
