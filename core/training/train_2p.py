@@ -160,9 +160,22 @@ class TwoPlayerTrainer(Trainer):
             jnp.repeat(jnp.array([True, False]), self.config.max_episode_steps // 2)
         )
 
+        win_margin = jnp.sum(state.outcomes)
+        
         metrics = {
-            'win_margin': jnp.sum(state.outcomes) / self.test_batch_size
+            'win_margin': win_margin / self.test_batch_size
         }
 
-        return state.trainer_state, metrics
+        return state.trainer_state.replace(
+            best_model_params = jax.lax.cond(
+                win_margin > 0,
+                lambda: state.trainer_state.train_state.params,
+                lambda: state.trainer_state.best_model_params
+            ),
+            best_model_batch_stats = jax.lax.cond(
+                win_margin > 0,
+                lambda: state.trainer_state.train_state.batch_stats,
+                lambda: state.trainer_state.best_model_batch_stats
+            )
+        ), metrics
         
