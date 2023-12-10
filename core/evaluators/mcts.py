@@ -268,6 +268,7 @@ class MCTS(Evaluator):
         )
 
         state = state.replace(
+            key = new_key,
             p_vals = state.p_vals.at[1].set(noisy_policy)
         )
 
@@ -286,7 +287,6 @@ class MCTS(Evaluator):
         )
 
         return iteration_state.state.replace(
-            key = new_key,
             cur_node = jnp.ones_like(state.cur_node),
         )
     
