@@ -279,13 +279,11 @@ class MCTS(Evaluator):
 
         iterate_fn = partial(self.iterate, **kwargs)
 
-        # iteration_state, _ = jax.lax.scan(
-        #     f=iterate_fn,
-        #     init=iteration_state,
-        #     xs=jnp.arange(num_iters)
-        # )
-        for _ in range(num_iters):
-            iteration_state, _ = iterate_fn(iteration_state, None)
+        iteration_state, _ = jax.lax.scan(
+            f=iterate_fn,
+            init=iteration_state,
+            xs=jnp.arange(num_iters)
+        )
 
         return iteration_state.state.replace(
             key = new_key,
