@@ -38,6 +38,7 @@ class TrainerConfig:
     retain_n_checkpoints: int
     learning_rate: float
     momentum: float
+    l2_lambda: float
     policy_factor: float
     disk_store_location: str # where to store env and evaluator states when not in use
     retain_n_checkpoints: int
@@ -242,7 +243,15 @@ class Trainer:
             policy_loss = optax.softmax_cross_entropy(pred_policy, batch.policy).mean() * self.config.policy_factor
             value_loss = optax.l2_loss(pred_value, rewards).mean()
 
-            loss = policy_loss + value_loss
+            l2_reg = self.config.l2_lambda * jax.tree_util.tree_reduce(
+                lambda x, y: x + y,
+                jax.tree_map(
+                    lambda x: (x ** 2).sum(),
+                    params
+                )
+            )
+
+            loss = policy_loss + value_loss + l2_reg
             return loss, ((policy_loss, value_loss, pred_policy, pred_value), updates)
         
         grad_fn = jax.value_and_grad(loss_fn, has_aux=True)

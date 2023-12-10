@@ -4,7 +4,7 @@ run_description: 'This is a test run'
 evaluator_config: { # same for single/multi player
   type: 'alphazero',
   train: {
-    budget: 25,
+    budget: 50,
     max_nodes: 50,
     temperature: 1.0,
     epsilon: 0.00000001,
@@ -24,8 +24,8 @@ evaluator_config: { # same for single/multi player
   model: {
     type: 'az_resnet',
     config: {
-      num_blocks: 10,
-      num_channels: 128
+      num_blocks: 2,
+      num_channels: 16
     }
   }
 }
@@ -39,17 +39,18 @@ training_config: {
   seed: 0,
   disk_store_location: '/tmp',
   # train
-  selfplay_batch_size: 1,
-  warmup_steps: 1,
-  collection_steps_per_epoch: 1,
-  train_steps_per_epoch: 1,
+  selfplay_batch_size: 128,
+  warmup_steps: 100,
+  collection_steps_per_epoch: 100,
+  train_steps_per_epoch: 5,
   learning_rate: 0.001,
   momentum: 0.9,
+  l2_lambda: 0.0001,
   policy_factor: 1.0,
   checkpoint_every_n_epochs: 5,
   checkpoint_dir: './checkpoints', # path to checkpoint dir, will be created if not exists
   retain_n_checkpoints: 3,
-  max_episode_steps: 80,
+  max_episode_steps: 2,
 
   # replay buffer
   replay_buffer_config: {
@@ -65,7 +66,7 @@ training_config: {
   # eval
   test_every_n_epochs: 1,
   test_batch_size: 10, # this may need to be set lower for 2P envs as we need to maintain 2 separate evaluator states per env state
-  test_episodes: 30,
+  test_episodes: 24,
 }
 
 

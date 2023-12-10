@@ -78,6 +78,7 @@ def init_from_config(
         retain_n_checkpoints=train_config['retain_n_checkpoints'],
         learning_rate=train_config['learning_rate'],
         momentum=train_config['momentum'],
+        l2_lambda=train_config['l2_lambda'],
         policy_factor=train_config['policy_factor'],
         disk_store_location=train_config['disk_store_location'],
         selfplay_batch_size=batch_size,
