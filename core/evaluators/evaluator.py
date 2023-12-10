@@ -51,3 +51,13 @@ class Evaluator:
     
     def get_policy(self, evaluator_state: EvaluatorState) -> jnp.ndarray:
         raise NotImplementedError()
+    
+    def reset_if_terminated(self, 
+        evaluator_state: EvaluatorState, 
+        terminated: jnp.ndarray
+    ) -> Tuple[EvaluatorState]:
+        return jax.lax.cond(
+            terminated,
+            lambda: self.reset(evaluator_state.key),
+            lambda: evaluator_state
+        )

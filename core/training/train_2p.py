@@ -28,7 +28,6 @@ class TwoPlayerTestState:
     opponent_eval_state: EvaluatorState
     outcomes: jnp.ndarray
     completed: jnp.ndarray
-    use_current_model: jnp.ndarray
     
     
 class TwoPlayerTrainer(Trainer):
@@ -59,59 +58,53 @@ class TwoPlayerTrainer(Trainer):
             params['batch_stats'] = state.best_model_batch_stats
         return params
     
-    def test_step(self, state: TestState) -> Tuple[TestState, Any]:
+    def test_step(self, state: TestState, use_best_model: bool) -> Tuple[TestState, Any]:
         
         env_state = state.test_env_state
-
-        best_model_params = self.pack_best_model_params(state.trainer_state)
-        model_params = self.pack_model_params(state.trainer_state)
-
-        def evaluate_(use_best, new_ev, old_ev, en):
-            ev, ov = jax.lax.cond(
-                use_best,
-                lambda: (new_ev, old_ev),
-                lambda: (old_ev, new_ev)
-            )
-            ev = jax.lax.cond(
-                use_best,
-                lambda : self.test_evaluator.evaluate(ev, en, model_params=best_model_params),
-                lambda : self.test_evaluator.evaluate(ev, en, model_params=model_params)
-            )
-            ev, action = self.test_evaluator.choose_action(ev, en)
-            en, terminated = self.env.step(en, action)
-            ev = self.test_evaluator.step_evaluator(ev, action, terminated)
-            ov = self.test_evaluator.step_evaluator(ov, action, terminated)
-
-            new_ev, old_ev = jax.lax.cond(
-                use_best,
-                lambda: (ev, ov),
-                lambda: (ov, ev)
-            )
-
-            return new_ev, old_ev, en, terminated
-        
-        new_model_ev_state, best_model_ev_state, env_state, terminated = jax.vmap(evaluate_)(
-            state.use_current_model, 
-            state.test_eval_state, 
-            state.opponent_eval_state, 
-            env_state
+        model_params = jax.lax.cond(
+            use_best_model,
+            lambda: self.pack_best_model_params(state.trainer_state),
+            lambda: self.pack_model_params(state.trainer_state)
         )
 
+        evaluation_fn = partial(self.test_evaluator.evaluate, model_params=model_params)
+
+        def evaluate_(ev, ov, en):
+            ev = jax.vmap(evaluation_fn)(ev, en)
+            ev, action = jax.vmap(self.test_evaluator.choose_action)(ev, en)
+            en, terminated = jax.vmap(self.env.step)(en, action)
+            ev = jax.vmap(self.test_evaluator.step_evaluator)(ev, action, terminated)
+            ov = jax.vmap(self.test_evaluator.step_evaluator)(ov, action, terminated)
+            return ev, ov, en, terminated
+
+        active_eval_state, other_eval_state, env_state, terminated = jax.lax.cond(
+            use_best_model,
+            lambda: evaluate_(state.test_eval_state, state.opponent_eval_state, env_state),
+            lambda: evaluate_(state.opponent_eval_state, state.test_eval_state, env_state)
+        )
+        
         return state.replace(
             test_env_state = env_state,
-            test_eval_state = new_model_ev_state,
+            test_eval_state = jax.lax.cond(
+                use_best_model,
+                lambda: other_eval_state,
+                lambda: active_eval_state
+            ),
             outcomes = jnp.where(
                 terminated & ~state.completed,
                 jnp.where(
-                    state.use_current_model,
-                    env_state.reward[:,1],
-                    env_state.reward[:,0]
+                    use_best_model,
+                    env_state.reward[:,0],
+                    env_state.reward[:,1]
                 ).flatten(),
                 state.outcomes
             ),
             completed = state.completed | terminated,
-            use_current_model = ~state.use_current_model,
-            opponent_eval_state = best_model_ev_state
+            opponent_eval_state = jax.lax.cond(
+                use_best_model,
+                lambda: active_eval_state,
+                lambda: other_eval_state
+            )
         ), None
 
 
@@ -123,10 +116,6 @@ class TwoPlayerTrainer(Trainer):
         eval_keys = jax.random.split(eval_key, self.test_batch_size)
         op_eval_keys = jax.random.split(op_eval_key, self.test_batch_size)
         
-
-        use_current_model = jnp.zeros((self.test_batch_size,), dtype=jnp.bool_)
-    
-
         state = TwoPlayerTestState(
             trainer_state = state.replace(key=new_key),
             test_env_state = jax.vmap(self.env.reset)(env_keys)[0],
@@ -134,13 +123,41 @@ class TwoPlayerTrainer(Trainer):
             opponent_eval_state = jax.vmap(self.test_evaluator.reset)(op_eval_keys),
             outcomes = jnp.zeros((self.test_batch_size,)),
             completed = jnp.zeros((self.test_batch_size,), dtype=jnp.bool_),
-            use_current_model = use_current_model
         )
 
+        # make one test step
+        state = self.test_step(state, True)[0]
+        reset = jnp.zeros((self.test_batch_size,), dtype=jnp.bool_)
+        reset = reset.at[:self.test_batch_size // 2].set(True)
+        state = state.replace(
+            test_env_state = jax.vmap(self.env.reset_if_terminated)(
+                state.test_env_state, 
+                reset
+            )[0],
+            test_eval_state = jax.vmap(self.test_evaluator.reset_if_terminated)(
+                state.test_eval_state, 
+                reset
+            ),
+            opponent_eval_state = jax.vmap(self.test_evaluator.reset_if_terminated)(
+                state.opponent_eval_state,
+                reset
+            ),
+            outcomes = jnp.where(
+                reset,
+                jnp.zeros((self.test_batch_size,)),
+                state.outcomes
+            ),
+            completed = jnp.where(
+                reset,
+                jnp.zeros((self.test_batch_size,), dtype=jnp.bool_),
+                state.completed
+            )
+        )
+        
         state, _ = jax.lax.scan(
-            lambda s, _: self.test_step(s),
+            self.test_step,
             state,
-            jnp.arange(self.config.max_episode_steps)
+            jnp.repeat(jnp.array([True, False]), self.config.max_episode_steps // 2)
         )
 
         metrics = {

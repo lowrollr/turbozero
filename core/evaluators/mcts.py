@@ -383,11 +383,7 @@ class MCTS(Evaluator):
         terminated: jnp.ndarray
     ) -> EvaluatorState:
         evaluator_state = self.load_subtree(evaluator_state, actions)
-        return jax.lax.cond(
-            terminated,
-            lambda: self.reset(evaluator_state.key),
-            lambda: evaluator_state
-        )
+        return self.reset_if_terminated(evaluator_state, terminated)
 
     def get_policy(self, evaluator_state: EvaluatorState) -> jnp.ndarray:
         action_vists = evaluator_state.n_vals[1]
