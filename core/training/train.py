@@ -106,51 +106,6 @@ class Trainer:
 
         self.train_in_memory = True
 
-    
-    # def swap_states(self,
-    #     state: TrainerState,
-    #     get_train: bool
-    # ) -> TrainerState:
-    #     if not self.train_in_memory ^ get_train:
-    #         return state
-        
-    #     self.train_in_memory = get_train
-        
-    #     if get_train:
-    #         # load train evaluator state
-    #         # test evaluator state can be discarded
-    #         state = self.swap_to_train_evaluator(state)
-    #     else:   
-    #         # load test evaluator state
-    #         state = self.swap_to_test_evaluator(state)
-        
-    #     return state
-    
-    # def swap_to_train_evaluator(self,
-    #     state: TrainerState 
-    # ) -> TrainerState:
-        
-    #     with open(self.pkl_file, 'rb') as f:
-    #         state = state.replace(
-    #             evaluator_state = pickle.load(f)
-    #         )
-    #     return state
-
-    # def swap_to_test_evaluator(self,
-    #     state: TrainerState
-    # ) -> TrainerState:
-    #     # save train evaluator state
-    #     with open(self.pkl_file, 'wb') as f:
-    #         pickle.dump(state.evaluator_state, f)
-
-    #     new_key, init_key = jax.random.split(state.key)
-    #     keys = jax.random.split(init_key, self.test_batch_size)
-    #     evaluator_state = jax.vmap(self.test_evaluator.reset)(keys)
-    #     return state.replace(
-    #         key=new_key,
-    #         evaluator_state=evaluator_state
-    #     )
-    
     def pack_model_params(
         self,
         state: TrainerState
@@ -358,7 +313,7 @@ class Trainer:
         state: TrainerState,           
     ) -> TrainerState:
         return jax.lax.scan(
-            lambda s, _: (self.collect_step(s), None),
+            lambda s, _: (jax.jit(self.collect_step)(s), None),
             state,
             jnp.arange(self.config.warmup_steps)
         )[0]
@@ -369,21 +324,19 @@ class Trainer:
         num_epochs: int,
         warmup=True
     ) -> TrainerState:
-        # state = self.swap_states(state, get_train=True)
         if warmup:
             state = self.warmup(state)
 
+        train_epoch = jax.jit(self.train_epoch)
+        test = jax.jit(self.test)
         for _ in range(num_epochs):
             # train
-            # state = self.swap_states(state, get_train=True)
-            state, metrics = self.train_epoch(state)
+            state, metrics = train_epoch(state)
             if not self.debug:
                 wandb.log({f'train/{k}': v.mean() for k, v in metrics.items()})
             # evaluate
             if state.epoch % self.config.test_every_n_epochs == 0:
-                # load test evaluator
-                # state = self.swap_states(state, get_train=False)
-                state, metrics = self.test(state)
+                state, metrics = test(state)
                 if not self.debug:
                     wandb.log({f'test/{k}': v.mean() for k, v in metrics.items()})
 
