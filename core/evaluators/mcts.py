@@ -257,10 +257,11 @@ class MCTS(Evaluator):
         dir_key, new_key = jax.random.split(state.key)
         dir_noise = jax.random.dirichlet(
             dir_key,
-            shape=(self.flat_policy_size,), 
-            alpha=jnp.array([self.config.dirichlet_alpha])
-        ).flatten()
-        
+            alpha=jnp.full(
+                [self.env.num_actions], 
+                fill_value=self.config.dirichlet_alpha
+            )
+        )
 
         noisy_policy = (
             ((1-self.config.dirichlet_epsilon) * policy) +
