@@ -16,10 +16,10 @@ class ResidualBlock(nn.Module):
 
     @nn.compact
     def __call__(self, x, train: bool):
-        y = nn.Conv(features=self.channels, kernel_size=(3,3), strides=(1,1), padding='SAME')(x)
+        y = nn.Conv(features=self.channels, kernel_size=(3,3), strides=(1,1), padding='SAME', use_bias=False)(x)
         y = nn.BatchNorm(use_running_average=not train)(y)
         y = nn.relu(y)
-        y = nn.Conv(features=self.channels, kernel_size=(3,3), strides=(1,1), padding='SAME')(y)
+        y = nn.Conv(features=self.channels, kernel_size=(3,3), strides=(1,1), padding='SAME', use_bias=False)(y)
         y = nn.BatchNorm(use_running_average=not train)(y)
         return nn.relu(x + y)
 
@@ -28,7 +28,7 @@ class AZResnet(nn.Module):
 
     @nn.compact
     def __call__(self, x, train: bool):
-        x = nn.Conv(features=self.config.num_channels, kernel_size=(1,1), strides=(1,1), padding='SAME')(x)
+        x = nn.Conv(features=self.config.num_channels, kernel_size=(1,1), strides=(1,1), padding='SAME', use_bias=False)(x)
         x = nn.BatchNorm(use_running_average=not train)(x)
         x = nn.relu(x)
 
@@ -36,14 +36,14 @@ class AZResnet(nn.Module):
             x = ResidualBlock(channels=self.config.num_channels)(x, train=train)
 
         # policy head
-        policy = nn.Conv(features=2, kernel_size=(1,1), strides=(1,1), padding='SAME')(x)
+        policy = nn.Conv(features=2, kernel_size=(1,1), strides=(1,1), padding='SAME', use_bias=False)(x)
         policy = nn.BatchNorm(use_running_average=not train)(policy)
         policy = nn.relu(policy)
         policy = policy.reshape((policy.shape[0], -1))
         policy = nn.Dense(features=self.config.policy_head_out_size)(policy)
 
         # value head
-        value = nn.Conv(features=1, kernel_size=(1,1), strides=(1,1), padding='SAME')(x)
+        value = nn.Conv(features=1, kernel_size=(1,1), strides=(1,1), padding='SAME', use_bias=False)(x)
         value = nn.BatchNorm(use_running_average=not train)(value)
         value = nn.relu(value)
         value = value.reshape((value.shape[0], -1))
