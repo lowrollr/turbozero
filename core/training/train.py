@@ -49,6 +49,7 @@ class BaseExperience(struct.PyTreeNode):
     observation: struct.PyTreeNode
     policy: jnp.ndarray
     policy_mask: jnp.ndarray
+    player_id: jnp.ndarray
 
 @struct.dataclass
 class BNTrainState(train_state.TrainState):
@@ -136,7 +137,8 @@ class Trainer:
                 BaseExperience(
                     observation=env_state._observation,
                     policy=jax.vmap(self.train_evaluator.get_policy)(eval_state),
-                    policy_mask=env_state.legal_action_mask
+                    policy_mask=env_state.legal_action_mask,
+                    player_id=env_state.cur_player_id
                 )
             )
         )
@@ -164,6 +166,7 @@ class Trainer:
     ) -> TrainerState:
         env_state, eval_state, buff_state = state.env_state, state.evaluator_state, state.buff_state
         observation = env_state._observation
+        player_id = env_state.cur_player_id
         evaluation_fn = partial(self.train_evaluator.evaluate, model_params=self.pack_model_params(state))
         eval_state = jax.vmap(evaluation_fn)(eval_state, env_state)
         eval_state, action = jax.vmap(self.train_evaluator.choose_action)(eval_state, env_state)
@@ -174,7 +177,8 @@ class Trainer:
             BaseExperience(
                 observation=observation,
                 policy=jax.vmap(self.train_evaluator.get_policy)(eval_state),
-                policy_mask=env_state.legal_action_mask
+                policy_mask=env_state.legal_action_mask,
+                player_id=player_id
             )
         )
 
@@ -226,7 +230,7 @@ class Trainer:
             lambda x: x.astype(jnp.float32),
             batch
         )
-        rewards = rewards.astype(jnp.float32)
+        player_rewards = rewards[jnp.arange(self.buff.config.sample_size), batch.player_id.astype(jnp.int32)]
 
         def loss_fn(params: struct.PyTreeNode):
             (pred_policy, pred_value), updates = state.train_state.apply_fn(
@@ -241,7 +245,7 @@ class Trainer:
                 0
             )
             policy_loss = optax.softmax_cross_entropy(pred_policy, batch.policy).mean() * self.config.policy_factor
-            value_loss = optax.l2_loss(pred_value, rewards).mean()
+            value_loss = optax.l2_loss(pred_value.reshape(-1), player_rewards).mean()
 
             l2_reg = self.config.l2_lambda * jax.tree_util.tree_reduce(
                 lambda x, y: x + y,
@@ -264,7 +268,7 @@ class Trainer:
             'policy_loss': policy_loss,
             'value_loss': value_loss,
             'policy_accuracy': jnp.mean(jnp.argmax(pred_policy, axis=-1) == jnp.argmax(batch.policy, axis=-1)),
-            'value_accuracy': jnp.mean(jnp.round(pred_value) == jnp.round(rewards))
+            'value_accuracy': jnp.mean(jnp.round(pred_value) == jnp.round(player_rewards))
         }
 
         return state.replace(

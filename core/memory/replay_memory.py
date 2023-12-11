@@ -16,6 +16,7 @@ class EndRewardReplayBufferConfig:
     capacity: int
     sample_size: int
     batch_size: int
+    reward_size: int
 
 @struct.dataclass
 class EndRewardReplayBufferState:
@@ -34,13 +35,13 @@ class EndRewardReplayBuffer:
         self.config = config
 
     def init(self, key: jax.random.PRNGKey, template_experience: struct.PyTreeNode) -> EndRewardReplayBufferState:
-        return init(key, template_experience, self.config.batch_size, self.config.capacity)
+        return init(key, template_experience, self.config.batch_size, self.config.capacity, self.config.reward_size)
 
     def add_experience(self, state: EndRewardReplayBufferState, experience: struct.PyTreeNode) -> EndRewardReplayBufferState:
         return add_experience(state, experience, self.config.batch_size, self.config.capacity)    
 
     def assign_rewards(self, state: EndRewardReplayBufferState, rewards: jnp.ndarray, select_batch: jnp.ndarray) -> EndRewardReplayBufferState:
-        return assign_rewards(state, rewards, select_batch.astype(jnp.bool_), self.config.capacity)
+        return assign_rewards(state, rewards, select_batch.astype(jnp.bool_))
 
     def sample(self, state: EndRewardReplayBufferState) -> Tuple[EndRewardReplayBufferState, struct.PyTreeNode]:
         return sample(state, self.config.batch_size, self.config.capacity, self.config.sample_size)
@@ -68,20 +69,16 @@ def add_experience(
         populated = buffer_state.populated.at[:, buffer_state.next_index, 0].set(True)
     )
 
-@partial(jax.jit, static_argnums=(3,))
+@partial(jax.jit)
 def assign_rewards(
     buffer_state: EndRewardReplayBufferState,
     rewards: jnp.ndarray,
     select_batch: jnp.ndarray,
-    capacity: int
 ) -> EndRewardReplayBufferState:
-    rolled = jax.vmap(jnp.roll, in_axes=(0, 0))(rewards, buffer_state.next_reward_index)
-    tiled = jnp.tile(rolled, (1, capacity // rewards.shape[-1]))
-    
     return buffer_state.replace(
         reward_buffer = jnp.where(
             select_batch[..., None, None] & buffer_state.needs_reward,
-            tiled[..., None],
+            jnp.expand_dims(rewards, axis=1),
             buffer_state.reward_buffer
         ),
         next_reward_index = jnp.where(
@@ -145,12 +142,13 @@ def truncate(
         )
     )
 
-@partial(jax.jit, static_argnums=(2,3))
+@partial(jax.jit, static_argnums=(2,3,4))
 def init(
     key: jax.random.PRNGKey,
     template_experience: struct.PyTreeNode,
     batch_size: int,
     capacity: int,
+    reward_size: int = 1
 ) -> EndRewardReplayBufferState:
     experience = jax.tree_map(
         lambda x: jnp.broadcast_to(
@@ -162,7 +160,7 @@ def init(
     return EndRewardReplayBufferState(
         next_index=jnp.zeros((batch_size,), dtype=jnp.int32),
         next_reward_index=jnp.zeros((batch_size,), dtype=jnp.int32),
-        reward_buffer=jnp.zeros((batch_size, capacity, 1), dtype=jnp.float32),
+        reward_buffer=jnp.zeros((batch_size, capacity, reward_size), dtype=jnp.float32),
         buffer=experience,
         needs_reward=jnp.zeros((batch_size, capacity, 1), dtype=jnp.bool_),
         populated=jnp.zeros((batch_size, capacity, 1), dtype=jnp.bool_),

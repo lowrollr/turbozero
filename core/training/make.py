@@ -64,6 +64,7 @@ def init_from_config(
     buff = make_replay_buffer(
         buff_type=buff_config['type'],
         batch_size=batch_size,
+        reward_size=env.num_players(),
         config=buff_config['config']
     )
 
