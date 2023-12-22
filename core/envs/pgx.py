@@ -1,6 +1,6 @@
 
 
-from typing import Tuple
+from typing import Any, Tuple
 import pgx
 import jax.numpy as jnp
 import jax
@@ -8,10 +8,11 @@ from core.envs.env import Env, EnvConfig, EnvState
 
 
 class PgxEnv(Env):
-    def __init__(self, env: pgx.core.Env, config: EnvConfig):
+    def __init__(self, env: pgx.core.Env, config: EnvConfig, **kwargs):
         super().__init__(
             env = env, 
-            config = config
+            config = config,
+            **kwargs
         )
         self._env: pgx.core.Env
 
@@ -23,30 +24,32 @@ class PgxEnv(Env):
     
     def num_players(self) -> int:
         return self._env.num_players
-
-    def step(self, state: EnvState, action: jnp.ndarray) -> Tuple[EnvState, jnp.ndarray]:
-        # returns state, observation, reward, terminated
-        env_state = self._env.step(state._state, action)
-        return state.replace(
-            legal_action_mask=env_state.legal_action_mask,
-            reward=env_state.rewards,
-            cur_player_id=env_state.current_player,
-            _state=env_state,
-            _observation=env_state.observation,
-        ), env_state.terminated
-
-    def reset(self, key: jax.random.PRNGKey) -> Tuple[EnvState, jnp.ndarray]:
-        cls_key, base_key = jax.random.split(key)
-        env_state = self._env.init(base_key)
-        return EnvState(
-            key=cls_key,
-            legal_action_mask=env_state.legal_action_mask,
-            cur_player_id=env_state.current_player,
-            reward=env_state.rewards,
-            _state=env_state,
-            _observation=env_state.observation,
-        ), env_state.terminated
-        
+    
+    @staticmethod
+    def _get_state_reward(_state: Any) -> jnp.ndarray:
+        return _state.rewards
+    
+    @staticmethod
+    def _get_terminated(_state: Any) -> jnp.ndarray:
+        return _state.terminated
+    
+    @staticmethod
+    def _get_legal_action_mask(_state: Any) -> jnp.ndarray:
+        return _state.legal_action_mask
+    
+    @staticmethod
+    def _get_cur_player_id(_state: Any) -> jnp.ndarray:
+        return _state.current_player
+    
+    @staticmethod
+    def _get_observation(_state: Any) -> jnp.ndarray:
+        return _state.observation
+    
+    def _init(self, key: jax.random.PRNGKey) -> Any:
+        return self._env.init(key)
+    
+    def _step(self, _state: Any, action: jnp.ndarray) -> Any:
+        return self._env.step(_state, action)
 
 def make_pgx_env(env_name, **kwargs) -> PgxEnv:
     env = pgx.make(env_name, **kwargs)

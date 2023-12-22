@@ -72,10 +72,10 @@ class TwoPlayerTrainer(Trainer):
         def evaluate_(ev, ov, en):
             ev = jax.vmap(evaluation_fn)(ev, en)
             ev, action = jax.vmap(self.test_evaluator.choose_action)(ev, en)
-            en, terminated = jax.vmap(self.env.step)(en, action)
-            ev = jax.vmap(self.test_evaluator.step_evaluator)(ev, action, terminated)
-            ov = jax.vmap(self.test_evaluator.step_evaluator)(ov, action, terminated)
-            return ev, ov, en, terminated
+            en = jax.vmap(self.env.step)(en, action)
+            ev = jax.vmap(self.test_evaluator.step_evaluator)(ev, action, en.terminated)
+            ov = jax.vmap(self.test_evaluator.step_evaluator)(ov, action, en.terminated)
+            return ev, ov, en, en.terminated
 
         active_eval_state, other_eval_state, env_state, terminated = jax.lax.cond(
             use_best_model,

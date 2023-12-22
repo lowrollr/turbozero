@@ -160,7 +160,7 @@ class MCTS(Evaluator):
         
         action = self.choose_with_puct(state, legal_actions)
     
-        env_state, terminated = self.env.step(env_state, action)
+        env_state = self.env.step(env_state, action)
         
         state, unvisited = self.traverse(state, action)
 
@@ -177,13 +177,13 @@ class MCTS(Evaluator):
         policy = jax.nn.softmax(policy_logits)
 
         value = jnp.where(
-            terminated,
+            env_state.terminated,
             env_state.reward[root_state.cur_player_id],
             evaluation
         )
 
         is_leaf = jnp.logical_or(
-            terminated,
+            env_state.terminated,
             unvisited
         )
 

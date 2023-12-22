@@ -55,7 +55,7 @@ class Evaluator:
     def reset_if_terminated(self, 
         evaluator_state: EvaluatorState, 
         terminated: jnp.ndarray
-    ) -> Tuple[EvaluatorState]:
+    ) -> EvaluatorState:
         return jax.lax.cond(
             terminated,
             lambda: self.reset(evaluator_state.key),

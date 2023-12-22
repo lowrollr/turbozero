@@ -127,7 +127,7 @@ class Trainer:
         env_keys = jax.random.split(env_key, self.buff.config.batch_size)
 
         eval_keys = jax.random.split(eval_key, self.buff.config.batch_size)
-        env_state, _ = jax.vmap(self.env.reset)(env_keys)
+        env_state = jax.vmap(self.env.reset)(env_keys)
         eval_state = jax.vmap(self.train_evaluator.reset)(eval_keys)
 
         buff_state = self.buff.init(
@@ -170,7 +170,8 @@ class Trainer:
         evaluation_fn = partial(self.train_evaluator.evaluate, model_params=self.pack_model_params(state))
         eval_state = jax.vmap(evaluation_fn)(eval_state, env_state)
         eval_state, action = jax.vmap(self.train_evaluator.choose_action)(eval_state, env_state)
-        env_state, terminated = jax.vmap(self.env.step)(env_state, action)
+        env_state = jax.vmap(self.env.step)(env_state, action)
+        terminated = env_state.terminated
 
         buff_state = self.buff.add_experience(
             buff_state,
@@ -189,7 +190,7 @@ class Trainer:
         )
 
         eval_state = jax.vmap(self.train_evaluator.step_evaluator)(eval_state, action, terminated)
-        env_state, terminated = jax.vmap(self.env.reset_if_terminated)(env_state, terminated)
+        env_state = jax.vmap(self.env.reset_if_terminated)(env_state)
 
         return state.replace(
             env_state=env_state,
@@ -205,8 +206,8 @@ class Trainer:
         evaluation_fn = partial(self.test_evaluator.evaluate, model_params=self.pack_model_params(state.trainer_state))
         eval_state = jax.vmap(evaluation_fn)(eval_state, env_state)
         eval_state, action = jax.vmap(self.test_evaluator.choose_action)(eval_state, env_state)
-        env_state, terminated = jax.vmap(self.env.step)(env_state, action)
-        eval_state = jax.vmap(self.test_evaluator.step_evaluator)(eval_state, action, terminated)
+        env_state = jax.vmap(self.env.step)(env_state, action)
+        eval_state = jax.vmap(self.test_evaluator.step_evaluator)(eval_state, action, env_state.terminated)
 
         return state.replace(
             trainer_state=state.trainer_state.replace(
@@ -214,11 +215,11 @@ class Trainer:
                 evaluator_state=eval_state
             ),
             reward = jnp.where(
-                terminated & ~state.completed,
+                env_state.terminated & ~state.completed,
                 env_state.reward,
                 state.reward
             ),
-            completed = state.completed | terminated
+            completed = state.completed | env_state.terminated
         ), None
 
     def train_step(self,
