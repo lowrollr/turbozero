@@ -6,9 +6,10 @@ import chex
 import jax
 import jax.numpy as jnp
 
+NodeType = TypeVar('NodeType')
 
 @dataclass(frozen=True)
-class Tree:
+class Tree(Generic[NodeType]):
     key: jax.random.PRNGKey
     
     # N -> max nodes
@@ -70,10 +71,10 @@ def get_child_data(
 
 
 def add_node(
-    tree: Tree, 
+    tree: Tree[NodeType], 
     parent_index: int, 
     edge_index: int, 
-    data: chex.ArrayTree
+    data: NodeType
 ) -> Tree:
     return tree.replace(
         next_free_idx=tree.next_free_idx + 1,
@@ -81,6 +82,19 @@ def add_node(
         edge_map=tree.edge_map.at[parent_index, edge_index].set(tree.next_free_idx),
         data=jax.tree_util.tree_map(
             lambda x, y: x.at[tree.next_free_idx].set(y),
+            tree.data,
+            data
+        )
+    )
+
+def update_node(
+    tree: Tree[NodeType],
+    index: int,
+    data: NodeType
+) -> Tree:
+    return tree.replace(
+        data=jax.tree_util.tree_map(
+            lambda x, y: x.at[index].set(y),
             tree.data,
             data
         )
@@ -158,7 +172,7 @@ def get_subtree(
                 null_value,
                 translation[x])))
 
-    def translate_pytree(x, null_value=0):
+    def translate_pytree(x, null_value=tree.NULL_VALUE):
         return jax.tree_map(
             lambda t: translate(t, null_value=null_value), x)
     
