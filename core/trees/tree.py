@@ -26,6 +26,12 @@ class Tree(Generic[NodeType]):
     @property
     def capacity(self) -> int:
         return self.parents.shape[0]
+    
+    def at(self, index: int) -> NodeType:
+        return jax.tree_util.tree_map(
+            lambda x: x[index],
+            self.data
+        )
 
 def _init(key: jax.random.PRNGKey, max_nodes: int, branching_factor: int, dummy_data: chex.ArrayTree) -> Tree:
     return Tree(
@@ -69,7 +75,6 @@ def get_child_data(
         child_data,
     )
 
-
 def add_node(
     tree: Tree[NodeType], 
     parent_index: int, 
@@ -82,6 +87,19 @@ def add_node(
         edge_map=tree.edge_map.at[parent_index, edge_index].set(tree.next_free_idx),
         data=jax.tree_util.tree_map(
             lambda x, y: x.at[tree.next_free_idx].set(y),
+            tree.data,
+            data
+        )
+    )
+
+def set_root(
+    tree: Tree, 
+    data: NodeType
+) -> Tree:
+    return tree.replace(
+        next_free_idx=jnp.maximum(tree.next_free_idx, 1),
+        data=jax.tree_util.tree_map(
+            lambda x, y: x.at[tree.ROOT_INDEX].set(y),
             tree.data,
             data
         )
