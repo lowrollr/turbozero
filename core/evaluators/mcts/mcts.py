@@ -4,38 +4,15 @@ import jax
 import chex
 from chex import dataclass
 import jax.numpy as jnp
+from core.evaluators.mcts.action_selection import MCTSActionSelector
+from core.evaluators.mcts.data import BackpropState, MCTSNode, MCTSTree, TraversalState
 from core.trees.tree import Tree, add_node, set_root, update_node
-
-@dataclass(frozen=True)
-class MCTSNode:
-    n: jnp.number
-    p: jnp.number
-    w: jnp.number
-    terminal: jnp.number
-    embedding: chex.ArrayTree
-
-    @property
-    def q(self) -> jnp.number:
-        return self.w / self.n
-    
-MCTSTree = Tree[MCTSNode] 
-
-@dataclass(frozen=True)
-class TraversalState:
-    parent: int
-    action: int
-
-@dataclass(frozen=True)
-class BackpropState:
-    node_idx: int
-    value: float
-    tree: MCTSTree
 
 class MCTS:
     def __init__(self,
         step_fn: Callable[[chex.ArrayTree, Any], Tuple[chex.ArrayTree, float, bool]],
         eval_fn: Callable[[chex.ArrayTree], Tuple[chex.ArrayTree, float]],
-        action_selection_fn: Callable[[MCTSTree, int], int],
+        action_selection_fn: MCTSActionSelector,
         discount: Optional[float] = -1.0
     ):
         self.step_fn = step_fn
@@ -79,7 +56,7 @@ class MCTS:
         return self.step_fn(tree.at(parent).embedding, action)
     
     def choose_root_action(self, tree: MCTSTree) -> int:
-        return self.action_selection_fn(tree, tree.ROOT_INDEX)
+        return self.action_selection_fn(tree, tree.ROOT_INDEX, self.discount)
 
     def traverse(self, tree: MCTSTree) -> TraversalState:
         def cond_fn(state: TraversalState) -> bool:
@@ -87,7 +64,7 @@ class MCTS:
         
         def body_fn(state: TraversalState) -> TraversalState:
             node_idx = tree.edge_map[state.parent, state.action]
-            action = self.action_selection_fn(tree, node_idx)
+            action = self.action_selection_fn(tree, node_idx, self.discount)
             return TraversalState(parent=node_idx, action=action)
         
         root_action = self.choose_root_action(tree)
