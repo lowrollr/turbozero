@@ -127,36 +127,36 @@ def _get_translation(
     tree: Tree,
     child_index: chex.Array
 ) -> Tuple[chex.Array, chex.Array, chex.Array]:
-  subtrees = jnp.arange(tree.capacity)
+    subtrees = jnp.arange(tree.capacity)
 
-  def propagate(_, subtrees):
-    parents_subtrees = jnp.where(
-        tree.parents != tree.NULL_INDEX,
-        subtrees[tree.parents],
-        0
+    def propagate(_, subtrees):
+        parents_subtrees = jnp.where(
+            tree.parents != tree.NULL_INDEX,
+            subtrees[tree.parents],
+            0
+        )
+        return jnp.where(
+            jnp.greater(parents_subtrees, 0),
+            parents_subtrees,
+            subtrees
+        )
+
+    subtrees = jax.lax.fori_loop(0, tree.capacity-1, propagate, subtrees)
+    slots_aranged = jnp.arange(tree.capacity)
+    subtree_idx = tree.edge_map[tree.ROOT_INDEX, child_index]
+    nodes_to_retain = subtrees == subtree_idx
+    old_subtree_idxs = nodes_to_retain * slots_aranged
+    cumsum = jnp.cumsum(nodes_to_retain)
+    new_next_node_index = cumsum[-1]
+
+    translation = jnp.where(
+        nodes_to_retain,
+        nodes_to_retain * (cumsum-1),
+        tree.NULL_INDEX
     )
-    return jnp.where(
-        jnp.greater(parents_subtrees, 0),
-        parents_subtrees,
-        subtrees
-    )
+    erase_idxs = slots_aranged >= new_next_node_index
 
-  subtrees = jax.lax.fori_loop(0, tree.capacity-1, propagate, subtrees)
-  slots_aranged = jnp.arange(tree.capacity)
-  subtree_idx = tree.edge_map[tree.ROOT_INDEX, child_index]
-  nodes_to_retain = subtrees == subtree_idx
-  old_subtree_idxs = nodes_to_retain * slots_aranged
-  cumsum = jnp.cumsum(nodes_to_retain)
-  new_next_node_index = cumsum[-1]
-
-  translation = jnp.where(
-      nodes_to_retain,
-      nodes_to_retain * (cumsum-1),
-      tree.NULL_INDEX
-  )
-  erase_idxs = slots_aranged >= new_next_node_index
-
-  return old_subtree_idxs, translation, erase_idxs
+    return old_subtree_idxs, translation, erase_idxs
 
 def get_subtree(
     tree: Tree, 
