@@ -63,8 +63,8 @@ class MuZeroPUCTSelector(MCTSActionSelector):
 
     def __call__(self, tree: MCTSTree, index: int, discount: float) -> int:
         node = tree.at(index)
-        n_values = get_child_data(tree, node.n, index)
-        w_values = get_child_data(tree, node.w, index)
+        n_values = get_child_data(tree, tree.data.n, index)
+        w_values = get_child_data(tree, tree.data.w, index)
         # in this implementation...
         # child w values reflect expected return from perspective of child node
         # so we need to discount them to get expected return from perspective of the parent
