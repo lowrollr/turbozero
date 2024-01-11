@@ -13,10 +13,6 @@ class MCTSNode:
     w: jnp.number
     terminal: jnp.number
     embedding: chex.ArrayTree
-
-    @property
-    def q(self) -> jnp.number:
-        return self.w / self.n
     
 MCTSTree = Tree[MCTSNode] 
 
