@@ -7,7 +7,6 @@ from flax import struct
 class AZResnetConfig:
     model_type: str
     policy_head_out_size: int
-    value_head_out_size: int
     num_blocks: int
     num_channels: int
 
@@ -47,7 +46,7 @@ class AZResnet(nn.Module):
         value = nn.BatchNorm(use_running_average=not train)(value)
         value = nn.relu(value)
         value = value.reshape((value.shape[0], -1))
-        value = nn.Dense(features=self.config.value_head_out_size)(value)
+        value = nn.Dense(features=1)(value)
         value = nn.tanh(value)
 
         return policy, value
