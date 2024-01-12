@@ -89,10 +89,20 @@ def add_node(
     edge_index: int, 
     data: NodeType
 ) -> Tree:
+    # if the tree is full, tree.next_free_idx will be out of bounds
+    in_bounds = tree.next_free_idx < tree.capacity
+    # updating data at this index will be a no-op
+    # e.g. tree.parents.at[tree.next_free_idx].set(parent_index)
+    # will do nothing
+    # BUT
+    # we don't want to modify edge_map to point to this index
+    # so...
+    edge_map_index = jnp.where(in_bounds, tree.next_free_idx, tree.NULL_INDEX)
+    # ...
     return tree.replace(
-        next_free_idx=tree.next_free_idx + 1,
+        next_free_idx=jnp.where(in_bounds, tree.next_free_idx + 1, tree.next_free_idx),
         parents=tree.parents.at[tree.next_free_idx].set(parent_index),
-        edge_map=tree.edge_map.at[parent_index, edge_index].set(tree.next_free_idx),
+        edge_map=tree.edge_map.at[parent_index, edge_index].set(edge_map_index),
         data=jax.tree_util.tree_map(
             lambda x, y: x.at[tree.next_free_idx].set(y),
             tree.data,
