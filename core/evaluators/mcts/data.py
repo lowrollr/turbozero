@@ -56,7 +56,7 @@ def tree_to_graph(tree, batch_id=0):
             for a_i in range(tree.edge_map.shape[2]):
                 v_a = child_visits[a_i].item()
                 if v_a > 0:
-                    graph.edge(str(n_i), str(mapping[a_i]), f'{node.p[a_i]:.4f}')
+                    graph.edge(str(n_i), str(mapping[a_i]), f'{a_i}:{node.p[a_i]:.4f}')
         else:
             break
     

@@ -48,23 +48,47 @@ class MCTS:
         parent, action = traversal_state.parent, traversal_state.action
         # evaluate and expand leaf
         embedding = tree.at(parent).embedding
-        new_embedding, reward, terminated = self.step_fn(embedding, action)
+        new_embedding, reward, terminated = self.step(embedding, action)
         policy_logits, value = self.eval_fn(new_embedding)
         policy_mask = self.action_mask_fn(new_embedding)
         policy_logits = jnp.where(policy_mask, policy_logits, -jnp.inf)
         policy = jax.nn.softmax(policy_logits)
         value = jnp.where(terminated, reward, value)
-        new_node = MCTSNode(n=1, p=policy, w=value, terminal=terminated, embedding=new_embedding)
-        tree = add_node(tree, parent, action, new_node)
+        node_exists = tree.is_edge(parent, action)
+        node_id = tree.edge_map[parent, action]
+        node = tree.at(node_id)
+        tree = jax.lax.cond(
+            node_exists,
+            lambda _: update_node(tree, node_id,
+                node.replace(
+                    n = node.n + 1,
+                    w = node.w + value,
+                    p = policy,
+                    terminal = terminated,
+                    embedding = new_embedding        
+                )),
+            lambda _: add_node(tree, parent, action, 
+                MCTSNode(n=1, p=policy, w=value, terminal=terminated, embedding=new_embedding)),
+            None
+        )
         # backpropagate
-        return self.backpropagate(tree, parent, value)
+        tree = self.backpropagate(tree, parent, value)
+        # jax.debug.print("{x}", x=tree)
+        return tree
     
     def choose_root_action(self, tree: MCTSTree) -> int:
         return self.action_selection_fn(tree, tree.ROOT_INDEX, self.discount)
+    
+    def step(self, embedding: chex.ArrayTree, action: int) -> Tuple[chex.ArrayTree, float, bool]:
+        return self.step_fn(embedding, action)
 
     def traverse(self, tree: MCTSTree) -> TraversalState:
         def cond_fn(state: TraversalState) -> bool:
-            return tree.edge_map[state.parent, state.action] != Tree.NULL_INDEX
+            return jnp.logical_and(
+                tree.is_edge(state.parent, state.action),
+                ~(tree.at(tree.edge_map[state.parent, state.action]).terminal)
+                # TODO: maximum depth
+            )
         
         def body_fn(state: TraversalState) -> TraversalState:
             node_idx = tree.edge_map[state.parent, state.action]

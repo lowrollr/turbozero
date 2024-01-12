@@ -40,6 +40,9 @@ class Tree(Generic[NodeType]):
             lambda x: x[index],
             self.data
         )
+    
+    def is_edge(self, parent_index: int, edge_index: int) -> bool:
+        return self.edge_map[parent_index, edge_index] != self.NULL_INDEX
 
 def _init(key: jax.random.PRNGKey, max_nodes: int, branching_factor: int, dummy_data: chex.ArrayTree) -> Tree:
     return Tree(
@@ -187,7 +190,7 @@ def get_subtree(
     def translate(x, null_value=tree.NULL_VALUE):
         return jnp.where(
             erase_idxs.reshape((-1,) + (1,) * (x.ndim - 1)),
-            null_value,
+            jnp.full_like(x, null_value, dtype=x.dtype),
             # cases where translation == -1 will set last index
             # but since we are at least removing the root node
             # (and making one of its children the new root)
@@ -205,7 +208,7 @@ def get_subtree(
             # map to the value of the last index of the translation
             x.at[translation].set(jnp.where(
                 x == null_value,
-                null_value,
+                jnp.full_like(x, null_value, dtype=x.dtype),
                 translation[x])))
 
     def translate_pytree(x, null_value=tree.NULL_VALUE):
