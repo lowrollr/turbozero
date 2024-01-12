@@ -5,8 +5,8 @@ import chex
 from chex import dataclass
 import jax.numpy as jnp
 from core.evaluators.mcts.action_selection import MCTSActionSelector
-from core.evaluators.mcts.data import BackpropState, MCTSNode, MCTSTree, TraversalState
-from core.trees.tree import Tree, add_node, set_root, update_node
+from core.evaluators.mcts.data import BackpropState, MCTSNode, MCTSTree, TraversalState, MCTSOutput
+from core.trees.tree import Tree, add_node, get_child_data, get_rng, set_root, update_node
 
 class MCTS:
     def __init__(self,
@@ -14,17 +14,28 @@ class MCTS:
         eval_fn: Callable[[chex.ArrayTree], Tuple[chex.ArrayTree, float]],
         action_selection_fn: MCTSActionSelector,
         action_mask_fn: Callable[[chex.ArrayTree], chex.Array] = lambda _: jnp.array([True]),
-        discount: float = -1.0
+        discount: float = -1.0,
+        temperature: float = 1.0
     ):
         self.step_fn = step_fn
         self.eval_fn = eval_fn
         self.action_mask_fn = action_mask_fn
         self.action_selection_fn = action_selection_fn
         self.discount = discount
+        self.temperature = temperature
 
-    def search(self, tree: MCTSTree, root_embedding: chex.ArrayTree, num_iterations: int) -> MCTSTree:   
+    def search(self, tree: MCTSTree, root_embedding: chex.ArrayTree, num_iterations: int) -> MCTSOutput:   
         tree = self.update_root(tree, root_embedding)
-        return jax.lax.fori_loop(0, num_iterations, lambda _, t: self.iterate(t), tree)
+        tree = jax.lax.fori_loop(0, num_iterations, lambda _, t: self.iterate(t), tree)
+        tree, action, action_weights = self.sample_root_action(tree)
+        root_node = tree.at(tree.ROOT_INDEX)
+        return MCTSOutput(
+            tree=tree,
+            sampled_action=action,
+            root_value=root_node.w / root_node.n,
+            action_weights=action_weights
+        )
+
     
     def update_root(self, tree: MCTSTree, root_embedding: chex.ArrayTree) -> MCTSTree:
         root_policy_logits, root_value = self.evaluate_root(root_embedding)
@@ -118,3 +129,15 @@ class MCTS:
             BackpropState(node_idx=parent, value=value, tree=tree)
         )
         return state.tree
+
+    def sample_root_action(self, tree: MCTSTree) -> Tuple[MCTSTree, int, chex.Array]:
+        action_visits = get_child_data(tree, tree.data.n, tree.ROOT_INDEX)
+        action_weights = action_visits / action_visits.sum()
+        rand_key, tree = get_rng(tree)
+        if self.temperature == 0:
+            return tree, jnp.argmax(action_weights), action_weights
+        
+        action_weights = action_weights ** (1/self.temperature)
+        action_weights /= action_weights.sum()
+        action = jax.random.choice(rand_key, action_weights.shape[-1], p=action_weights)
+        return tree, action, action_weights

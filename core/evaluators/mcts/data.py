@@ -29,6 +29,13 @@ class BackpropState:
     value: float
     tree: MCTSTree
 
+@dataclass(frozen=True)
+class MCTSOutput:
+    tree: MCTSTree
+    sampled_action: int
+    root_value: float
+    action_weights: chex.Array
+
 def tree_to_graph(tree, batch_id=0):
     graph = graphviz.Digraph()
 

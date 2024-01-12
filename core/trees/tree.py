@@ -44,7 +44,7 @@ class Tree(Generic[NodeType]):
     def is_edge(self, parent_index: int, edge_index: int) -> bool:
         return self.edge_map[parent_index, edge_index] != self.NULL_INDEX
 
-def _init(key: jax.random.PRNGKey, max_nodes: int, branching_factor: int, dummy_data: chex.ArrayTree) -> Tree:
+def _init(key: jax.random.PRNGKey, max_nodes: int, branching_factor: int, template_data: chex.ArrayTree) -> Tree:
     return Tree(
         key=key,
         next_free_idx=0,
@@ -52,24 +52,23 @@ def _init(key: jax.random.PRNGKey, max_nodes: int, branching_factor: int, dummy_
         edge_map=jnp.full((max_nodes, branching_factor), fill_value=Tree.NULL_INDEX, dtype=jnp.int32),
         data=jax.tree_util.tree_map(
             lambda x: jnp.zeros((max_nodes, *x.shape), dtype=x.dtype),
-            dummy_data
+            template_data
         )
     )
-
 
 def init_batched_tree(
     key: jax.random.PRNGKey,
     batch_size: int, 
     max_nodes: int, 
     branching_factor: int, 
-    dummy_data: chex.ArrayTree
+    template_data: chex.ArrayTree
 ) -> Tree:
     keys = jax.random.split(key, batch_size)
     return jax.vmap(
         _init, 
         in_axes=(0, None, None, jax.tree_util.tree_map(
-            lambda _: None, dummy_data))
-    )(keys, max_nodes, branching_factor, dummy_data)
+            lambda _: None, template_data))
+    )(keys, max_nodes, branching_factor, template_data)
 
 
 def get_child_data(
@@ -220,4 +219,17 @@ def get_subtree(
         parents=translate_idx(tree.parents),
         edge_map=translate_idx(tree.edge_map),
         data=translate_pytree(tree.data)
+    )
+
+def reset_tree(
+    tree: Tree
+) -> Tree:
+    return tree.replace(
+        next_free_idx=0,
+        parents=jnp.full_like(tree.parents, tree.NULL_INDEX),
+        edge_map=jnp.full_like(tree.edge_map, tree.NULL_INDEX),
+        data=jax.tree_map(
+            lambda x: jnp.zeros_like(x),
+            tree.data
+        )
     )

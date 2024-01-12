@@ -8,7 +8,7 @@ import jax.numpy as jnp
 from core.evaluators.mcts.action_selection import MCTSActionSelector
 from core.evaluators.mcts.data import MCTSNode, MCTSTree
 from core.evaluators.mcts.mcts import MCTS
-from core.trees.tree import set_root
+from core.trees.tree import get_child_data, get_rng, set_root
 
 class AlphaZero(MCTS):
     def __init__(self,
@@ -18,9 +18,10 @@ class AlphaZero(MCTS):
         action_mask_fn: Callable[[chex.ArrayTree], chex.Array] = lambda _: jnp.array([True]),
         dirichlet_alpha: float = 0.3,
         dirichlet_epsilon: float = 0.25,
-        discount: Optional[float] = -1.0
+        discount: float = -1.0,
+        temperature: float = 1.0
     ):
-        super().__init__(step_fn, eval_fn, action_selection_fn, action_mask_fn, discount)
+        super().__init__(step_fn, eval_fn, action_selection_fn, action_mask_fn, discount, temperature)
         self.dirichlet_alpha = dirichlet_alpha
         self.dirichlet_epsilon = dirichlet_epsilon
 
@@ -57,3 +58,4 @@ class AlphaZero(MCTS):
             embedding=root_embedding
         )
         return set_root(tree, root_node)
+    
