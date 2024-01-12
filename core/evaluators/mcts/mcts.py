@@ -13,10 +13,12 @@ class MCTS:
         step_fn: Callable[[chex.ArrayTree, Any], Tuple[chex.ArrayTree, float, bool]],
         eval_fn: Callable[[chex.ArrayTree], Tuple[chex.ArrayTree, float]],
         action_selection_fn: MCTSActionSelector,
-        discount: Optional[float] = -1.0
+        action_mask_fn: Callable[[chex.ArrayTree], chex.Array] = lambda _: jnp.array([True]),
+        discount: float = -1.0
     ):
         self.step_fn = step_fn
         self.eval_fn = eval_fn
+        self.action_mask_fn = action_mask_fn
         self.action_selection_fn = action_selection_fn
         self.discount = discount
 
@@ -25,8 +27,9 @@ class MCTS:
         return jax.lax.fori_loop(0, num_iterations, lambda _, t: self.iterate(t), tree)
     
     def update_root(self, tree: MCTSTree, root_embedding: chex.ArrayTree) -> MCTSTree:
+        root_policy_logits, root_value = self.evaluate_root(root_embedding)
+        root_policy = jax.nn.softmax(root_policy_logits)
         root_node = tree.at(tree.ROOT_INDEX)
-        root_policy, root_value = self.evaluate_root(root_embedding)
         visited = root_node.n > 0
         root_node = root_node.replace(
             p=root_policy,
@@ -44,16 +47,17 @@ class MCTS:
         traversal_state = self.traverse(tree)
         parent, action = traversal_state.parent, traversal_state.action
         # evaluate and expand leaf
-        new_embedding, reward, terminated = self.get_next_state(tree, parent, action)
-        policy, value = self.eval_fn(new_embedding)
+        embedding = tree.at(parent).embedding
+        new_embedding, reward, terminated = self.step_fn(embedding, action)
+        policy_logits, value = self.eval_fn(new_embedding)
+        policy_mask = self.action_mask_fn(new_embedding)
+        policy_logits = jnp.where(policy_mask, policy_logits, -jnp.inf)
+        policy = jax.nn.softmax(policy_logits)
         value = jnp.where(terminated, reward, value)
         new_node = MCTSNode(n=1, p=policy, w=value, terminal=terminated, embedding=new_embedding)
         tree = add_node(tree, parent, action, new_node)
         # backpropagate
         return self.backpropagate(tree, parent, value)
-    
-    def get_next_state(self, tree: MCTSTree, parent: int, action: int) -> Tuple[chex.ArrayTree, float, bool]:
-        return self.step_fn(tree.at(parent).embedding, action)
     
     def choose_root_action(self, tree: MCTSTree) -> int:
         return self.action_selection_fn(tree, tree.ROOT_INDEX, self.discount)

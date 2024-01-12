@@ -27,6 +27,14 @@ class Tree(Generic[NodeType]):
     def capacity(self) -> int:
         return self.parents.shape[0]
     
+    @property
+    def num_nodes(self) -> int:
+        return self.parents.shape[-1]
+    
+    @property
+    def branching_factor(self) -> int:
+        return self.edge_map.shape[-1]
+    
     def at(self, index: int) -> NodeType:
         return jax.tree_util.tree_map(
             lambda x: x[index],
