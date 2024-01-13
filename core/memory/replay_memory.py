@@ -7,14 +7,20 @@ import jax
 import jax.numpy as jnp
 
 @dataclass(frozen=True)
+class BaseExperience:
+    reward: chex.Array
+    action_weights: chex.Array
+    env_state: chex.ArrayTree
+
+@dataclass(frozen=True)
 class ReplayBufferState:
     key: jax.random.PRNGKey
     next_idx: int
-    next_reward_idx: int
-    buffer: chex.ArrayTree
+    episode_start_idx: int
+    buffer: BaseExperience
     populated: chex.Array
     has_reward: chex.Array
-    episode_reward_buffer: chex.Array
+
 
 class EpisodeReplayBuffer:
     def __init__(self,
@@ -24,7 +30,7 @@ class EpisodeReplayBuffer:
 
     def add_experience(self,
         state: ReplayBufferState,
-        experience: chex.ArrayTree
+        experience: BaseExperience
     ) -> ReplayBufferState:
         return state.replace(
             buffer = jax.tree_util.tree_map(
@@ -37,17 +43,19 @@ class EpisodeReplayBuffer:
             has_reward = state.has_reward.at[state.next_idx].set(False)
         )
     
-    def assign_reward(self,
+    def assign_rewards(self,
         state: ReplayBufferState,
-        reward: float
+        reward: chex.Array
     ) -> ReplayBufferState:
         return state.replace(
-            next_reward_idx = state.next_idx,
+            episode_start_idx = state.next_idx,
             has_reward = jnp.full_like(state.has_reward, True),
-            episode_reward_buffer = jnp.where(
-                ~state.has_reward,
-                reward,
-                state.episode_reward_buffer
+            buffer = state.buffer.replace(
+                reward = jnp.where(
+                    ~state.has_reward[..., None],
+                    reward[None, ...],
+                    state.buffer.reward
+                )
             )
         )
     
@@ -59,7 +67,7 @@ class EpisodeReplayBuffer:
         # and cannot be sampled
         # so there's no need to overwrite them with zeros here
         return state.replace(
-            next_idx = state.next_reward_idx,
+            next_idx = state.episode_start_idx,
             has_reward = jnp.full_like(state.has_reward, True),
             populated = jnp.where(
                 ~state.has_reward,
@@ -86,7 +94,6 @@ class EpisodeReplayBuffer:
         sample_size: int
     ) -> Tuple[ReplayBufferState, chex.ArrayTree, chex.Array]:
         assert len(state.episode_reward_buffer.shape) == 2
-        batch_size = state.episode_reward_buffer.shape[0]
         capacity = state.episode_reward_buffer.shape[1]
 
         sample_key, new_key = jax.random.split(state.key)
@@ -110,22 +117,19 @@ class EpisodeReplayBuffer:
             state.buffer
         )
 
-        sampled_episode_rewards = state.episode_reward_buffer[batch_indices, item_indices]
+        return state.replace(key=new_key), sampled_buffer_items
 
-        return state.replace(key=new_key), sampled_buffer_items, sampled_episode_rewards
-
-def _init(key: jax.random.PRNGKey, capacity: int, template_experience: chex.ArrayTree) -> ReplayBufferState:
+def _init(key: jax.random.PRNGKey, capacity: int, template_experience: BaseExperience) -> ReplayBufferState:
     return ReplayBufferState(
         key = key,
         next_idx = 0,
-        next_reward_idx = 0,
+        episode_start_idx = 0,
         buffer = jax.tree_util.tree_map(
             lambda x: jnp.zeros((capacity, *x.shape), dtype=x.dtype),
             template_experience
         ),
         populated = jnp.full((capacity,), fill_value=False, dtype=jnp.bool_),
         has_reward = jnp.full((capacity,), fill_value=True, dtype=jnp.bool_),
-        episode_reward_buffer = jnp.zeros((capacity,), dtype=jnp.float32)
     )
 
 
