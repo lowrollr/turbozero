@@ -5,6 +5,7 @@ from chex import dataclass
 import jax.numpy as jnp
 import graphviz
 import jax
+from core.evaluators.evaluator import EvalOutput
 
 from core.trees.tree import Tree
 
@@ -30,11 +31,10 @@ class BackpropState:
     tree: MCTSTree
 
 @dataclass(frozen=True)
-class MCTSOutput:
-    tree: MCTSTree
-    sampled_action: int
+class MCTSOutput(EvalOutput):
+    eval_state: MCTSTree
     root_value: float
-    action_weights: chex.Array
+    policy_weights: chex.Array
 
 def tree_to_graph(tree, batch_id=0):
     graph = graphviz.Digraph()

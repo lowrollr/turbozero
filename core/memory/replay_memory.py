@@ -9,7 +9,8 @@ import jax.numpy as jnp
 @dataclass(frozen=True)
 class BaseExperience:
     reward: chex.Array
-    action_weights: chex.Array
+    policy_weights: chex.Array
+    policy_mask: chex.Array
     env_state: chex.ArrayTree
 
 @dataclass(frozen=True)
@@ -91,33 +92,31 @@ class EpisodeReplayBuffer:
     # assumes input is batched!! (dont vmap)
     def sample_across_batches(self,
         state: ReplayBufferState,
+        key: jax.random.PRNGKey,
         sample_size: int
-    ) -> Tuple[ReplayBufferState, chex.ArrayTree, chex.Array]:
-        assert len(state.episode_reward_buffer.shape) == 2
-        capacity = state.episode_reward_buffer.shape[1]
+    ) -> chex.ArrayTree:
 
-        sample_key, new_key = jax.random.split(state.key)
         masked_weights = jnp.logical_and(
             state.populated, 
             state.has_reward
         ).reshape(-1)
 
         indices = jax.random.choice(
-            sample_key,
-            state.capacity,
+            key,
+            self.capacity * state.populated.shape[0],
             shape=(sample_size,),
             replace=False,
             p = masked_weights / masked_weights.sum()
         )
-        batch_indices = indices // capacity
-        item_indices = indices % capacity
+        batch_indices = indices // self.capacity
+        item_indices = indices % self.capacity
 
         sampled_buffer_items = jax.tree_util.tree_map(
             lambda x: x[batch_indices, item_indices],
             state.buffer
         )
 
-        return state.replace(key=new_key), sampled_buffer_items
+        return sampled_buffer_items
 
 def _init(key: jax.random.PRNGKey, capacity: int, template_experience: BaseExperience) -> ReplayBufferState:
     return ReplayBufferState(

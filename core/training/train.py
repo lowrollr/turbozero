@@ -1,385 +1,269 @@
-
-
 from functools import partial
-import os
-from typing import Any, Dict, Optional, Tuple
-from flax import struct, serialization
-from flax.training import train_state, checkpoints, orbax_utils
-from dataclasses import dataclass
-from flax import linen as nn
+from typing import Optional, Tuple
+from chex import dataclass
+import chex
 import jax
 import jax.numpy as jnp
-import optax
-import orbax.checkpoint
-from core.envs.env import Env, EnvConfig, EnvState
-import pickle
-from core.envs.make import make_env
+from core.evaluators.evaluator import EvalOutput, Evaluator
+from core.memory.replay_memory import BaseExperience, EpisodeReplayBuffer, ReplayBufferState
+from core.types import ActionMaskFn, EnvInitFn, EnvPlayerIdFn, EnvStepFn, EvalFn, ExtractModelParamsFn, TrainStepFn
+from flax.training.train_state import TrainState
 
-from core.evaluators.evaluator import Evaluator, EvaluatorConfig, EvaluatorState
-from core.evaluators.make import make_evaluator
-from core.evaluators.nn_evaluator import NNEvaluator
-from core.memory.make import make_replay_buffer
-from core.networks.make import make_model
-from core.memory.replay_memory import EndRewardReplayBuffer, EndRewardReplayBufferState
-import wandb
-
-import yaml
-
-@dataclass
-class TrainerConfig:
-    selfplay_batch_size: int
-    warmup_steps: int
-    collection_steps_per_epoch: int
-    train_steps_per_epoch: int
-    test_every_n_epochs: int
-    test_episodes: int
-    checkpoint_every_n_epochs: int
-    checkpoint_dir: str
-    retain_n_checkpoints: int
-    learning_rate: float
-    momentum: float
-    l2_lambda: float
-    policy_factor: float
-    disk_store_location: str # where to store env and evaluator states when not in use
-    retain_n_checkpoints: int
-    max_episode_steps: int
-
-@struct.dataclass
-class BaseExperience(struct.PyTreeNode):
-    observation: struct.PyTreeNode
-    policy: jnp.ndarray
-    policy_mask: jnp.ndarray
-    player_id: jnp.ndarray
-
-@struct.dataclass
-class BNTrainState(train_state.TrainState):
-    batch_stats: Optional[Any] = None
-
-@struct.dataclass
-class TrainerState:
+@dataclass(frozen=True)
+class CollectionState:
     key: jax.random.PRNGKey
-    evaluator_state: EvaluatorState
-    env_state: EnvState
-    buff_state: EndRewardReplayBufferState
-    epoch: int
-    train_state: BNTrainState
+    eval_state: chex.ArrayTree
+    env_state: chex.ArrayTree
+    buffer_state: ReplayBufferState
 
-@struct.dataclass
+
+@dataclass(frozen=True)
 class TestState:
-    trainer_state: TrainerState
-    test_env_state: EnvState
-    test_eval_state: EvaluatorState
-    rewards: jnp.ndarray
-    completed: jnp.ndarray
+    key: jax.random.PRNGKey
+    eval_state: chex.ArrayTree
+    env_state: chex.ArrayTree
+    outcomes: chex.Array
+    completed: chex.Array
+
+def extract_params(state: TrainState) -> chex.ArrayTree:
+    if hasattr(state, 'batch_stats'):
+        return {'params': state.params, 'batch_stats': state.batch_stats}
+    return {'params': state.params}
+
 
 class Trainer:
     def __init__(self,
-        config: TrainerConfig,
-        env: Env,
-        train_evaluator: NNEvaluator,
-        test_evaluator: NNEvaluator,
-        buff: EndRewardReplayBuffer,
-        model: nn.Module,
-        debug: bool = False
+        train_batch_size: int,
+        env_step_fn: EnvStepFn,
+        env_init_fn: EnvInitFn,
+        eval_fn: EvalFn,
+        env_player_id_fn: EnvPlayerIdFn,
+        action_mask_fn: ActionMaskFn,
+        train_step_fn: TrainStepFn,
+        evaluator: Evaluator,
+        memory_buffer: EpisodeReplayBuffer,
+        template_env_state: chex.ArrayTree,
+        evaluator_kwargs_train: dict,
+        evaluator_kwargs_test: Optional[dict] = None,
+        extract_model_params_fn: Optional[ExtractModelParamsFn] = extract_params,
     ):
-        self.train_evaluator = train_evaluator
-        self.test_evaluator = test_evaluator
-        self.evaluator = train_evaluator
-        self.env = env
-        self.config = config
-        self.config: TrainerConfig
-        self.model = model
-        self.buff = buff
-        self.debug = debug
+        self.train_batch_size = train_batch_size
+        self.evaluator = evaluator
+        self.memory_buffer = memory_buffer
+        self.env_step_fn = env_step_fn
+        self.env_init_fn = env_init_fn
+        self.env_player_id_fn = env_player_id_fn
+        self.eval_fn = eval_fn
+        self.action_mask_fn = action_mask_fn
+        self.train_step_fn = train_step_fn
+        self.extract_model_params_fn = extract_model_params_fn
+        self.template_env_state = template_env_state
+
+        evaluate = partial(self.evaluator.evaluate, 
+            env_step_fn=self.env_step_fn, 
+            env_player_id_fn=self.env_player_id_fn,
+            eval_fn=self.eval_fn, 
+            action_mask_fn=self.action_mask_fn)
         
-        self.batch_size = self.config.selfplay_batch_size
-        self.test_batch_size = self.config.test_episodes
+        self.evaluator_kwargs_train = evaluator_kwargs_train
+        self.evaluate_train = partial(evaluate, **self.evaluator_kwargs_train)
+        if evaluator_kwargs_test is None:
+            self.evaluator_kwargs_test = evaluator_kwargs_train
+            self.evaluate_test = self.evaluate_train
+        else:
+            self.evaluator_kwargs_test = evaluator_kwargs_test
+            self.evaluate_test = partial(evaluate, **self.evaluator_kwargs_test)
 
-        self.pkl_file = 'state.pkl'
-
-
-        checkpointer = orbax.checkpoint.PyTreeCheckpointer()
-        options = orbax.checkpoint.CheckpointManagerOptions(max_to_keep=self.config.retain_n_checkpoints, create=True)
-        self.checkpoint_mngr = orbax.checkpoint.CheckpointManager(
-            self.config.checkpoint_dir,
-            checkpointer, 
-            options=options
-        )
-
-        self.train_in_memory = True
-
-    def pack_model_params(
-        self,
-        state: TrainerState
-    )  -> Dict:
-        params = {'params': state.train_state.params}
-        if state.train_state.batch_stats is not None:
-            params['batch_stats'] = state.train_state.batch_stats
-        return params
-    
-
-    def init(self, # no vmapping this!
+    def _step_env_and_evaluator(self,
         key: jax.random.PRNGKey,
-    ) -> TrainerState:
-        self.train_in_memory = True
-
-        init_key, buff_key, model_key, env_key, eval_key = jax.random.split(key, 5)
-        env_keys = jax.random.split(env_key, self.buff.config.batch_size)
-
-        eval_keys = jax.random.split(eval_key, self.buff.config.batch_size)
-        env_state = jax.vmap(self.env.reset)(env_keys)
-        eval_state = jax.vmap(self.train_evaluator.reset)(eval_keys)
-
-        buff_state = self.buff.init(
-            buff_key,
-            jax.tree_map(
-                lambda x: jnp.zeros(x.shape[1:], x.dtype),
-                BaseExperience(
-                    observation=env_state._observation,
-                    policy=jax.vmap(self.train_evaluator.get_policy)(eval_state),
-                    policy_mask=env_state.legal_action_mask,
-                    player_id=env_state.cur_player_id
-                )
+        env_state: chex.ArrayTree,
+        eval_state: chex.ArrayTree,
+        params: chex.ArrayTree,
+        is_test: bool,
+    ) -> Tuple[chex.ArrayTree, EvalOutput, float, bool]:
+        evaluate_fn = self.evaluate_test if is_test else self.evaluate_train
+        output = evaluate_fn(eval_state=eval_state, env_state=env_state, params=params)
+        eval_state = output.eval_state
+        env_state, reward, terminated = self.env_step_fn(env_state, output.action)
+        eval_state = jax.lax.cond(
+            terminated,
+            lambda s: self.evaluator.reset(s),
+            lambda s: self.evaluator.step(s, output.action),
+            eval_state
+        )
+        env_state = jax.lax.cond(
+            terminated,
+            lambda _: self.env_init_fn(key),
+            lambda _: env_state,
+            None
+        )
+        output = output.replace(eval_state=eval_state)
+        return env_state, output, reward, terminated    
+    
+    def collect(self,
+        state: CollectionState,
+        params: chex.ArrayTree
+    ) -> CollectionState:
+        step_key, new_key = jax.random.split(state.key)
+        new_env_state, eval_output, reward, terminated = \
+            self._step_env_and_evaluator(
+                key = step_key,
+                env_state = state.env_state,
+                eval_state = state.eval_state,
+                params = params,
+                is_test = False
+            )
+        
+        buffer_state = self.memory_buffer.add_experience(
+            state = state.buffer_state,
+            experience = BaseExperience(
+                env_state=state.env_state,
+                policy_mask=self.action_mask_fn(state.env_state),
+                policy_weights=eval_output.policy_weights,
+                reward=jnp.empty_like(state.buffer_state.buffer.reward[0])
             )
         )
-
-        model_params = self.model.init(model_key, jnp.zeros((1, *self.env.get_observation_shape())), train=False)
-
-        train_state = BNTrainState.create(
-            apply_fn=self.model.apply,
-            params=model_params['params'],
-            batch_stats=model_params.get('batch_stats'),
-            tx=optax.sgd(learning_rate=self.config.learning_rate, momentum=self.config.momentum)
+        
+        buffer_state = jax.lax.cond(
+            terminated,
+            lambda s: self.memory_buffer.assign_rewards(s, reward),
+            lambda s: s,
+            buffer_state
         )
-
-        return TrainerState(
-            key=init_key,
-            epoch=0,
-            evaluator_state=eval_state,
-            env_state=env_state,
-            buff_state=buff_state,
-            train_state=train_state
-        )
-
-    def collect_step(self,
-        state: TrainerState,
-    ) -> TrainerState:
-        env_state, eval_state, buff_state = state.env_state, state.evaluator_state, state.buff_state
-        observation = env_state._observation
-        player_id = env_state.cur_player_id
-        evaluation_fn = partial(self.train_evaluator.evaluate, model_params=self.pack_model_params(state))
-        eval_state = jax.vmap(evaluation_fn)(eval_state, env_state)
-        eval_state, action = jax.vmap(self.train_evaluator.choose_action)(eval_state, env_state)
-        env_state = jax.vmap(self.env.step)(env_state, action)
-        terminated = env_state.terminated
-
-        buff_state = self.buff.add_experience(
-            buff_state,
-            BaseExperience(
-                observation=observation,
-                policy=jax.vmap(self.train_evaluator.get_policy)(eval_state),
-                policy_mask=env_state.legal_action_mask,
-                player_id=player_id
-            )
-        )
-
-        buff_state = self.buff.assign_rewards(
-            buff_state, 
-            rewards=env_state.reward, 
-            select_batch=terminated
-        )
-
-        eval_state = jax.vmap(self.train_evaluator.step_evaluator)(eval_state, action, terminated)
-        env_state = jax.vmap(self.env.reset_if_terminated)(env_state)
 
         return state.replace(
-            env_state=env_state,
-            evaluator_state=eval_state,
-            buff_state=buff_state
+            key=new_key,
+            eval_state=eval_output.eval_state,
+            env_state=new_env_state,
+            buffer_state=buffer_state
+        )
+
+    
+    def collect_steps(self,
+        state: CollectionState,
+        params: chex.ArrayTree,
+        num_steps: int
+    ) -> CollectionState:
+        collect = partial(self.collect, params=params)
+        return jax.lax.fori_loop(
+            0, num_steps, 
+            lambda _, s: collect(s), 
+            state
         )
     
-    def test_step(self,
-        state: TestState
-    ) -> Tuple[TestState, Any]: 
-        env_state, eval_state = state.trainer_state.env_state, state.trainer_state.evaluator_state
+    def train_steps(self,
+        collection_state: CollectionState,
+        train_state: TrainState,
+        num_steps: int
+    ) -> Tuple[CollectionState, TrainState, dict]:
+        buffer_state = collection_state.buffer_state
         
-        evaluation_fn = partial(self.test_evaluator.evaluate, model_params=self.pack_model_params(state.trainer_state))
-        eval_state = jax.vmap(evaluation_fn)(eval_state, env_state)
-        eval_state, action = jax.vmap(self.test_evaluator.choose_action)(eval_state, env_state)
-        env_state = jax.vmap(self.env.step)(env_state, action)
-        eval_state = jax.vmap(self.test_evaluator.step_evaluator)(eval_state, action, env_state.terminated)
 
-        return state.replace(
-            trainer_state=state.trainer_state.replace(
-                env_state=env_state,
-                evaluator_state=eval_state
-            ),
-            reward = jnp.where(
-                env_state.terminated & ~state.completed,
-                env_state.reward,
-                state.reward
-            ),
-            completed = state.completed | env_state.terminated
-        ), None
-
-    def train_step(self,
-        state: TrainerState,       
-    ) -> TrainerState:
-        # sample from replay memory
-        buff_state, batch, rewards = self.buff.sample(state.buff_state)
-        batch = jax.tree_util.tree_map(
-            lambda x: x.astype(jnp.float32),
-            batch
-        )
-        player_rewards = rewards[jnp.arange(self.buff.config.sample_size), batch.player_id.astype(jnp.int32)]
-
-        def loss_fn(params: struct.PyTreeNode):
-            (pred_policy, pred_value), updates = state.train_state.apply_fn(
-                {'params': params, 'batch_stats': state.train_state.batch_stats}, 
-                x=batch.observation,
-                train=True,
-                mutable=['batch_stats']
-            )
-            pred_policy = jnp.where(
-                batch.policy_mask,
-                pred_policy,
-                0
-            )
-            policy_loss = optax.softmax_cross_entropy(pred_policy, batch.policy).mean() * self.config.policy_factor
-            value_loss = optax.l2_loss(pred_value.reshape(-1), player_rewards).mean()
-
-            l2_reg = self.config.l2_lambda * jax.tree_util.tree_reduce(
-                lambda x, y: x + y,
-                jax.tree_map(
-                    lambda x: (x ** 2).sum(),
-                    params
-                )
-            )
-
-            loss = policy_loss + value_loss + l2_reg
-            return loss, ((policy_loss, value_loss, pred_policy, pred_value), updates)
+        def sample_and_train(ts: TrainState, key: jax.random.PRNGKey) -> TrainState:
+            samples = self.memory_buffer.sample_across_batches(buffer_state, key, sample_size=self.train_batch_size)
+            return self.train_step_fn(samples, ts)
         
-        grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
-        (loss, ((policy_loss, value_loss, pred_policy, pred_value), updates)), grads = grad_fn(state.train_state.params)
-        state = state.replace(
-            train_state = state.train_state.apply_gradients(grads=grads)
-        )
-        metrics = {
-            'loss': loss,
-            'policy_loss': policy_loss,
-            'value_loss': value_loss,
-            'policy_accuracy': jnp.mean(jnp.argmax(pred_policy, axis=-1) == jnp.argmax(batch.policy, axis=-1)),
-            'value_accuracy': jnp.mean(jnp.round(pred_value) == jnp.round(player_rewards))
-        }
+        sample_key, new_key = jax.random.split(collection_state.key[0], 2)
+        new_cs_keys = collection_state.key.at[0].set(new_key)
+        sample_keys = jax.random.split(sample_key, num_steps)
 
-        return state.replace(
-            train_state = state.train_state.replace(
-                batch_stats=updates['batch_stats'],
-            ),
-            buff_state=buff_state
-        ), metrics
+        train_state, metrics = jax.lax.scan(
+            sample_and_train,
+            train_state,
+            xs=sample_keys,
+        )
+        mean_metrics = jax.tree_map(lambda x: x.mean(), metrics)
+        
+        return collection_state.replace(key=new_cs_keys), train_state, mean_metrics 
     
     def test(self,
-        state: TrainerState,
-    ) -> Tuple[TrainerState, Any]:
-        # convert to test state
-        env_key, eval_key, new_key = jax.random.split(state.key, 3)
-        env_keys = jax.random.split(env_key, self.test_batch_size)
-        eval_keys = jax.random.split(eval_key, self.test_batch_size)
-        state = TestState(
-            trainer_state=state.replace(key=new_key),
-            test_env_state=jax.vmap(self.env.reset)(env_keys)[0],
-            test_eval_state=jax.vmap(self.test_evaluator.reset)(eval_keys),
-            rewards=jnp.zeros((self.test_batch_size,)),
-            completed=jnp.zeros((self.test_batch_size,), dtype=jnp.bool_)
+        collection_state: CollectionState,
+        params: chex.ArrayTree,
+        num_episodes: int
+    ) -> Tuple[CollectionState, dict]:
+        base_key, new_key = jax.random.split(collection_state.key[0], 2)
+        new_cs_keys = collection_state.key.at[0].set(new_key)
+        # init a new test env state w/ batch size = num_episodes
+        env_init_key, eval_init_key, step_key, new_key = jax.random.split(base_key, 4)
+        env_init_keys = jax.random.split(env_init_key, num_episodes)
+        eval_init_keys = jax.random.split(eval_init_key, num_episodes)
+        env_state = jax.vmap(self.env_init_fn)(env_init_keys)
+        evaluator_init = partial(self.evaluator.init, template_embedding=self.template_env_state)
+        eval_state = jax.vmap(evaluator_init)(eval_init_keys)
+
+        test_state = TestState(
+            key=step_key,
+            eval_state=eval_state,
+            env_state=env_state,
+            outcomes=jnp.zeros((num_episodes,)),
+            completed=jnp.zeros((num_episodes,), dtype=jnp.bool_)
         )
+
+        def test_step(state: TestState) -> TestState:
+            new_key, step_key = jax.random.split(state.key)
+            env_state, eval_output, reward, terminated = \
+                self._step_env_and_evaluator(
+                    self.evaluator,
+                    step_key,
+                    env_state = state.env_state,
+                    eval_state = state.eval_state,
+                    params = params,
+                    is_test = True
+                )
+            return state.replace(
+                key=new_key,
+                eval_state=eval_output.eval_state,
+                env_state=env_state,
+                outcomes=jnp.where(
+                    (terminated & ~state.completed)[..., None],
+                    reward,
+                    state.outcomes
+                ),
+                completed = state.completed | terminated
+            )
         
-        # make test steps
-        state, _ = jax.lax.scan(
-            lambda s, _: self.test_step(s),
-            state,
-            jnp.arange(self.config.max_episode_steps)
-        )
-
+        def step_while(state: TestState) -> TestState:
+            return jax.lax.while_loop(
+                lambda s: ~s.completed,
+                lambda s: test_step(s),
+                state
+            )
+        
+        test_state = jax.vmap(step_while)(test_state)
+        
+        # ok now we can return some metrics or something
         metrics = {
-            'reward': state.reward.mean() 
+            "avg_test_reward": test_state.outcomes.mean(),
         }
 
-        return state.trainer_state, metrics
+        return collection_state.replace(key=new_cs_keys), metrics
+
+    def train_loop(self,
+        collection_state: CollectionState,
+        train_state: TrainState,
+        warmup_steps: int,
+        collection_steps_per_epoch: int,
+        train_steps_per_epoch: int,
+        test_episodes_per_epoch: int,
+        num_epochs: int  
+    ) -> Tuple[CollectionState, TrainState]:
+        params = self.extract_model_params_fn(train_state)
+        collect_steps = jax.jit(self.collect_steps)
+        warmup = jax.vmap(partial(collect_steps, params=params, num_steps=warmup_steps))
+        collection_state = warmup(collection_state)
+
+        train = jax.jit(partial(self.train_steps, num_steps=train_steps_per_epoch))
+        test = jax.jit(partial(self.test, num_episodes=test_episodes_per_epoch))
+
+        for epoch in range(num_epochs):
+            collection_state = jax.vmap(partial(collect_steps, params=params, num_steps=collection_steps_per_epoch))(collection_state)
+            collection_state, train_state, metrics = train(collection_state, train_state)
+            print(f"Epoch {epoch}: {metrics}")
+            params = self.extract_model_params_fn(train_state)
+            collection_state, metrics = test(collection_state, params)
+            print(f"Epoch {epoch}: {metrics}")
+            # TODO: checkpoints
+
+        return collection_state, train_state
+
     
-    def train_epoch(self,
-        state: TrainerState,
-    ) -> Tuple[TrainerState, Any]:
-        # make collection steps
-        state, _ = jax.lax.scan(
-            lambda s, _: (self.collect_step(s), None),
-            state,
-            jnp.arange(self.config.collection_steps_per_epoch)
-        )
-        # then make train steps
-        return jax.lax.scan(
-            lambda s, _: self.train_step(s),
-            state,
-            jnp.arange(self.config.train_steps_per_epoch)
-        )
-    
-    def warmup(self,
-        state: TrainerState,           
-    ) -> TrainerState:
-        return jax.lax.scan(
-            lambda s, _: (jax.jit(self.collect_step)(s), None),
-            state,
-            jnp.arange(self.config.warmup_steps)
-        )[0]
-    
-    def train_loop(
-        self,
-        state: TrainerState,
-        num_epochs: int,
-        warmup=True
-    ) -> TrainerState:
-        if warmup:
-            state = self.warmup(state)
-
-        train_epoch = jax.jit(self.train_epoch)
-        test = jax.jit(self.test)
-        for _ in range(num_epochs):
-            # train
-            state, metrics = train_epoch(state)
-            if not self.debug:
-                wandb.log({f'train/{k}': v.mean() for k, v in metrics.items()})
-            # evaluate
-            if state.epoch % self.config.test_every_n_epochs == 0:
-                state, metrics = test(state)
-                if not self.debug:
-                    wandb.log({f'test/{k}': v.mean() for k, v in metrics.items()})
-
-
-            # checkpoint
-            if state.epoch % self.config.checkpoint_every_n_epochs == 0:
-                self.save_checkpoint(state)
-
-            state = state.replace(epoch=state.epoch + 1)
-
-        return state
-    
-    def save_checkpoint(
-        self,
-        state: TrainerState,
-    ) -> None:
-        ckpt = {
-            'state': state.train_state,
-            'train_config': self.config.__dict__,
-            'env_config': self.env.config.__dict__,
-            'eval_config_train': self.train_evaluator.config.__dict__,
-            'eval_config_test': self.test_evaluator.config.__dict__,
-            'buff_config': self.buff.config.__dict__,
-            'model_config': self.model.config.__dict__
-        }
-
-        save_args = orbax_utils.save_args_from_target(ckpt)
-
-        self.checkpoint_mngr.save(
-            state.epoch,
-            ckpt, save_kwargs={'save_args': save_args}
-        )

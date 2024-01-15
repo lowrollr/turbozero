@@ -1,44 +1,62 @@
 
-from typing import Any, Callable, Optional, Tuple
+from functools import partial
+from typing import Tuple
 import jax
 import chex
-from chex import dataclass
 import jax.numpy as jnp
+from core.evaluators.evaluator import Evaluator
 from core.evaluators.mcts.action_selection import MCTSActionSelector
 from core.evaluators.mcts.data import BackpropState, MCTSNode, MCTSTree, TraversalState, MCTSOutput
-from core.trees.tree import Tree, add_node, get_child_data, get_rng, set_root, update_node
+from core.trees.tree import _init, add_node, get_child_data, get_rng, get_subtree, reset_tree, set_root, update_node
+from core.types import ActionMaskFn, EnvPlayerIdFn, EnvStepFn, EvalFn
 
-class MCTS:
+class MCTS(Evaluator):
     def __init__(self,
-        step_fn: Callable[[chex.ArrayTree, Any], Tuple[chex.ArrayTree, float, bool]],
-        eval_fn: Callable[[chex.ArrayTree], Tuple[chex.ArrayTree, float]],
         action_selection_fn: MCTSActionSelector,
-        action_mask_fn: Callable[[chex.ArrayTree], chex.Array] = lambda _: jnp.array([True]),
+        branching_factor: int,
+        max_nodes: int,
         discount: float = -1.0,
-        temperature: float = 1.0
+        temperature: float = 1.0,
     ):
-        self.step_fn = step_fn
-        self.eval_fn = eval_fn
-        self.action_mask_fn = action_mask_fn
+        super().__init__()
+        self.branching_factor = branching_factor
+        self.max_nodes = max_nodes
         self.action_selection_fn = action_selection_fn
         self.discount = discount
         self.temperature = temperature
 
-    def search(self, tree: MCTSTree, root_embedding: chex.ArrayTree, num_iterations: int) -> MCTSOutput:   
-        tree = self.update_root(tree, root_embedding)
-        tree = jax.lax.fori_loop(0, num_iterations, lambda _, t: self.iterate(t), tree)
-        tree, action, action_weights = self.sample_root_action(tree)
-        root_node = tree.at(tree.ROOT_INDEX)
+    def evaluate(self, 
+        eval_state: MCTSTree, 
+        env_state: chex.ArrayTree,
+        params: chex.ArrayTree,
+        num_iterations: int,
+        env_step_fn: EnvStepFn,
+        eval_fn: EvalFn,
+        env_player_id_fn: EnvPlayerIdFn,
+        action_mask_fn: ActionMaskFn = lambda _: jnp.array([True]),
+        **kwargs
+    ) -> MCTSOutput:
+        eval_state = self.update_root(eval_state, env_state, params, eval_fn, action_mask_fn)
+        iterate = partial(self.iterate, 
+            params=params,
+            env_step_fn=env_step_fn,
+            eval_fn=eval_fn,
+            action_mask_fn=action_mask_fn,
+            env_player_id_fn=env_player_id_fn
+        )
+        eval_state = jax.lax.fori_loop(0, num_iterations, lambda _, t: iterate(t), eval_state)
+        eval_state, action, policy_weights = self.sample_root_action(eval_state)
+        root_node = eval_state.at(eval_state.ROOT_INDEX)
         return MCTSOutput(
-            tree=tree,
-            sampled_action=action,
+            eval_state=eval_state,
+            action=action,
             root_value=root_node.w / root_node.n,
-            action_weights=action_weights
+            policy_weights=policy_weights
         )
 
-    
-    def update_root(self, tree: MCTSTree, root_embedding: chex.ArrayTree) -> MCTSTree:
-        root_policy_logits, root_value = self.evaluate_root(root_embedding)
+
+    def update_root(self, tree: MCTSTree, root_embedding: chex.ArrayTree, params: chex.ArrayTree, eval_fn: EvalFn, **kwargs) -> MCTSTree:
+        root_policy_logits, root_value = eval_fn(root_embedding, params)
         root_policy = jax.nn.softmax(root_policy_logits)
         root_node = tree.at(tree.ROOT_INDEX)
         visited = root_node.n > 0
@@ -50,21 +68,19 @@ class MCTS:
         )
         return set_root(tree, root_node)
     
-    def evaluate_root(self, root_embedding: chex.ArrayTree) -> Tuple[chex.ArrayTree, float]:
-        return self.eval_fn(root_embedding)
-    
-    def iterate(self, tree: MCTSTree) -> MCTSTree:
+    def iterate(self, tree: MCTSTree, params: chex.ArrayTree, env_step_fn: EnvStepFn, eval_fn: EvalFn, action_mask_fn: ActionMaskFn, env_player_id_fn: EnvPlayerIdFn) -> MCTSTree:
         # traverse from root -> leaf
         traversal_state = self.traverse(tree)
         parent, action = traversal_state.parent, traversal_state.action
         # evaluate and expand leaf
         embedding = tree.at(parent).embedding
-        new_embedding, reward, terminated = self.step(embedding, action)
-        policy_logits, value = self.eval_fn(new_embedding)
-        policy_mask = self.action_mask_fn(new_embedding)
+        new_embedding, reward, terminated = env_step_fn(embedding, action)
+        player_reward = reward[env_player_id_fn(new_embedding)]
+        policy_logits, value = eval_fn(new_embedding, params)
+        policy_mask = action_mask_fn(new_embedding)
         policy_logits = jnp.where(policy_mask, policy_logits, -jnp.inf)
         policy = jax.nn.softmax(policy_logits)
-        value = jnp.where(terminated, reward, value)
+        value = jnp.where(terminated, player_reward, value)
         node_exists = tree.is_edge(parent, action)
         node_id = tree.edge_map[parent, action]
         node = tree.at(node_id)
@@ -83,15 +99,10 @@ class MCTS:
             None
         )
         # backpropagate
-        tree = self.backpropagate(tree, parent, value)
-        # jax.debug.print("{x}", x=tree)
-        return tree
+        return self.backpropagate(tree, parent, value)
     
     def choose_root_action(self, tree: MCTSTree) -> int:
         return self.action_selection_fn(tree, tree.ROOT_INDEX, self.discount)
-    
-    def step(self, embedding: chex.ArrayTree, action: int) -> Tuple[chex.ArrayTree, float, bool]:
-        return self.step_fn(embedding, action)
 
     def traverse(self, tree: MCTSTree) -> TraversalState:
         def cond_fn(state: TraversalState) -> bool:
@@ -132,12 +143,27 @@ class MCTS:
 
     def sample_root_action(self, tree: MCTSTree) -> Tuple[MCTSTree, int, chex.Array]:
         action_visits = get_child_data(tree, tree.data.n, tree.ROOT_INDEX)
-        action_weights = action_visits / action_visits.sum()
+        policy_weights = action_visits / action_visits.sum()
         rand_key, tree = get_rng(tree)
         if self.temperature == 0:
-            return tree, jnp.argmax(action_weights), action_weights
+            return tree, jnp.argmax(policy_weights), policy_weights
         
-        action_weights = action_weights ** (1/self.temperature)
-        action_weights /= action_weights.sum()
-        action = jax.random.choice(rand_key, action_weights.shape[-1], p=action_weights)
-        return tree, action, action_weights
+        policy_weights = policy_weights ** (1/self.temperature)
+        policy_weights /= policy_weights.sum()
+        action = jax.random.choice(rand_key, policy_weights.shape[-1], p=policy_weights)
+        return tree, action, policy_weights
+
+    def reset(self, state: MCTSTree) -> MCTSTree:
+        return reset_tree(state)
+
+    def step(self, state: MCTSTree, action: int) -> MCTSTree:
+        return get_subtree(state, action)
+    
+    def init(self, key: jax.random.PRNGKey, template_embedding: chex.ArrayTree) -> MCTSTree:
+        return _init(key, self.max_nodes, self.branching_factor, MCTSNode(
+            n=jnp.array(0, dtype=jnp.int32),
+            p=jnp.zeros(self.branching_factor, dtype=jnp.float32),
+            w=jnp.array(0, dtype=jnp.float32),
+            terminal=jnp.array(False, dtype=jnp.bool_),
+            embedding=template_embedding
+        ))
