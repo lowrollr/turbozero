@@ -5,6 +5,7 @@ import chex
 from chex import dataclass
 import jax
 import jax.numpy as jnp
+import wandb
 
 from core.evaluators.evaluator import Evaluator
 
@@ -183,10 +184,10 @@ class TwoPlayerTrainer(Trainer):
         for epoch in range(num_epochs):
             collection_state = jax.vmap(partial(collect_steps, params=params, num_steps=collection_steps_per_epoch))(collection_state)
             collection_state, train_state, metrics = train(collection_state, train_state)
-            print(f"Epoch {epoch}: {metrics}")
+            self.log_metrics(metrics, epoch)
             params = self.extract_model_params_fn(train_state)
             collection_state, best_params, metrics = test(collection_state, params, best_params)
-            print(f"Epoch {epoch}: {metrics}")
+            self.log_metrics(metrics, epoch)
             # TODO: checkpoints
 
         return collection_state, train_state

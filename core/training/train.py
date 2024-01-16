@@ -2,6 +2,7 @@ from functools import partial
 from typing import Optional, Tuple
 from chex import dataclass
 import chex
+import wandb
 import jax
 import jax.numpy as jnp
 from core.evaluators.evaluator import EvalOutput, Evaluator
@@ -46,6 +47,7 @@ class Trainer:
         evaluator_kwargs_train: dict,
         evaluator_kwargs_test: Optional[dict] = None,
         extract_model_params_fn: Optional[ExtractModelParamsFn] = extract_params,
+        wandb_project_name: str = "",
     ):
         self.train_batch_size = train_batch_size
         self.evaluator = evaluator
@@ -73,6 +75,15 @@ class Trainer:
         else:
             self.evaluator_kwargs_test = evaluator_kwargs_test
             self.evaluate_test = partial(evaluate, **self.evaluator_kwargs_test)
+        
+        self.use_wandb = wandb_project_name != ""
+        if self.use_wandb:
+            self.run = wandb.init(
+            # Set the project where this run will be logged
+                project=wandb_project_name,
+                # Track hyperparameters and run metadata
+                config={},
+            )
 
     def _step_env_and_evaluator(self,
         key: jax.random.PRNGKey,
@@ -237,7 +248,12 @@ class Trainer:
         }
 
         return collection_state.replace(key=new_cs_keys), metrics
-
+    
+    def log_metrics(self, metrics: dict, epoch: int):
+        print(f"Epoch {epoch}: {metrics}")
+        if self.use_wandb:
+            wandb.log(metrics)
+    
     def train_loop(self,
         collection_state: CollectionState,
         train_state: TrainState,
@@ -258,10 +274,10 @@ class Trainer:
         for epoch in range(num_epochs):
             collection_state = jax.vmap(partial(collect_steps, params=params, num_steps=collection_steps_per_epoch))(collection_state)
             collection_state, train_state, metrics = train(collection_state, train_state)
-            print(f"Epoch {epoch}: {metrics}")
+            self.log_metrics(metrics, epoch)
             params = self.extract_model_params_fn(train_state)
             collection_state, metrics = test(collection_state, params)
-            print(f"Epoch {epoch}: {metrics}")
+            self.log_metrics(metrics, epoch)
             # TODO: checkpoints
 
         return collection_state, train_state
