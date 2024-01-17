@@ -1080,6 +1080,34 @@ files = [
 ptyprocess = ">=0.5"
 
 [[package]]
+name = "pgx"
+version = "2.0.1"
+description = "GPU/TPU-accelerated parallel game simulators for reinforcement learning (RL)"
+optional = false
+python-versions = "*"
+files = [
+    {file = "pgx-2.0.1-py3-none-any.whl", hash = "sha256:8f457b79f9acf181a932505fcc8d0d0b0bd11d82b28f957617ce3363b5d53313"},
+    {file = "pgx-2.0.1.tar.gz", hash = "sha256:9c4ed199218d0f4f62896d99ed5057655c175fdd1d0a92ad82c628e9c0f99584"},
+]
+
+[package.dependencies]
+jax = ">=0.4.1"
+pgx-minatar = "0.5.1"
+svgwrite = "*"
+typing-extensions = ">=4.2.0"
+
+[[package]]
+name = "pgx-minatar"
+version = "0.5.1"
+description = "MinAtar extension for Pgx"
+optional = false
+python-versions = "*"
+files = [
+    {file = "pgx-minatar-0.5.1.tar.gz", hash = "sha256:eed3bce87e6f29fecd33431f8c60db5cbe2822180f80a001157af4046500f20a"},
+    {file = "pgx_minatar-0.5.1-py3-none-any.whl", hash = "sha256:b43cc464a3873f83f22045948e44da9ec4bed9e6c3dc370894585a978249c972"},
+]
+
+[[package]]
 name = "platformdirs"
 version = "4.1.0"
 description = "A small Python package for determining appropriate platform-specific dirs, e.g. a \"user data dir\"."
@@ -1682,6 +1710,17 @@ pure-eval = "*"
 tests = ["cython", "littleutils", "pygments", "pytest", "typeguard"]
 
 [[package]]
+name = "svgwrite"
+version = "1.4.3"
+description = "A Python library to create SVG drawings."
+optional = false
+python-versions = ">=3.6"
+files = [
+    {file = "svgwrite-1.4.3-py3-none-any.whl", hash = "sha256:bb6b2b5450f1edbfa597d924f9ac2dd099e625562e492021d7dd614f65f8a22d"},
+    {file = "svgwrite-1.4.3.zip", hash = "sha256:a8fbdfd4443302a6619a7f76bc937fc683daf2628d9b737c891ec08b8ce524c3"},
+]
+
+[[package]]
 name = "tensorstore"
 version = "0.1.52"
 description = "Read and write large, multi-dimensional arrays"
@@ -1849,4 +1888,4 @@ testing = ["big-O", "jaraco.functools", "jaraco.itertools", "more-itertools", "p
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.10"
-content-hash = "5c3278db9dac9e4cb5b9bce72f68a48183764ee5547ba7a916b975d724eddd94"
+content-hash = "c66eca706e44e107763714718a1741f76cd596cd08464d0aa2f3441abe9b583c"

@@ -22,6 +22,7 @@ flax = "^0.7.5"
 optax = "^0.1.8"
 orbax = "^0.1.9"
 chex = "^0.1.85"
+pgx = "^2.0.1"
 
 [tool.poetry.group.dev.dependencies]
 ipykernel = "^6.25.1"
