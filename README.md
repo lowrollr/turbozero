@@ -2,6 +2,26 @@
 
 (readme coming soon)
 
+## Installation
+`turbozero` users `poetry` for dependency management, you can install it with:
+```
+pip install poetry
+```
+Then, to install dependencies:
+```
+poetry install
+```
+If you're using a GPU, instead run:
+```
+poetry install --with cuda
+```
+If you're not running CUDA 12 you'll need to handle installation yourself... I haven't figured out an elegant way to handle that yet.
+
+To launch an ipython kernel, run:
+```
+poetry run python -m ipykernel install --user --name turbozero
+```
+
 ## Issues
 If you use this project and encounter an issue, error, or undesired behavior, please submit a [GitHub Issue](https://github.com/lowrollr/turbozero/issues) and I will do my best to resolve it as soon as I can. You may also contact me directly via `hello@jacob.land`.
 
