@@ -13,29 +13,18 @@ packages = [
 name = "PyPI"
 priority = "primary"
 
-[[tool.poetry.source]]
-name = "jorenham/jax_pep503"
-url = "https://jorenham.github.io/jax_pep503/"
-priority = "supplemental"
-
 [tool.poetry.dependencies]
-python = "^3.9"
-jax = {extras=["cpu"], version="^0.4.23"}
+python = "^3.10"
+graphviz = "^0.20.1"
+wandb = "^0.16.2"
+jax = "^0.4.23"
 flax = "^0.7.5"
 optax = "^0.1.8"
 orbax = "^0.1.9"
 chex = "^0.1.85"
-graphviz = "^0.20.1"
-wandb = "^0.16.2"
 
 [tool.poetry.group.dev.dependencies]
 ipykernel = "^6.25.1"
-
-[tool.poetry.group.cuda]
-optional = true
-
-[tool.poetry.group.cuda.dependencies]
-jax = {extras=["cuda12_pip"], version="^0.4.23"}
 
 [build-system]
 requires = ["poetry-core"]
