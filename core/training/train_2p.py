@@ -1,18 +1,14 @@
 
 from functools import partial
-from typing import Optional, Tuple
+from typing import Tuple
 import chex
 from chex import dataclass
 import jax
 import jax.numpy as jnp
-import wandb
 
-from core.evaluators.evaluator import Evaluator
-
-from core.memory.replay_memory import EpisodeReplayBuffer
-from core.training.train import CollectionState, Trainer, extract_params
-from core.types import ActionMaskFn, EnvInitFn, EnvPlayerIdFn, EnvStepFn, EvalFn, ExtractModelParamsFn, TrainStepFn
+from core.training.train import CollectionState, Trainer
 from flax.training.train_state import TrainState
+from flax.training import orbax_utils
 
 @dataclass(frozen=True)
 class TwoPlayerTestState:
@@ -170,7 +166,8 @@ class TwoPlayerTrainer(Trainer):
         collection_steps_per_epoch: int,
         train_steps_per_epoch: int,
         test_episodes_per_epoch: int,
-        num_epochs: int  
+        num_epochs: int,
+        cur_epoch: int = 0
     ) -> Tuple[CollectionState, TrainState]:
         params = self.extract_model_params_fn(train_state)
         best_params = params
@@ -181,13 +178,16 @@ class TwoPlayerTrainer(Trainer):
         train = jax.jit(partial(self.train_steps, num_steps=train_steps_per_epoch))
         test = jax.jit(partial(self.test_2p, num_episodes=test_episodes_per_epoch))
 
-        for epoch in range(num_epochs):
+        while cur_epoch < num_epochs:
             collection_state = jax.vmap(partial(collect_steps, params=params, num_steps=collection_steps_per_epoch))(collection_state)
             collection_state, train_state, metrics = train(collection_state, train_state)
-            self.log_metrics(metrics, epoch)
+            self.log_metrics(metrics, cur_epoch)
             params = self.extract_model_params_fn(train_state)
             collection_state, best_params, metrics = test(collection_state, params, best_params)
-            self.log_metrics(metrics, epoch)
+            self.log_metrics(metrics, cur_epoch)
             # TODO: checkpoints
-
+            ckpt = {'train_state': train_state, 'best_params': best_params}
+            save_args = orbax_utils.save_args_from_target(ckpt)
+            self.checkpoint_manager.save(cur_epoch, ckpt, save_kwargs={'save_args': save_args})
+            cur_epoch += 1
         return collection_state, train_state

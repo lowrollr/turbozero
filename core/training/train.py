@@ -1,4 +1,6 @@
 from functools import partial
+import os
+import shutil
 from typing import Optional, Tuple
 from chex import dataclass
 import chex
@@ -9,6 +11,8 @@ from core.evaluators.evaluator import EvalOutput, Evaluator
 from core.memory.replay_memory import BaseExperience, EpisodeReplayBuffer, ReplayBufferState
 from core.types import ActionMaskFn, EnvInitFn, EnvPlayerIdFn, EnvStepFn, EvalFn, ExtractModelParamsFn, TrainStepFn
 from flax.training.train_state import TrainState
+import orbax
+from flax.training import orbax_utils
 
 @dataclass(frozen=True)
 class CollectionState:
@@ -48,6 +52,8 @@ class Trainer:
         evaluator_kwargs_test: Optional[dict] = None,
         extract_model_params_fn: Optional[ExtractModelParamsFn] = extract_params,
         wandb_project_name: str = "",
+        ckpt_dir: str = "/tmp/turbozero_checkpoints",
+        max_checkpoints: int = 2
     ):
         self.train_batch_size = train_batch_size
         self.evaluator = evaluator
@@ -60,6 +66,15 @@ class Trainer:
         self.train_step_fn = train_step_fn
         self.extract_model_params_fn = extract_model_params_fn
         self.template_env_state = template_env_state
+
+        self.ckpt_dir = ckpt_dir
+        if os.path.exists(ckpt_dir):
+            shutil.rmtree(ckpt_dir)  
+
+        orbax_checkpointer = orbax.checkpoint.PyTreeCheckpointer()
+        options = orbax.checkpoint.CheckpointManagerOptions(max_to_keep=max_checkpoints, create=True)
+        self.checkpoint_manager = orbax.checkpoint.CheckpointManager(
+            ckpt_dir, orbax_checkpointer, options)
 
         evaluate = partial(self.evaluator.evaluate, 
             env_step_fn=self.env_step_fn, 
@@ -261,7 +276,8 @@ class Trainer:
         collection_steps_per_epoch: int,
         train_steps_per_epoch: int,
         test_episodes_per_epoch: int,
-        num_epochs: int  
+        num_epochs: int,
+        cur_epoch: int = 0,
     ) -> Tuple[CollectionState, TrainState]:
         params = self.extract_model_params_fn(train_state)
         collect_steps = jax.jit(self.collect_steps)
@@ -271,15 +287,19 @@ class Trainer:
         train = jax.jit(partial(self.train_steps, num_steps=train_steps_per_epoch))
         test = jax.jit(partial(self.test, num_episodes=test_episodes_per_epoch))
 
-        for epoch in range(num_epochs):
+        while cur_epoch < num_epochs:
             collection_state = jax.vmap(partial(collect_steps, params=params, num_steps=collection_steps_per_epoch))(collection_state)
             collection_state, train_state, metrics = train(collection_state, train_state)
-            self.log_metrics(metrics, epoch)
+            self.log_metrics(metrics, cur_epoch)
             params = self.extract_model_params_fn(train_state)
             collection_state, metrics = test(collection_state, params)
-            self.log_metrics(metrics, epoch)
+            self.log_metrics(metrics, cur_epoch)
             # TODO: checkpoints
-
+            ckpt = {'train_state': train_state}
+            save_args = orbax_utils.save_args_from_target(ckpt)
+            self.checkpoint_manager.save(cur_epoch, ckpt, save_kwargs={'save_args': save_args})
+            cur_epoch += 1
+            
         return collection_state, train_state
 
     
