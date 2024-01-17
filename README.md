@@ -11,12 +11,15 @@ Then, to install dependencies:
 ```
 poetry install
 ```
-If you're using a GPU, instead run:
+If you're using a GPU, after running the previous command you'll need to install the cuda version of JAX, with:
 ```
-poetry install --with cuda
+poetry source add jax https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+poetry add jax[cuda12_pip]
+poetry install
 ```
-If you're not running CUDA 12 you'll need to handle installation yourself... I haven't figured out an elegant way to handle that yet.
+See https://jax.readthedocs.io/en/latest/installation.html for other devices/cuda versions
 
+I wish this could be done without extra commands but poetry does not support it :(
 To launch an ipython kernel, run:
 ```
 poetry run python -m ipykernel install --user --name turbozero
