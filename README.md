@@ -11,7 +11,9 @@ Then, to install dependencies:
 ```
 poetry install
 ```
-If you're using a GPU, after running the previous command you'll need to install the cuda version of JAX, with:
+If you're using a GPU/TPU/etc., after running the previous command you'll need to install the device-specific version of JAX.
+
+For a GPU w/ CUDA 12:
 ```
 poetry source add jax https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
 poetry add jax[cuda12_pip]
