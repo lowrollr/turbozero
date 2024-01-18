@@ -14,7 +14,7 @@ class MCTSNode:
     n: jnp.number
     p: jnp.number
     w: jnp.number
-    terminal: jnp.number
+    terminated: jnp.number
     embedding: chex.ArrayTree
     
 MCTSTree = Tree[MCTSNode] 
@@ -55,7 +55,7 @@ def tree_to_graph(tree, batch_id=0):
                 "i": str(n_i),
                 "n": str(node.n.item()),
                 "w": f"{node.w.item():.2f}",
-                "t": str(node.terminal.item())
+                "t": str(node.terminated.item())
             }))
 
             child_visits = get_child_visits_no_batch(tree, n_i)

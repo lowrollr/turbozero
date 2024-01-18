@@ -6,7 +6,7 @@ from core.evaluators.mcts.action_selection import MCTSActionSelector
 from core.evaluators.mcts.data import MCTSTree
 from core.evaluators.mcts.mcts import MCTS
 from core.trees.tree import set_root
-from core.types import ActionMaskFn, EvalFn
+from core.types import EvalFn, StepMetadata
 
 class AlphaZero(MCTS):
     def __init__(self,
@@ -22,7 +22,7 @@ class AlphaZero(MCTS):
         self.dirichlet_alpha = dirichlet_alpha
         self.dirichlet_epsilon = dirichlet_epsilon
 
-    def update_root(self, tree: MCTSTree, root_embedding: chex.ArrayTree, params: chex.ArrayTree, eval_fn: EvalFn, action_mask_fn: ActionMaskFn) -> MCTSTree:
+    def update_root(self, tree: MCTSTree, root_embedding: chex.ArrayTree, root_metadata: StepMetadata, params: chex.ArrayTree, eval_fn: EvalFn) -> MCTSTree:
         root_policy_logits, root_value = eval_fn(root_embedding, params)
         root_policy = jax.nn.softmax(root_policy_logits)
 
@@ -42,8 +42,7 @@ class AlphaZero(MCTS):
         )
         new_logits = jnp.log(jnp.maximum(noisy_policy, jnp.finfo(noisy_policy).tiny))
         renorm_policy = jax.nn.softmax(new_logits)
-        policy_mask = action_mask_fn(root_embedding)
-        policy = jnp.where(policy_mask, renorm_policy, -jnp.inf)
+        policy = jnp.where(root_metadata.action_mask, renorm_policy, -jnp.inf)
 
         root_node = tree.at(tree.ROOT_INDEX)
         visited = root_node.n > 0
