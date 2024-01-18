@@ -42,7 +42,6 @@ class Trainer:
         train_batch_size: int,
         evaluator: Evaluator,
         memory_buffer: EpisodeReplayBuffer,
-        template_env_state: chex.ArrayTree,
         env_step_fn: EnvStepFn,
         env_init_fn: EnvInitFn,
         eval_fn: EvalFn,
@@ -62,8 +61,7 @@ class Trainer:
         self.eval_fn = eval_fn
         self.train_step_fn = train_step_fn
         self.extract_model_params_fn = extract_model_params_fn
-        self.template_env_state = template_env_state
-
+        
         self.ckpt_dir = ckpt_dir
         if os.path.exists(ckpt_dir):
             shutil.rmtree(ckpt_dir)  
@@ -94,6 +92,8 @@ class Trainer:
                 # Track hyperparameters and run metadata
                 config={},
             )
+
+        self.template_env_state = self.make_template_env_state()
 
     def _step_env_and_evaluator(self,
         key: jax.random.PRNGKey,
@@ -304,5 +304,39 @@ class Trainer:
             cur_epoch += 1
 
         return collection_state, train_state
+    
+    def make_template_env_state(self) -> chex.ArrayTree:
+        env_state, _ = self.env_init_fn(jax.random.PRNGKey(0))
+        return env_state
+    
+    def make_template_experience(self) -> BaseExperience:
+        env_state, metadata = self.env_init_fn(jax.random.PRNGKey(0))
+        return BaseExperience(
+            env_state=env_state,
+            policy_mask=metadata.action_mask,
+            policy_weights=jnp.zeros_like(metadata.action_mask, dtype=jnp.float32),
+            reward=jnp.zeros_like(metadata.rewards)
+        )
+
+    def init_collection_state(self, key: jax.random.PRNGKey, batch_size: int, template_experience: Optional[BaseExperience] = None):
+        if template_experience is None:
+            template_experience = self.make_template_experience()
+        buff_key, key = jax.random.split(key)
+        buffer_state = self.memory_buffer.init_batched_buffer(buff_key, batch_size, template_experience)
+        env_init_key, key = jax.random.split(key)
+        env_keys = jax.random.split(env_init_key, batch_size)
+        env_state, metadata = jax.vmap(self.env_init_fn)(env_keys)
+        eval_key, key = jax.random.split(key)
+        eval_keys = jax.random.split(eval_key, batch_size)
+        evaluator_init = partial(self.evaluator.init, template_embedding=self.template_env_state)
+        eval_state = jax.vmap(evaluator_init)(eval_keys)
+        state_keys = jax.random.split(key, batch_size)
+        return CollectionState(
+            key=state_keys,
+            eval_state=eval_state,
+            env_state=env_state,
+            buffer_state=buffer_state,
+            metadata=metadata
+        )
 
     

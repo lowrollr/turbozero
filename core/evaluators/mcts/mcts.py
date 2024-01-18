@@ -7,7 +7,7 @@ import jax.numpy as jnp
 from core.evaluators.evaluator import Evaluator
 from core.evaluators.mcts.action_selection import MCTSActionSelector
 from core.evaluators.mcts.data import BackpropState, MCTSNode, MCTSTree, TraversalState, MCTSOutput
-from core.trees.tree import _init, add_node, get_child_data, get_rng, get_subtree, reset_tree, set_root, update_node
+from core.trees.tree import _init, add_node, get_child_data, get_rng, get_subtree, init_batched_tree, reset_tree, set_root, update_node
 from core.types import EnvStepFn, EvalFn, StepMetadata
 
 class MCTS(Evaluator):
@@ -53,7 +53,7 @@ class MCTS(Evaluator):
 
 
     def update_root(self, tree: MCTSTree, root_embedding: chex.ArrayTree, 
-                    root_metadata: StepMetadata, params: chex.ArrayTree, eval_fn: EvalFn) -> MCTSTree:
+                    params: chex.ArrayTree, eval_fn: EvalFn, **kwargs) -> MCTSTree:
         root_policy_logits, root_value = eval_fn(root_embedding, params)
         root_policy = jax.nn.softmax(root_policy_logits)
         root_node = tree.at(tree.ROOT_INDEX)
