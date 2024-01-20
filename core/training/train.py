@@ -31,6 +31,12 @@ class TestState:
     completed: chex.Array
     metadata: StepMetadata
 
+@dataclass(frozen=True)
+class TrainLoopOutput:
+    collection_state: CollectionState
+    train_state: TrainState
+    best_params: Optional[chex.ArrayTree]
+
 def extract_params(state: TrainState) -> chex.ArrayTree:
     if hasattr(state, 'batch_stats'):
         return {'params': state.params, 'batch_stats': state.batch_stats}
@@ -205,7 +211,8 @@ class Trainer:
     def test(self,
         collection_state: CollectionState,
         params: chex.ArrayTree,
-        num_episodes: int
+        num_episodes: int,
+        best_params: Optional[chex.ArrayTree] = None
     ) -> Tuple[CollectionState, dict]:
         base_key, new_key = jax.random.split(collection_state.key[0], 2)
         new_cs_keys = collection_state.key.at[0].set(new_key)
@@ -265,15 +272,21 @@ class Trainer:
             "avg_test_reward": test_state.outcomes.mean(),
         }
 
-        return collection_state.replace(key=new_cs_keys), metrics
+        return collection_state.replace(key=new_cs_keys), metrics, best_params
     
-    def log_metrics(self, metrics: dict, epoch: int):
+    def log_metrics(self, metrics: dict, epoch: int, step: Optional[int] = None):
         print(f"Epoch {epoch}: {metrics}")
         if self.use_wandb:
-            wandb.log(metrics)
+            wandb.log(metrics, step)
+
+    def save_checkpoint(self, train_state: TrainState, epoch: int, **kwargs):
+        ckpt = {'train_state': train_state}
+        save_args = orbax_utils.save_args_from_target(ckpt)
+        self.checkpoint_manager.save(epoch, ckpt, save_kwargs={'save_args': save_args})
     
     def train_loop(self,
-        collection_state: CollectionState,
+        key: jax.random.PRNGKey,
+        batch_size: int,
         train_state: TrainState,
         warmup_steps: int,
         collection_steps_per_epoch: int,
@@ -281,7 +294,12 @@ class Trainer:
         test_episodes_per_epoch: int,
         num_epochs: int,
         cur_epoch: int = 0,
+        best_params: Optional[chex.ArrayTree] = None,
+        collection_state: Optional[CollectionState] = None
     ) -> Tuple[CollectionState, TrainState]:
+        if collection_state is None:
+            collection_state = self.init_collection_state(key, batch_size)
+
         params = self.extract_model_params_fn(train_state)
         collect_steps = jax.jit(self.collect_steps)
         warmup = jax.vmap(partial(collect_steps, params=params, num_steps=warmup_steps))
@@ -290,24 +308,30 @@ class Trainer:
         train = jax.jit(partial(self.train_steps, num_steps=train_steps_per_epoch))
         test = jax.jit(partial(self.test, num_episodes=test_episodes_per_epoch))
 
+        collection_batch_size = collection_state.key.shape[0]
         while cur_epoch < num_epochs:
+            cur_epoch += 1
+            collection_steps = collection_batch_size * cur_epoch * collection_steps_per_epoch
             collection_state = jax.vmap(partial(collect_steps, params=params, num_steps=collection_steps_per_epoch))(collection_state)
             collection_state, train_state, metrics = train(collection_state, train_state)
-            self.log_metrics(metrics, cur_epoch)
+            self.log_metrics(metrics, cur_epoch, step=collection_steps)
             params = self.extract_model_params_fn(train_state)
-            collection_state, metrics = test(collection_state, params)
-            self.log_metrics(metrics, cur_epoch)
-            # TODO: checkpoints
-            ckpt = {'train_state': train_state}
-            save_args = orbax_utils.save_args_from_target(ckpt)
-            self.checkpoint_manager.save(cur_epoch, ckpt, save_kwargs={'save_args': save_args})
-            cur_epoch += 1
+            collection_state, metrics, best_params = test(collection_state, params, best_params=best_params)
+            self.log_metrics(metrics, cur_epoch, step=collection_steps)
+            self.save_checkpoint(train_state, cur_epoch, best_params)
+    
+        return TrainLoopOutput(
+            collection_state=collection_state,
+            train_state=train_state,
+            best_params=best_params
+        )
 
-        return collection_state, train_state
+    
     
     def make_template_env_state(self) -> chex.ArrayTree:
         env_state, _ = self.env_init_fn(jax.random.PRNGKey(0))
         return env_state
+    
     
     def make_template_experience(self) -> BaseExperience:
         env_state, metadata = self.env_init_fn(jax.random.PRNGKey(0))
@@ -317,6 +341,7 @@ class Trainer:
             policy_weights=jnp.zeros_like(metadata.action_mask, dtype=jnp.float32),
             reward=jnp.zeros_like(metadata.rewards)
         )
+    
 
     def init_collection_state(self, key: jax.random.PRNGKey, batch_size: int, template_experience: Optional[BaseExperience] = None):
         if template_experience is None:

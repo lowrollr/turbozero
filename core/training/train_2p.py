@@ -1,6 +1,6 @@
 
 from functools import partial
-from typing import Tuple
+from typing import Optional, Tuple
 import chex
 from chex import dataclass
 import jax
@@ -53,11 +53,11 @@ class TwoPlayerTrainer(Trainer):
             metadata = metadata
         )
     
-    def test_2p(self, 
+    def test(self, 
         collection_state: CollectionState,
         params: chex.ArrayTree,
-        best_model_params: chex.ArrayTree,
-        num_episodes: int    
+        num_episodes: int,    
+        best_params: chex.ArrayTree
     ) -> Tuple[CollectionState, chex.ArrayTree, dict]:
         base_key, new_key = jax.random.split(collection_state.key[0], 2)
         new_cs_keys = collection_state.key.at[0].set(new_key)
@@ -75,7 +75,7 @@ class TwoPlayerTrainer(Trainer):
 
 
         step_new = partial(self.test_step, params=params)
-        step_best = partial(self.test_step, params=best_model_params)
+        step_best = partial(self.test_step, params=best_params)
 
         test_state = TwoPlayerTestState(
             key = step_keys,
@@ -157,44 +157,46 @@ class TwoPlayerTrainer(Trainer):
             "performance_vs_best_model": win_rate
         }
 
-        best_model_params = jax.lax.cond(
+        best_params = jax.lax.cond(
             win_rate > 0.5,
             lambda _: params,
-            lambda _: best_model_params,
+            lambda _: best_params,
             None
         )
 
-        return collection_state.replace(key=new_cs_keys), best_model_params, metrics
+        return collection_state.replace(key=new_cs_keys), metrics, best_params
+    
+    def save_checkpoint(self, train_state: TrainState, epoch: int, best_params: chex.ArrayTree):
+        ckpt = {'train_state': train_state, 'best_params': best_params}
+        save_args = orbax_utils.save_args_from_target(ckpt)
+        self.checkpoint_manager.save(epoch, ckpt, save_kwargs={'save_args': save_args})
     
     def train_loop(self,
-        collection_state: CollectionState,
+        key: jax.random.PRNGKey,
+        batch_size: int,
         train_state: TrainState,
         warmup_steps: int,
         collection_steps_per_epoch: int,
         train_steps_per_epoch: int,
         test_episodes_per_epoch: int,
         num_epochs: int,
-        cur_epoch: int = 0
+        cur_epoch: int = 0,
+        best_params: Optional[chex.ArrayTree] = None,
+        collection_state: Optional[CollectionState] = None
     ) -> Tuple[CollectionState, TrainState]:
-        params = self.extract_model_params_fn(train_state)
-        best_params = params
-        collect_steps = jax.jit(self.collect_steps)
-        warmup = jax.vmap(partial(collect_steps, params=params, num_steps=warmup_steps))
-        collection_state = warmup(collection_state)
-
-        train = jax.jit(partial(self.train_steps, num_steps=train_steps_per_epoch))
-        test = jax.jit(partial(self.test_2p, num_episodes=test_episodes_per_epoch))
-
-        while cur_epoch < num_epochs:
-            collection_state = jax.vmap(partial(collect_steps, params=params, num_steps=collection_steps_per_epoch))(collection_state)
-            collection_state, train_state, metrics = train(collection_state, train_state)
-            self.log_metrics(metrics, cur_epoch)
-            params = self.extract_model_params_fn(train_state)
-            collection_state, best_params, metrics = test(collection_state, params, best_params)
-            self.log_metrics(metrics, cur_epoch)
-            # TODO: checkpoints
-            ckpt = {'train_state': train_state, 'best_params': best_params}
-            save_args = orbax_utils.save_args_from_target(ckpt)
-            self.checkpoint_manager.save(cur_epoch, ckpt, save_kwargs={'save_args': save_args})
-            cur_epoch += 1
-        return collection_state, train_state
+        if best_params is None:
+            best_params = self.extract_model_params_fn(train_state)
+        return super().train_loop(
+            key=key,
+            batch_size=batch_size,
+            train_state=train_state,
+            warmup_steps=warmup_steps,
+            collection_steps_per_epoch=collection_steps_per_epoch,
+            train_steps_per_epoch=train_steps_per_epoch,
+            test_episodes_per_epoch=test_episodes_per_epoch,
+            num_epochs=num_epochs,
+            cur_epoch=cur_epoch,
+            best_params=best_params,
+            collection_state=collection_state 
+        )
+    
