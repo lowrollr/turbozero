@@ -46,21 +46,21 @@ def extract_params(state: TrainState) -> chex.ArrayTree:
 class Trainer:
     def __init__(self,
         train_batch_size: int,
-        evaluator: Evaluator,
+        evaluator: Evaluator,        
         memory_buffer: EpisodeReplayBuffer,
         env_step_fn: EnvStepFn,
         env_init_fn: EnvInitFn,
         eval_fn: EvalFn,
         train_step_fn: TrainStepFn,
-        evaluator_kwargs_train: dict,
-        evaluator_kwargs_test: Optional[dict] = None,
+        evaluator_test: Optional[Evaluator] = None,
         extract_model_params_fn: Optional[ExtractModelParamsFn] = extract_params,
         wandb_project_name: str = "",
         ckpt_dir: str = "/tmp/turbozero_checkpoints",
         max_checkpoints: int = 2
     ):
         self.train_batch_size = train_batch_size
-        self.evaluator = evaluator
+        self.evaluator_train = evaluator
+        self.evaluator_test = evaluator_test if evaluator_test is not None else evaluator
         self.memory_buffer = memory_buffer
         self.env_step_fn = env_step_fn
         self.env_init_fn = env_init_fn
@@ -77,18 +77,14 @@ class Trainer:
         self.checkpoint_manager = orbax.checkpoint.CheckpointManager(
             ckpt_dir, orbax_checkpointer, options)
 
-        evaluate = partial(self.evaluator.evaluate, 
+        self.evaluate_fn_train = partial(self.evaluator_train.evaluate, 
             env_step_fn=self.env_step_fn,
             eval_fn=self.eval_fn)
         
-        self.evaluator_kwargs_train = evaluator_kwargs_train
-        self.evaluate_train = partial(evaluate, **self.evaluator_kwargs_train)
-        if evaluator_kwargs_test is None:
-            self.evaluator_kwargs_test = evaluator_kwargs_train
-            self.evaluate_test = self.evaluate_train
-        else:
-            self.evaluator_kwargs_test = evaluator_kwargs_test
-            self.evaluate_test = partial(evaluate, **self.evaluator_kwargs_test)
+        self.evaluate_fn_test = partial(self.evaluator_test.evaluate, 
+            env_step_fn=self.env_step_fn,
+            eval_fn=self.eval_fn)
+        
         
         self.use_wandb = wandb_project_name != ""
         if self.use_wandb:
@@ -109,7 +105,8 @@ class Trainer:
         params: chex.ArrayTree,
         is_test: bool,
     ) -> Tuple[chex.ArrayTree, EvalOutput, StepMetadata, bool, chex.Array]:
-        evaluate_fn = self.evaluate_test if is_test else self.evaluate_train
+        evaluate_fn = self.evaluate_fn_test if is_test else self.evaluate_fn_train
+        evaluator = self.evaluator_test if is_test else self.evaluator_train
         output = evaluate_fn(eval_state=eval_state, env_state=env_state, root_metadata=metadata, params=params)
         eval_state = output.eval_state
         env_state, metadata = self.env_step_fn(env_state, output.action)
@@ -117,8 +114,8 @@ class Trainer:
         rewards = metadata.rewards
         eval_state = jax.lax.cond(
             metadata.terminated,
-            lambda s: self.evaluator.reset(s),
-            lambda s: self.evaluator.step(s, output.action),
+            lambda s: evaluator.reset(s),
+            lambda s: evaluator.step(s, output.action),
             eval_state
         )
         env_state, metadata = jax.lax.cond(
@@ -221,7 +218,7 @@ class Trainer:
         env_init_keys = jax.random.split(env_init_key, num_episodes)
         eval_init_keys = jax.random.split(eval_init_key, num_episodes)
         env_state, metadata = jax.vmap(self.env_init_fn)(env_init_keys)
-        evaluator_init = partial(self.evaluator.init, template_embedding=self.template_env_state)
+        evaluator_init = partial(self.evaluator_test.init, template_embedding=self.template_env_state)
         eval_state = jax.vmap(evaluator_init)(eval_init_keys)
 
         test_state = TestState(
@@ -237,7 +234,7 @@ class Trainer:
             new_key, step_key = jax.random.split(state.key)
             env_state, eval_output, metadata, terminated, rewards = \
                 self._step_env_and_evaluator(
-                    self.evaluator,
+                    self.evaluator_test,
                     step_key,
                     env_state = state.env_state,
                     eval_state = state.eval_state,
@@ -353,7 +350,7 @@ class Trainer:
         env_state, metadata = jax.vmap(self.env_init_fn)(env_keys)
         eval_key, key = jax.random.split(key)
         eval_keys = jax.random.split(eval_key, batch_size)
-        evaluator_init = partial(self.evaluator.init, template_embedding=self.template_env_state)
+        evaluator_init = partial(self.evaluator_train.init, template_embedding=self.template_env_state)
         eval_state = jax.vmap(evaluator_init)(eval_keys)
         state_keys = jax.random.split(key, batch_size)
         return CollectionState(

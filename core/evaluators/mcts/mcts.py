@@ -15,10 +15,12 @@ class MCTS(Evaluator):
         action_selection_fn: MCTSActionSelector,
         branching_factor: int,
         max_nodes: int,
+        num_iterations: int,
         discount: float = -1.0,
         temperature: float = 1.0,
     ):
         super().__init__()
+        self.num_iterations = num_iterations
         self.branching_factor = branching_factor
         self.max_nodes = max_nodes
         self.action_selection_fn = action_selection_fn
@@ -30,7 +32,6 @@ class MCTS(Evaluator):
         env_state: chex.ArrayTree,
         root_metadata: StepMetadata,
         params: chex.ArrayTree,
-        num_iterations: int,
         env_step_fn: EnvStepFn,
         eval_fn: EvalFn,
         **kwargs
@@ -41,7 +42,7 @@ class MCTS(Evaluator):
             env_step_fn=env_step_fn,
             eval_fn=eval_fn
         )
-        eval_state = jax.lax.fori_loop(0, num_iterations, lambda _, t: iterate(t), eval_state)
+        eval_state = jax.lax.fori_loop(0, self.num_iterations, lambda _, t: iterate(t), eval_state)
         eval_state, action, policy_weights = self.sample_root_action(eval_state)
         root_node = eval_state.at(eval_state.ROOT_INDEX)
         return MCTSOutput(

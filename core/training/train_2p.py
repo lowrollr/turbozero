@@ -37,7 +37,7 @@ class TwoPlayerTrainer(Trainer):
             is_test=True
         )
         cur_player_state = output.eval_state
-        other_player_state = self.evaluator.step(state.other_player_state, output.action)
+        other_player_state = self.evaluator_test.step(state.other_player_state, output.action)
 
         return state.replace(
             key = new_key,
@@ -69,7 +69,7 @@ class TwoPlayerTrainer(Trainer):
         eval1_key, eval2_key = jax.random.split(eval_init_key, 2)
         eval1_keys = jax.random.split(eval1_key, num_episodes)
         eval2_keys = jax.random.split(eval2_key, num_episodes)
-        evaluator_init = partial(self.evaluator.init, template_embedding=self.template_env_state)
+        evaluator_init = partial(self.evaluator_test.init, template_embedding=self.template_env_state)
         eval_state_new = jax.vmap(evaluator_init)(eval1_keys)
         eval_state_best = jax.vmap(evaluator_init)(eval2_keys)
 
@@ -93,13 +93,13 @@ class TwoPlayerTrainer(Trainer):
             env_state = state.env_state
             cur_player_state = jax.lax.cond(
                 do_reset,
-                lambda s: self.evaluator.reset(s),
+                lambda s: self.evaluator_test.reset(s),
                 lambda s: s,
                 cur_player_state
             )
             other_player_state = jax.lax.cond(
                 do_reset,
-                lambda s: self.evaluator.reset(s),
+                lambda s: self.evaluator_test.reset(s),
                 lambda s: s,
                 other_player_state
             )

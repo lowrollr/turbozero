@@ -13,12 +13,13 @@ class AlphaZero(MCTS):
         action_selection_fn: MCTSActionSelector,
         branching_factor: int,
         max_nodes: int,
+        num_iterations: int,
         dirichlet_alpha: float = 0.3,
         dirichlet_epsilon: float = 0.25,
         discount: float = -1.0,
         temperature: float = 1.0
     ):
-        super().__init__(action_selection_fn, branching_factor, max_nodes, discount, temperature)
+        super().__init__(action_selection_fn, branching_factor, max_nodes, num_iterations, discount, temperature)
         self.dirichlet_alpha = dirichlet_alpha
         self.dirichlet_epsilon = dirichlet_epsilon
 
