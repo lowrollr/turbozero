@@ -1,4 +1,4 @@
-📣 [JAX is coming](https://github.com/lowrollr/turbozero/discussions/4)
+# turbozero
 
 (readme coming soon)
 
