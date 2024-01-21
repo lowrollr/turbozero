@@ -2,7 +2,18 @@
 
 📣 If you're looking for the PyTorch version of turbozero, it's been moved here: [turbozero_torch](https://github.com/lowrollr/turbozero_torch) 📣
 
-(new readme coming soon)
+`turbozero` is a vectorized implementation of AlphaZero written in JAX, implementing:
+* Monte Carlo Tree Search with subtree persistence
+* Batched Replay Memory
+* A complete, customizable training/evaluation loop
+
+With the help of `JAX`, `turbozero` is heavily parallelized, taking full advantage of hardware accelerators with vectorized algorithms and JIT-compilation.
+
+`turbozero` is designed to be extendable, with an underlying search tree implementation that supports custom nodes, expansion logic, and more.
+
+`turbozero` is easy to integrate with you custom JAX environment or neural network architecture. Use the provided training and evaluation utilities, or pick and choose the components that you need.
+
+To get started, check out the [Hello World Notebook](https://github.com/lowrollr/turbozero/blob/main/notebooks/hello_world.ipynb)
 
 ## Installation
 `turbozero` users `poetry` for dependency management, you can install it with:
