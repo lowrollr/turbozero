@@ -1,6 +1,6 @@
 # turbozero
 
-📣 If you're looking for the PyTorch version of turbozero, it's now here: [turbozero_torch](https://github.com/lowrollr/turbozero_torch) 📣
+📣 If you're looking for the PyTorch version of turbozero, it's been moved here: [turbozero_torch](https://github.com/lowrollr/turbozero_torch) 📣
 
 (new readme coming soon)
 
