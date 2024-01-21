@@ -1,6 +1,8 @@
 # turbozero
 
-(readme coming soon)
+📣 If you're looking for the PyTorch version of turbozero, it's now here: [turbozero_torch](https://github.com/lowrollr/turbozero_torch) 📣
+
+(new readme coming soon)
 
 ## Installation
 `turbozero` users `poetry` for dependency management, you can install it with:
