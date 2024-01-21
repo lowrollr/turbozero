@@ -40,6 +40,17 @@ To launch an ipython kernel, run:
 poetry run python -m ipykernel install --user --name turbozero
 ```
 
+## References
+Papers/Repos I found helpful.
+Repositories:
+* [mctx: Monte Carlo tree search in JAX](https://github.com/google-deepmind/mctx)
+* [pgx: Vectorized RL game environments in JAX](https://github.com/sotetsuk/pgx)
+* [Flashbax: Accelerated Replay Buffers in JAX](https://github.com/instadeepai/flashbax)
+* [OpenSpiel](https://github.com/google-deepmind/open_spiel)
+Papers:
+* [Mastering Chess and Shogi by Self-Play with a General Reinforcement Learning Algorithm](https://arxiv.org/abs/1712.01815)
+* [Revisiting Fundamentals of Experience Replay](https://arxiv.org/abs/2007.06700)
+
 ## Issues
 If you use this project and encounter an issue, error, or undesired behavior, please submit a [GitHub Issue](https://github.com/lowrollr/turbozero/issues) and I will do my best to resolve it as soon as I can. You may also contact me directly via `hello@jacob.land`.
 
