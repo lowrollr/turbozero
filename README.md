@@ -42,11 +42,13 @@ poetry run python -m ipykernel install --user --name turbozero
 
 ## References
 Papers/Repos I found helpful.
+
 Repositories:
 * [mctx: Monte Carlo tree search in JAX](https://github.com/google-deepmind/mctx)
 * [pgx: Vectorized RL game environments in JAX](https://github.com/sotetsuk/pgx)
 * [Flashbax: Accelerated Replay Buffers in JAX](https://github.com/instadeepai/flashbax)
 * [OpenSpiel](https://github.com/google-deepmind/open_spiel)
+
 Papers:
 * [Mastering Chess and Shogi by Self-Play with a General Reinforcement Learning Algorithm](https://arxiv.org/abs/1712.01815)
 * [Revisiting Fundamentals of Experience Replay](https://arxiv.org/abs/2007.06700)
