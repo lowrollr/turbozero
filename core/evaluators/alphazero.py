@@ -4,7 +4,7 @@ import chex
 import jax 
 import jax.numpy as jnp
 from core.evaluators.mcts.action_selection import MCTSActionSelector
-from core.evaluators.mcts.state import MCTSTree, increment_node
+from core.evaluators.mcts.state import MCTSTree
 from core.evaluators.mcts.mcts import MCTS
 from core.trees.tree import set_root
 from core.types import EvalFn, StepMetadata

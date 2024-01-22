@@ -22,12 +22,6 @@ class MCTSNode:
     def w(self) -> jnp.number:
         return self.q * self.n
 
-def increment_node(node: MCTSNode, value: float) -> MCTSNode:
-    new_q_value = ((node.q * node.n) + value) / (node.n + 1)
-    return node.replace(
-        n=node.n + 1,
-        q=new_q_value
-    )
 
 def visit_node(
     node: MCTSNode,
