@@ -86,8 +86,10 @@ class Trainer:
             eval_fn=self.eval_fn)
         
         self.wandb_project_name = wandb_project_name
+        self.use_wandb = wandb_project_name != ""
         
         self.template_env_state = self.make_template_env_state()
+        
 
     def get_config(self):
         return {
@@ -299,7 +301,7 @@ class Trainer:
         wandb_run: Optional[Any] = None,
         extra_wandb_config: Optional[dict] = {}
     ) -> Tuple[CollectionState, TrainState]:
-        if wandb_run is None and self.wandb_project_name != "":
+        if wandb_run is None and self.use_wandb:
             self.run = wandb.init(
             # Set the project where this run will be logged
                 project=self.wandb_project_name,
