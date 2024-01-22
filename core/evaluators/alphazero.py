@@ -12,16 +12,11 @@ from core.types import EvalFn, StepMetadata
 
 class _AlphaZero:
     def __init__(self,
-        action_selection_fn: MCTSActionSelector,
-        branching_factor: int,
-        max_nodes: int,
-        num_iterations: int,
         dirichlet_alpha: float = 0.3,
         dirichlet_epsilon: float = 0.25,
-        discount: float = -1.0,
-        temperature: float = 1.0
+        **kwargs
     ):
-        super().__init__(action_selection_fn, branching_factor, max_nodes, num_iterations, discount, temperature)
+        super().__init__(**kwargs)
         self.dirichlet_alpha = dirichlet_alpha
         self.dirichlet_epsilon = dirichlet_epsilon
 
@@ -56,14 +51,7 @@ class _AlphaZero:
         renorm_policy = jax.nn.softmax(policy)
 
         root_node = tree.at(tree.ROOT_INDEX)
-        visited = root_node.n > 0
-
-        root_node = root_node.replace(
-            p=renorm_policy,
-            q=jnp.where(visited, root_node.q, root_value),
-            n=jnp.where(visited, root_node.n, 1),
-            embedding=root_embedding
-        )
+        root_node = self.update_root_node(root_node, renorm_policy, root_value, root_embedding)
         return set_root(tree, root_node)
     
 

@@ -23,29 +23,6 @@ class MCTSNode:
         return self.q * self.n
 
 
-def visit_node(
-    node: MCTSNode,
-    value: float,
-    p: Optional[chex.Array] = None,
-    terminated: Optional[bool] = None,
-    embedding: Optional[chex.ArrayTree] = None
-) -> MCTSNode:
-    
-    q_value = ((node.q * node.n) + value) / (node.n + 1)
-    if p is None:
-        p = node.p
-    if terminated is None:
-        terminated = node.terminated
-    if embedding is None:
-        embedding = node.embedding
-    return node.replace(
-        n=node.n + 1,
-        q=q_value,
-        p=p,
-        terminated=terminated,
-        embedding=embedding
-    )
-
 MCTSTree = Tree[MCTSNode] 
 
 @dataclass(frozen=True)

@@ -1,12 +1,12 @@
 
 from functools import partial
-from typing import Dict, Tuple
+from typing import Dict, Optional, Tuple
 import jax
 import chex
 import jax.numpy as jnp
 from core.evaluators.evaluator import Evaluator
 from core.evaluators.mcts.action_selection import MCTSActionSelector
-from core.evaluators.mcts.state import BackpropState, MCTSNode, MCTSTree, TraversalState, MCTSOutput, visit_node
+from core.evaluators.mcts.state import BackpropState, MCTSNode, MCTSTree, TraversalState, MCTSOutput
 from core.trees.tree import _init, add_node, get_child_data, get_rng, get_subtree, reset_tree, set_root, update_node
 from core.types import EnvStepFn, EvalFn, StepMetadata
 
@@ -18,6 +18,7 @@ class MCTS(Evaluator):
         num_iterations: int,
         discount: float = -1.0,
         temperature: float = 1.0,
+        tiebreak_noise: float = 1e-8
     ):
         super().__init__()
         self.num_iterations = num_iterations
@@ -26,6 +27,7 @@ class MCTS(Evaluator):
         self.action_selection_fn = action_selection_fn
         self.discount = discount
         self.temperature = temperature
+        self.tiebreak_noise = tiebreak_noise
     
     def get_config(self) -> Dict:
         return {
@@ -68,13 +70,7 @@ class MCTS(Evaluator):
         root_policy_logits, root_value = eval_fn(root_embedding, params)
         root_policy = jax.nn.softmax(root_policy_logits)
         root_node = tree.at(tree.ROOT_INDEX)
-        visited = root_node.n > 0
-        root_node = root_node.replace(
-            p=root_policy,
-            q=jnp.where(visited, root_node.q, root_value),
-            n=jnp.where(visited, root_node.n, 1),
-            embedding=root_embedding
-        )
+        root_node = self.update_root_node(root_node, root_policy, root_value, root_embedding)
         return set_root(tree, root_node)
     
     def iterate(self, tree: MCTSTree, params: chex.ArrayTree, env_step_fn: EnvStepFn, eval_fn: EvalFn) -> MCTSTree:
@@ -94,14 +90,15 @@ class MCTS(Evaluator):
 
         tree = jax.lax.cond(
             node_exists,
-            lambda _: update_node(tree, node_idx, visit_node(node=tree.at(node_idx), value=value, p=policy, 
+            lambda _: update_node(tree, node_idx, self.visit_node(node=tree.at(node_idx), value=value, p=policy, 
                                  terminated=metadata.terminated, embedding=new_embedding)), 
             lambda _: add_node(tree, parent, action, 
-                MCTSNode(n=1, p=policy, q=value, terminated=metadata.terminated, embedding=new_embedding)),
+                self.new_node(policy=policy, value=value, terminated=metadata.terminated, embedding=new_embedding)),
             None
         )
         # backpropagate
         return self.backpropagate(tree, parent, value)
+
     
     def choose_root_action(self, tree: MCTSTree) -> int:
         return self.action_selection_fn(tree, tree.ROOT_INDEX, self.discount)
@@ -130,7 +127,7 @@ class MCTS(Evaluator):
             node_idx, value, tree = state.node_idx, state.value, state.tree
             value *= self.discount
             node = tree.at(node_idx)
-            new_node = visit_node(node, value)
+            new_node = self.visit_node(node, value)
             tree = update_node(tree, node_idx, new_node)
             return BackpropState(node_idx=tree.parents[node_idx], value=value, tree=tree)
         
@@ -143,14 +140,62 @@ class MCTS(Evaluator):
     def sample_root_action(self, tree: MCTSTree) -> Tuple[MCTSTree, int, chex.Array]:
         action_visits = get_child_data(tree, tree.data.n, tree.ROOT_INDEX)
         policy_weights = action_visits / action_visits.sum()
-        rand_key, tree = get_rng(tree)
+        
         if self.temperature == 0:
+            rand_key, tree = get_rng(tree)
+            noise = jax.random.uniform(rand_key, shape=policy_weights.shape, maxval=self.tiebreak_noise)
+            policy_weights += noise
             return tree, jnp.argmax(policy_weights), policy_weights
         
         policy_weights = policy_weights ** (1/self.temperature)
         policy_weights /= policy_weights.sum()
+        rand_key, tree = get_rng(tree)
         action = jax.random.choice(rand_key, policy_weights.shape[-1], p=policy_weights)
         return tree, action, policy_weights
+    
+    @staticmethod
+    def visit_node(
+        node: MCTSNode,
+        value: float,
+        p: Optional[chex.Array] = None,
+        terminated: Optional[bool] = None,
+        embedding: Optional[chex.ArrayTree] = None
+    ) -> MCTSNode:
+        
+        q_value = ((node.q * node.n) + value) / (node.n + 1)
+        if p is None:
+            p = node.p
+        if terminated is None:
+            terminated = node.terminated
+        if embedding is None:
+            embedding = node.embedding
+        return node.replace(
+            n=node.n + 1,
+            q=q_value,
+            p=p,
+            terminated=terminated,
+            embedding=embedding
+        )
+    
+    @staticmethod
+    def new_node(policy: chex.Array, value: float, embedding: chex.ArrayTree, terminated: bool) -> MCTSNode:
+        return MCTSNode(
+            n=jnp.array(1, dtype=jnp.int32),
+            p=policy,
+            q=jnp.array(value, dtype=jnp.float32),
+            terminated=jnp.array(terminated, dtype=jnp.bool_),
+            embedding=embedding
+        )
+    
+    @staticmethod
+    def update_root_node(root_node: MCTSNode, root_policy: chex.Array, root_value: float, root_embedding: chex.ArrayTree) -> MCTSNode:
+        visited = root_node.n > 0
+        return root_node.replace(
+            p=root_policy,
+            q=jnp.where(visited, root_node.q, root_value),
+            n=jnp.where(visited, root_node.n, 1),
+            embedding=root_embedding
+        )
 
     def reset(self, state: MCTSTree) -> MCTSTree:
         return reset_tree(state)
@@ -159,10 +204,9 @@ class MCTS(Evaluator):
         return get_subtree(state, action)
     
     def init(self, key: jax.random.PRNGKey, template_embedding: chex.ArrayTree) -> MCTSTree:
-        return _init(key, self.max_nodes, self.branching_factor, MCTSNode(
-            n=jnp.array(0, dtype=jnp.int32),
-            p=jnp.zeros(self.branching_factor, dtype=jnp.float32),
-            q=jnp.array(0, dtype=jnp.float32),
-            terminated=jnp.array(False, dtype=jnp.bool_),
-            embedding=template_embedding
+        return _init(key, self.max_nodes, self.branching_factor, self.new_node(
+            policy=jnp.zeros((self.branching_factor,)),
+            value=0.0,
+            embedding=template_embedding,
+            terminated=False
         ))
