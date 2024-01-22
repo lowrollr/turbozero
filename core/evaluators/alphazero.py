@@ -4,12 +4,13 @@ import chex
 import jax 
 import jax.numpy as jnp
 from core.evaluators.mcts.action_selection import MCTSActionSelector
-from core.evaluators.mcts.data import MCTSTree
+from core.evaluators.mcts.state import MCTSTree, increment_node
 from core.evaluators.mcts.mcts import MCTS
 from core.trees.tree import set_root
 from core.types import EvalFn, StepMetadata
 
-class AlphaZero(MCTS):
+
+class _AlphaZero:
     def __init__(self,
         action_selection_fn: MCTSActionSelector,
         branching_factor: int,
@@ -59,9 +60,16 @@ class AlphaZero(MCTS):
 
         root_node = root_node.replace(
             p=renorm_policy,
-            w=jnp.where(visited, root_node.w, root_value),
+            q=jnp.where(visited, root_node.q, root_value),
             n=jnp.where(visited, root_node.n, 1),
             embedding=root_embedding
         )
         return set_root(tree, root_node)
+    
+
+class AlphaZero(MCTS):
+    def __new__(cls, base_type: type = MCTS):
+        assert issubclass(base_type, MCTS)
+        return type("AlphaZero", (_AlphaZero, base_type), {})
+    
     

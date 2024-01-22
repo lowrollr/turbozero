@@ -1,5 +1,6 @@
 
 
+from typing import Optional
 import chex
 from chex import dataclass
 import jax.numpy as jnp
@@ -12,11 +13,45 @@ from core.trees.tree import Tree
 @dataclass(frozen=True)
 class MCTSNode:
     n: jnp.number
-    p: jnp.number
-    w: jnp.number
+    p: chex.Array
+    q: jnp.number
     terminated: jnp.number
     embedding: chex.ArrayTree
+
+    @property
+    def w(self) -> jnp.number:
+        return self.q * self.n
+
+def increment_node(node: MCTSNode, value: float) -> MCTSNode:
+    new_q_value = ((node.q * node.n) + value) / (node.n + 1)
+    return node.replace(
+        n=node.n + 1,
+        q=new_q_value
+    )
+
+def visit_node(
+    node: MCTSNode,
+    value: float,
+    p: Optional[chex.Array] = None,
+    terminated: Optional[bool] = None,
+    embedding: Optional[chex.ArrayTree] = None
+) -> MCTSNode:
     
+    q_value = ((node.q * node.n) + value) / (node.n + 1)
+    if p is None:
+        p = node.p
+    if terminated is None:
+        terminated = node.terminated
+    if embedding is None:
+        embedding = node.embedding
+    return node.replace(
+        n=node.n + 1,
+        q=q_value,
+        p=p,
+        terminated=terminated,
+        embedding=embedding
+    )
+
 MCTSTree = Tree[MCTSNode] 
 
 @dataclass(frozen=True)
@@ -54,7 +89,7 @@ def tree_to_graph(tree, batch_id=0):
             graph.node(str(n_i), str({
                 "i": str(n_i),
                 "n": str(node.n.item()),
-                "w": f"{node.w.item():.2f}",
+                "q": f"{node.q.item():.2f}",
                 "t": str(node.terminated.item())
             }))
 

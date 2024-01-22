@@ -1,6 +1,6 @@
 from typing import Dict
 import chex
-from core.evaluators.mcts.data import MCTSTree
+from core.evaluators.mcts.state import MCTSTree
 from core.trees.tree import get_child_data
 import jax.numpy as jnp
 import jax
@@ -50,13 +50,10 @@ class PUCTSelector(MCTSActionSelector):
 
     def __call__(self, tree: MCTSTree, index: int, discount: float) -> int:
         node = tree.at(index)
+        q_values = get_child_data(tree, tree.data.q, index)
+        discounted_q_values = q_values * discount
         n_values = get_child_data(tree, tree.data.n, index)
-        w_values = get_child_data(tree, tree.data.w, index)
-        # in this implementation...
-        # child w values reflect expected return from perspective of child node
-        # so we need to discount them to get expected return from perspective of the parent
-        q_values = (w_values * discount) / (n_values + self.epsilon)
-        q_values = self.q_transform(q_values, n_values, node.w/node.n, self.epsilon)
+        q_values = self.q_transform(discounted_q_values, n_values, node.q, self.epsilon)
         u_values = self.c * node.p * jnp.sqrt(node.n) / (n_values + 1)
         puct_values = q_values + u_values
         return puct_values.argmax()
@@ -83,13 +80,10 @@ class MuZeroPUCTSelector(MCTSActionSelector):
 
     def __call__(self, tree: MCTSTree, index: int, discount: float) -> int:
         node = tree.at(index)
+        q_values = get_child_data(tree, tree.data.q, index)
+        discounted_q_values = q_values * discount
         n_values = get_child_data(tree, tree.data.n, index)
-        w_values = get_child_data(tree, tree.data.w, index)
-        # in this implementation...
-        # child w values reflect expected return from perspective of child node
-        # so we need to discount them to get expected return from perspective of the parent
-        q_values = (w_values * discount) / (n_values + self.epsilon)
-        q_values = self.q_transform(q_values, n_values, node.w/node.n, self.epsilon)
+        q_values = self.q_transform(discounted_q_values, q_values, n_values, node.q, self.epsilon)
         base_term = node.p * jnp.sqrt(node.n) / (n_values + 1)
         log_term = jnp.log((node.n + self.c2 + 1) / self.c2) + self.c1
         u_values = base_term * log_term

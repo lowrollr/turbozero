@@ -6,8 +6,8 @@ import chex
 import jax.numpy as jnp
 from core.evaluators.evaluator import Evaluator
 from core.evaluators.mcts.action_selection import MCTSActionSelector
-from core.evaluators.mcts.data import BackpropState, MCTSNode, MCTSTree, TraversalState, MCTSOutput
-from core.trees.tree import _init, add_node, get_child_data, get_rng, get_subtree, init_batched_tree, reset_tree, set_root, update_node
+from core.evaluators.mcts.state import BackpropState, MCTSNode, MCTSTree, TraversalState, MCTSOutput, visit_node
+from core.trees.tree import _init, add_node, get_child_data, get_rng, get_subtree, reset_tree, set_root, update_node
 from core.types import EnvStepFn, EvalFn, StepMetadata
 
 class MCTS(Evaluator):
@@ -58,7 +58,7 @@ class MCTS(Evaluator):
         return MCTSOutput(
             eval_state=eval_state,
             action=action,
-            root_value=root_node.w / root_node.n,
+            root_value=root_node.q,
             policy_weights=policy_weights
         )
 
@@ -71,7 +71,7 @@ class MCTS(Evaluator):
         visited = root_node.n > 0
         root_node = root_node.replace(
             p=root_policy,
-            w=jnp.where(visited, root_node.w, root_value),
+            q=jnp.where(visited, root_node.q, root_value),
             n=jnp.where(visited, root_node.n, 1),
             embedding=root_embedding
         )
@@ -90,20 +90,14 @@ class MCTS(Evaluator):
         policy = jax.nn.softmax(policy_logits)
         value = jnp.where(metadata.terminated, player_reward, value)
         node_exists = tree.is_edge(parent, action)
-        node_id = tree.edge_map[parent, action]
-        node = tree.at(node_id)
+        node_idx = tree.edge_map[parent, action]
+
         tree = jax.lax.cond(
             node_exists,
-            lambda _: update_node(tree, node_id,
-                node.replace(
-                    n = node.n + 1,
-                    w = node.w + value,
-                    p = policy,
-                    terminated = metadata.terminated,
-                    embedding = new_embedding        
-                )),
+            lambda _: update_node(tree, node_idx, visit_node(node=tree.at(node_idx), value=value, p=policy, 
+                                 terminated=metadata.terminated, embedding=new_embedding)), 
             lambda _: add_node(tree, parent, action, 
-                MCTSNode(n=1, p=policy, w=value, terminated=metadata.terminated, embedding=new_embedding)),
+                MCTSNode(n=1, p=policy, q=value, terminated=metadata.terminated, embedding=new_embedding)),
             None
         )
         # backpropagate
@@ -136,10 +130,7 @@ class MCTS(Evaluator):
             node_idx, value, tree = state.node_idx, state.value, state.tree
             value *= self.discount
             node = tree.at(node_idx)
-            new_node = node.replace(
-                n=node.n + 1,
-                w=node.w + value,
-            )
+            new_node = visit_node(node, value)
             tree = update_node(tree, node_idx, new_node)
             return BackpropState(node_idx=tree.parents[node_idx], value=value, tree=tree)
         
@@ -171,7 +162,7 @@ class MCTS(Evaluator):
         return _init(key, self.max_nodes, self.branching_factor, MCTSNode(
             n=jnp.array(0, dtype=jnp.int32),
             p=jnp.zeros(self.branching_factor, dtype=jnp.float32),
-            w=jnp.array(0, dtype=jnp.float32),
+            q=jnp.array(0, dtype=jnp.float32),
             terminated=jnp.array(False, dtype=jnp.bool_),
             embedding=template_embedding
         ))
