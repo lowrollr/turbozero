@@ -68,8 +68,9 @@ class _AlphaZero:
     
 
 class AlphaZero(MCTS):
+    # allows AlphaZero to be instantiated with a MCTS variant
     def __new__(cls, base_type: type = MCTS):
         assert issubclass(base_type, MCTS)
-        return type("AlphaZero", (_AlphaZero, base_type), {})
-    
-    
+        cls_type = type("AlphaZero", (_AlphaZero, base_type), {})
+        cls_type.__name__ = f'AlphaZero({base_type.__name__})'
+        return cls_type
