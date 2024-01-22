@@ -1,3 +1,4 @@
+from typing import Dict
 import chex
 from core.evaluators.mcts.data import MCTSTree
 from core.trees.tree import get_child_data
@@ -25,6 +26,11 @@ class MCTSActionSelector:
     def __call__(self, tree: MCTSTree, index: int, discount: float) -> int:
         raise NotImplementedError()
     
+    def get_config(self) -> Dict:
+        return {
+            "epsilon": self.epsilon
+        }
+    
 class PUCTSelector(MCTSActionSelector):
     def __init__(self, 
         c: float = 1.0,
@@ -34,6 +40,13 @@ class PUCTSelector(MCTSActionSelector):
         super().__init__(epsilon=epsilon)
         self.c = c
         self.q_transform = q_transform
+
+    def get_config(self) -> Dict:
+        return {
+            "c": self.c,
+            'q_transform': self.q_transform.__name__,
+            **super().get_config()
+        }
 
     def __call__(self, tree: MCTSTree, index: int, discount: float) -> int:
         node = tree.at(index)
@@ -59,6 +72,14 @@ class MuZeroPUCTSelector(MCTSActionSelector):
         self.c1 = c1
         self.c2 = c2
         self.q_transform = q_transform
+    
+    def get_config(self) -> Dict:
+        return {
+            "c1": self.c1,
+            "c2": self.c2,
+            "q_transform": self.q_transform.__name__,
+            **super().get_config()
+        }
 
     def __call__(self, tree: MCTSTree, index: int, discount: float) -> int:
         node = tree.at(index)

@@ -1,10 +1,11 @@
 
 from functools import partial
-from typing import Optional, Tuple
+from typing import Any, Optional, Tuple
 import chex
 from chex import dataclass
 import jax
 import jax.numpy as jnp
+import wandb
 
 from core.training.train import CollectionState, Trainer
 from flax.training.train_state import TrainState
@@ -185,7 +186,9 @@ class TwoPlayerTrainer(Trainer):
         num_epochs: int,
         cur_epoch: int = 0,
         best_params: Optional[chex.ArrayTree] = None,
-        collection_state: Optional[CollectionState] = None
+        collection_state: Optional[CollectionState] = None,
+        wandb_run: Optional[Any] = None,
+        extra_wandb_config: Optional[dict] = {}
     ) -> Tuple[CollectionState, TrainState]:
         if best_params is None:
             best_params = self.extract_model_params_fn(train_state)
@@ -200,6 +203,8 @@ class TwoPlayerTrainer(Trainer):
             num_epochs=num_epochs,
             cur_epoch=cur_epoch,
             best_params=best_params,
-            collection_state=collection_state 
+            collection_state=collection_state,
+            wandb_run=wandb_run,
+            extra_wandb_config=extra_wandb_config
         )
     

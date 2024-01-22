@@ -1,7 +1,7 @@
 from functools import partial
 import os
 import shutil
-from typing import Optional, Tuple
+from typing import Any, Optional, Tuple
 from chex import dataclass
 import chex
 import wandb
@@ -85,17 +85,20 @@ class Trainer:
             env_step_fn=self.env_step_fn,
             eval_fn=self.eval_fn)
         
+        self.wandb_project_name = wandb_project_name
         
-        self.use_wandb = wandb_project_name != ""
-        if self.use_wandb:
-            self.run = wandb.init(
-            # Set the project where this run will be logged
-                project=wandb_project_name,
-                # Track hyperparameters and run metadata
-                config={},
-            )
-
         self.template_env_state = self.make_template_env_state()
+
+    def get_config(self):
+        return {
+            'train_batch_size': self.train_batch_size,
+            'evaluator_train': self.evaluator_train.__class__.__name__,
+            'evaluator_train_config': self.evaluator_train.get_config(),
+            'evaluator_test': self.evaluator_test.__class__.__name__,
+            'evaluator_test_config': self.evaluator_test.get_config(),
+            'memory_buffer': self.memory_buffer.__class__.__name__,
+            'memory_buffer_config': self.memory_buffer.get_config(),
+        }
 
     def _step_env_and_evaluator(self,
         key: jax.random.PRNGKey,
@@ -292,8 +295,26 @@ class Trainer:
         num_epochs: int,
         cur_epoch: int = 0,
         best_params: Optional[chex.ArrayTree] = None,
-        collection_state: Optional[CollectionState] = None
+        collection_state: Optional[CollectionState] = None,
+        wandb_run: Optional[Any] = None,
+        extra_wandb_config: Optional[dict] = {}
     ) -> Tuple[CollectionState, TrainState]:
+        if wandb_run is None and self.wandb_project_name != "":
+            self.run = wandb.init(
+            # Set the project where this run will be logged
+                project=self.wandb_project_name,
+                # Track hyperparameters and run metadata
+                config={
+                    'collection_batch_size': batch_size,
+                    'warmup_steps': warmup_steps,
+                    'collection_steps_per_epoch': collection_steps_per_epoch,
+                    'train_steps_per_epoch': train_steps_per_epoch,
+                    'test_episodes_per_epoch': test_episodes_per_epoch,
+                    **self.get_config(), **extra_wandb_config
+                },
+            )
+
+
         if collection_state is None:
             collection_state = self.init_collection_state(key, batch_size)
 

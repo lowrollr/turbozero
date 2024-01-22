@@ -1,6 +1,7 @@
 
 
 
+from typing import Dict
 import chex
 from chex import dataclass
 import jax
@@ -22,5 +23,8 @@ class Evaluator:
 
     def step(self, state: chex.ArrayTree, action: chex.Array) -> chex.ArrayTree:
         return state
+    
+    def get_config(self) -> Dict:
+        return {}
     
     

@@ -29,6 +29,11 @@ class EpisodeReplayBuffer:
     ):
         self.capacity = capacity
 
+    def get_config(self):
+        return {
+            'capacity': self.capacity,
+        }
+
     def add_experience(self,
         state: ReplayBufferState,
         experience: BaseExperience

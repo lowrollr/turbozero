@@ -1,6 +1,6 @@
 
 from functools import partial
-from typing import Tuple
+from typing import Dict, Tuple
 import jax
 import chex
 import jax.numpy as jnp
@@ -26,6 +26,16 @@ class MCTS(Evaluator):
         self.action_selection_fn = action_selection_fn
         self.discount = discount
         self.temperature = temperature
+    
+    def get_config(self) -> Dict:
+        return {
+            "num_iterations": self.num_iterations,
+            "branching_factor": self.branching_factor,
+            "max_nodes": self.max_nodes,
+            "discount": self.discount,
+            "temperature": self.temperature,
+            "action_selection_config": self.action_selection_fn.get_config()
+        }
 
     def evaluate(self, 
         eval_state: MCTSTree, 

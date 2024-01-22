@@ -1,4 +1,5 @@
 
+from typing import Dict
 import chex
 import jax 
 import jax.numpy as jnp
@@ -22,6 +23,13 @@ class AlphaZero(MCTS):
         super().__init__(action_selection_fn, branching_factor, max_nodes, num_iterations, discount, temperature)
         self.dirichlet_alpha = dirichlet_alpha
         self.dirichlet_epsilon = dirichlet_epsilon
+
+    def get_config(self) -> Dict:
+        return {
+            "dirichlet_alpha": self.dirichlet_alpha,
+            "dirichlet_epsilon": self.dirichlet_epsilon,
+            **super().get_config()
+        }
 
     def update_root(self, tree: MCTSTree, root_embedding: chex.ArrayTree, root_metadata: StepMetadata, params: chex.ArrayTree, eval_fn: EvalFn) -> MCTSTree:
         root_policy_logits, root_value = eval_fn(root_embedding, params)
