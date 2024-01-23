@@ -1,7 +1,7 @@
 
 
 
-from typing import Tuple
+from typing import Dict, Tuple
 from chex import dataclass
 import chex
 from core.evaluators.mcts.action_selection import MCTSActionSelector
@@ -25,6 +25,13 @@ class WeightedMCTS(MCTS):
         super().__init__(*args, **kwargs)
         self.q_temperature = q_temperature
         self.epsilon = epsilon
+    
+    def get_config(self) -> Dict:
+        return {
+            "q_temperature": self.q_temperature,
+            "epsilon": self.epsilon,
+            **super().get_config()
+        }
 
     @staticmethod
     def new_node(policy: chex.Array, value: float, embedding: chex.ArrayTree, terminated: bool) -> WeightedMCTSNode:

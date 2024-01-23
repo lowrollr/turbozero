@@ -36,6 +36,7 @@ class MCTS(Evaluator):
             "max_nodes": self.max_nodes,
             "discount": self.discount,
             "temperature": self.temperature,
+            "tiebreak_noise": self.tiebreak_noise,
             "action_selection_config": self.action_selection_fn.get_config()
         }
 
