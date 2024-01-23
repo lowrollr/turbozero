@@ -24,7 +24,7 @@ It contains:
 To get started, check out the [Hello World Notebook](https://github.com/lowrollr/turbozero/blob/main/notebooks/hello_world.ipynb)
 
 ## Installation
-`turbozero` users `poetry` for dependency management, you can install it with:
+`turbozero` uses `poetry` for dependency management, you can install it with:
 ```
 pip install poetry
 ```
@@ -61,7 +61,7 @@ Once these short-term priorities are complete I'll be focusing on implementing o
 If you use this project and encounter an issue, error, or undesired behavior, please submit a [GitHub Issue](https://github.com/lowrollr/turbozero/issues) and I will do my best to resolve it as soon as I can. You may also contact me directly via `hello@jacob.land`.
 
 ## Contributing 
-Contributions, improvements, and fixes are more than welcome! For now I don't have a formal process for this, other than creating a [Pull Request](https://github.com/lowrollr/turbozero/pulls).
+Contributions, improvements, and fixes are more than welcome! For now I don't have a formal process for this, other than creating a [Pull Request](https://github.com/lowrollr/turbozero/pulls). For large changes, consider creating an [Issue](https://github.com/lowrollr/turbozero/issues) beforehand.
 
 If you are interested in contributing but don't know what to work on, please reach out. I have plenty of things you could do.
 
