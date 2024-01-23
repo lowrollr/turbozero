@@ -67,7 +67,8 @@ class MCTS(Evaluator):
 
     def update_root(self, tree: MCTSTree, root_embedding: chex.ArrayTree, 
                     params: chex.ArrayTree, eval_fn: EvalFn, **kwargs) -> MCTSTree:
-        root_policy_logits, root_value = eval_fn(root_embedding, params)
+        key, tree = get_rng(tree)
+        root_policy_logits, root_value = eval_fn(root_embedding, params, key)
         root_policy = jax.nn.softmax(root_policy_logits)
         root_node = tree.at(tree.ROOT_INDEX)
         root_node = self.update_root_node(root_node, root_policy, root_value, root_embedding)
@@ -81,7 +82,8 @@ class MCTS(Evaluator):
         embedding = tree.at(parent).embedding
         new_embedding, metadata = env_step_fn(embedding, action)
         player_reward = metadata.rewards[metadata.cur_player_id]
-        policy_logits, value = eval_fn(new_embedding, params)
+        key, tree = get_rng(tree)
+        policy_logits, value = eval_fn(new_embedding, params, key)
         policy_logits = jnp.where(metadata.action_mask, policy_logits, jnp.finfo(policy_logits).min)
         policy = jax.nn.softmax(policy_logits)
         value = jnp.where(metadata.terminated, player_reward, value)

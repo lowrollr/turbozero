@@ -6,7 +6,7 @@ import jax.numpy as jnp
 from core.evaluators.mcts.action_selection import MCTSActionSelector
 from core.evaluators.mcts.state import MCTSTree
 from core.evaluators.mcts.mcts import MCTS
-from core.trees.tree import set_root
+from core.trees.tree import get_rng, set_root
 from core.types import EvalFn, StepMetadata
 
 
@@ -28,7 +28,8 @@ class _AlphaZero:
         }
 
     def update_root(self, tree: MCTSTree, root_embedding: chex.ArrayTree, root_metadata: StepMetadata, params: chex.ArrayTree, eval_fn: EvalFn) -> MCTSTree:
-        root_policy_logits, root_value = eval_fn(root_embedding, params)
+        key, tree = get_rng(tree)
+        root_policy_logits, root_value = eval_fn(root_embedding, params, key)
         root_policy = jax.nn.softmax(root_policy_logits)
 
         dir_key, new_key = jax.random.split(tree.key)
