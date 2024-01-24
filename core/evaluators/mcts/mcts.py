@@ -20,6 +20,22 @@ class MCTS(Evaluator):
         temperature: float = 1.0,
         tiebreak_noise: float = 1e-8
     ):
+        """Batched implementation of Monte Carlo Tree Search (MCTS).
+        Not stateful. This class operates on batches of `MCTSTrees`.
+
+        functions are intended to be called with jax.vmap
+
+        Args:
+        - `action_selection_fn`: function that selects an action to take from a node
+        - `branching_factor`: number of discrete actions
+        - `max_nodes`: capacity of MCTSTree (in nodes)
+        - `num_iterations`: number of MCTS iterations to perform per evaluate call
+        - `discount`: discount factor for MCTS (default: -1.0)
+        \t- use a negative discount in two-player games
+        \t- use a positive discount in single-player games
+        - `temperature`: temperature for root action selection
+        - `tiebreak_noise`: magnitude of noise to add to policy weights for breaking ties
+        """
         super().__init__()
         self.num_iterations = num_iterations
         self.branching_factor = branching_factor
@@ -30,6 +46,7 @@ class MCTS(Evaluator):
         self.tiebreak_noise = tiebreak_noise
     
     def get_config(self) -> Dict:
+        """returns a config object stored in checkpoints"""
         return {
             "num_iterations": self.num_iterations,
             "branching_factor": self.branching_factor,
@@ -49,6 +66,19 @@ class MCTS(Evaluator):
         eval_fn: EvalFn,
         **kwargs
     ) -> MCTSOutput:
+        """Performs `self.num_iterations` MCTS iterations on an `MCTSTree`.
+        Samples an action to take from the root node of each tree after search is completed.
+        
+        Args:
+        - `eval_state`: `MCTSTree` to evaluate, could be empty or partially complete
+        - `env_state`: current environment state
+        - `root_metadata`: metadata for the root nodes of each tree
+        - `params`: parameters to pass to the the evaluation function
+        - `env_step_fn`: function that goes to next environment state given an action
+        - `eval_fn`: function that evaluates an environment state, returning a policy and value
+        Returns:
+        - `MCTSOutput`: contains new tree state, selected action, root value, and policy weights
+        """
         eval_state = self.update_root(eval_state, env_state, root_metadata, params, eval_fn)
         iterate = partial(self.iterate, 
             params=params,
@@ -68,6 +98,9 @@ class MCTS(Evaluator):
 
     def update_root(self, tree: MCTSTree, root_embedding: chex.ArrayTree, 
                     params: chex.ArrayTree, eval_fn: EvalFn, **kwargs) -> MCTSTree:
+        """Populates the root node of an MCTSTree.
+        
+        """
         key, tree = get_rng(tree)
         root_policy_logits, root_value = eval_fn(root_embedding, params, key)
         root_policy = jax.nn.softmax(root_policy_logits)

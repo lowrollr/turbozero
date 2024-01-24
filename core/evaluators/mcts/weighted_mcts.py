@@ -14,7 +14,7 @@ import jax
 
 @dataclass(frozen=True)
 class WeightedMCTSNode(MCTSNode):
-    r: float # raw value
+    r: float # raw value returned at leaf evaluation
 
 class WeightedMCTS(MCTS):
     def __init__(self,
@@ -55,40 +55,52 @@ class WeightedMCTS(MCTS):
             embedding=root_embedding
         )
 
-    
     def backpropagate(self, tree: MCTSTree, parent: int, value: float) -> MCTSTree:
         def body_fn(state: BackpropState) -> Tuple[int, MCTSTree]:
             node_idx, tree = state.node_idx, state.tree
+            # get node data
             node = tree.at(node_idx)
+            # get q values, visit counts of children 
             child_q_values = get_child_data(tree, tree.data.q, node_idx) * self.discount
             child_n_values = get_child_data(tree, tree.data.n, node_idx)
 
+            # normalize q-values to [0, 1]
             normalized_q_values = normalize_q_values(child_q_values, child_n_values, node.q, self.epsilon)
             
             if self.q_temperature > 0:
+                # if temperature > 0, apply temperature to q-values
                 q_values = normalized_q_values ** (1/self.q_temperature)
+                # mask out unvisited action a[i] so softmax(a)[i] = 0.0
                 q_values_masked = jnp.where(
                     child_n_values > 0, normalized_q_values, jnp.finfo(normalized_q_values).min
                 )
             else:
-                 # noise to break ties
+                # if temperature == 0, select max q-value
                 rand_key, tree = get_rng(tree)
+                # apply random noise to break ties amongst nodes w/ same number of visits
                 noise = jax.random.uniform(rand_key, shape=normalized_q_values.shape, maxval=self.tiebreak_noise)
                 noisy_q_values = normalized_q_values + noise
 
+                # mask out all values except for max value index
+                # so softmax output at a[max_index] = 1 and 0 everywhere else
                 max_vector = jnp.full_like(noisy_q_values, jnp.finfo(noisy_q_values).min)
                 index_of_max = jnp.argmax(noisy_q_values)
                 max_vector = max_vector.at[index_of_max].set(1)
                 q_values = normalized_q_values
                 q_values_masked = max_vector
 
-            
-        
+            # compute weights
             child_weights = jax.nn.softmax(q_values_masked, axis=-1)
+            # computer weighted sum of q-values
             weighted_value = jnp.sum(child_weights * q_values)
+            # update node with weighted value
             node = node.replace(q=weighted_value)
+            # adjust node value to ((weighted_value * node_visits) + raw_value) / (node_visits + 1)
+            # and increment visit count
             node = self.visit_node(node, node.r)
+            # update search tree
             tree = update_node(tree, node_idx, node)
+            # backprop to parent node
             return BackpropState(node_idx=tree.parents[node_idx], value=value, tree=tree)
         
         state = jax.lax.while_loop(

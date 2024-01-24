@@ -285,6 +285,10 @@ class Trainer:
         ckpt = {'train_state': train_state}
         save_args = orbax_utils.save_args_from_target(ckpt)
         self.checkpoint_manager.save(epoch, ckpt, save_kwargs={'save_args': save_args})
+
+    def load_train_state_from_checkpoint(self, path_to_checkpoint: str) -> TrainState:
+        ckpt = self.checkpoint_manager.restore(path_to_checkpoint)
+        return ckpt['train_state']
     
     def train_loop(self,
         key: jax.random.PRNGKey,
