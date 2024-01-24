@@ -15,7 +15,7 @@ It contains:
 
 #### *`turbozero`* is *_extendable_*:
  * see an [idea on twitter](https://twitter.com/ptrschmdtnlsn/status/1748800529608888362) for a simple tweak to MCTS?
-      * [implement and test it without having to tear core code apart](https://github.com/lowrollr/turbozero/blob/main/core/evaluators/mcts/weighted_mcts.py) 
+      * [implement it](https://github.com/lowrollr/turbozero/blob/main/core/evaluators/mcts/weighted_mcts.py) then [test it](https://github.com/lowrollr/turbozero/blob/main/notebooks/weighted_mcts.ipynb) by extending core components
   
 #### *`turbozero`* is *_flexible_*:
  * easy to integrate with you custom JAX environment or neural network architecture.
