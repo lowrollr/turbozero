@@ -12,7 +12,7 @@ class EvalOutput:
     action: int
 
 class Evaluator:
-    def init(self, key: jax.random.PRNGKey) -> chex.ArrayTree:
+    def init(self, key: jax.random.PRNGKey, **kwargs) -> chex.ArrayTree:
         raise NotImplementedError()
 
     def reset(self, state: chex.ArrayTree) -> chex.ArrayTree:

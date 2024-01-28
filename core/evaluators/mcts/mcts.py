@@ -12,7 +12,8 @@ from core.types import EnvStepFn, EvalFn, StepMetadata
 
 class MCTS(Evaluator):
     def __init__(self,
-        action_selection_fn: MCTSActionSelector,
+        eval_fn: EvalFn,
+        action_selector: MCTSActionSelector,
         branching_factor: int,
         max_nodes: int,
         num_iterations: int,
@@ -26,7 +27,7 @@ class MCTS(Evaluator):
         functions are intended to be called with jax.vmap
 
         Args:
-        - `action_selection_fn`: function that selects an action to take from a node
+        - `action_selector`: function that selects an action to take from a node
         - `branching_factor`: number of discrete actions
         - `max_nodes`: capacity of MCTSTree (in nodes)
         - `num_iterations`: number of MCTS iterations to perform per evaluate call
@@ -37,10 +38,11 @@ class MCTS(Evaluator):
         - `tiebreak_noise`: magnitude of noise to add to policy weights for breaking ties
         """
         super().__init__()
+        self.eval_fn = eval_fn
         self.num_iterations = num_iterations
         self.branching_factor = branching_factor
         self.max_nodes = max_nodes
-        self.action_selection_fn = action_selection_fn
+        self.action_selector = action_selector
         self.discount = discount
         self.temperature = temperature
         self.tiebreak_noise = tiebreak_noise
@@ -54,7 +56,7 @@ class MCTS(Evaluator):
             "discount": self.discount,
             "temperature": self.temperature,
             "tiebreak_noise": self.tiebreak_noise,
-            "action_selection_config": self.action_selection_fn.get_config()
+            "action_selection_config": self.action_selector.get_config()
         }
 
     def evaluate(self, 
@@ -62,9 +64,7 @@ class MCTS(Evaluator):
         env_state: chex.ArrayTree,
         root_metadata: StepMetadata,
         params: chex.ArrayTree,
-        env_step_fn: EnvStepFn,
-        eval_fn: EvalFn,
-        **kwargs
+        env_step_fn: EnvStepFn
     ) -> MCTSOutput:
         """Performs `self.num_iterations` MCTS iterations on an `MCTSTree`.
         Samples an action to take from the root node of each tree after search is completed.
@@ -75,15 +75,13 @@ class MCTS(Evaluator):
         - `root_metadata`: metadata for the root nodes of each tree
         - `params`: parameters to pass to the the evaluation function
         - `env_step_fn`: function that goes to next environment state given an action
-        - `eval_fn`: function that evaluates an environment state, returning a policy and value
         Returns:
         - `MCTSOutput`: contains new tree state, selected action, root value, and policy weights
         """
-        eval_state = self.update_root(eval_state, env_state, root_metadata, params, eval_fn)
+        eval_state = self.update_root(eval_state, env_state, root_metadata, params)
         iterate = partial(self.iterate, 
             params=params,
-            env_step_fn=env_step_fn,
-            eval_fn=eval_fn
+            env_step_fn=env_step_fn
         )
         eval_state = jax.lax.fori_loop(0, self.num_iterations, lambda _, t: iterate(t), eval_state)
         eval_state, action, policy_weights = self.sample_root_action(eval_state)
@@ -97,18 +95,18 @@ class MCTS(Evaluator):
 
 
     def update_root(self, tree: MCTSTree, root_embedding: chex.ArrayTree, 
-                    params: chex.ArrayTree, eval_fn: EvalFn, **kwargs) -> MCTSTree:
+                    params: chex.ArrayTree, **kwargs) -> MCTSTree:
         """Populates the root node of an MCTSTree.
         
         """
         key, tree = get_rng(tree)
-        root_policy_logits, root_value = eval_fn(root_embedding, params, key)
+        root_policy_logits, root_value = self.eval_fn(root_embedding, params, key)
         root_policy = jax.nn.softmax(root_policy_logits)
         root_node = tree.at(tree.ROOT_INDEX)
         root_node = self.update_root_node(root_node, root_policy, root_value, root_embedding)
         return set_root(tree, root_node)
     
-    def iterate(self, tree: MCTSTree, params: chex.ArrayTree, env_step_fn: EnvStepFn, eval_fn: EvalFn) -> MCTSTree:
+    def iterate(self, tree: MCTSTree, params: chex.ArrayTree, env_step_fn: EnvStepFn) -> MCTSTree:
         # traverse from root -> leaf
         traversal_state = self.traverse(tree)
         parent, action = traversal_state.parent, traversal_state.action
@@ -117,7 +115,7 @@ class MCTS(Evaluator):
         new_embedding, metadata = env_step_fn(embedding, action)
         player_reward = metadata.rewards[metadata.cur_player_id]
         key, tree = get_rng(tree)
-        policy_logits, value = eval_fn(new_embedding, params, key)
+        policy_logits, value = self.eval_fn(new_embedding, params, key)
         policy_logits = jnp.where(metadata.action_mask, policy_logits, jnp.finfo(policy_logits).min)
         policy = jax.nn.softmax(policy_logits)
         value = jnp.where(metadata.terminated, player_reward, value)
@@ -137,7 +135,7 @@ class MCTS(Evaluator):
 
     
     def choose_root_action(self, tree: MCTSTree) -> int:
-        return self.action_selection_fn(tree, tree.ROOT_INDEX, self.discount)
+        return self.action_selector(tree, tree.ROOT_INDEX, self.discount)
 
     def traverse(self, tree: MCTSTree) -> TraversalState:
         def cond_fn(state: TraversalState) -> bool:
@@ -149,7 +147,7 @@ class MCTS(Evaluator):
         
         def body_fn(state: TraversalState) -> TraversalState:
             node_idx = tree.edge_map[state.parent, state.action]
-            action = self.action_selection_fn(tree, node_idx, self.discount)
+            action = self.action_selector(tree, node_idx, self.discount)
             return TraversalState(parent=node_idx, action=action)
         
         root_action = self.choose_root_action(tree)

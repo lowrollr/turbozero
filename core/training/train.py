@@ -50,7 +50,6 @@ class Trainer:
         memory_buffer: EpisodeReplayBuffer,
         env_step_fn: EnvStepFn,
         env_init_fn: EnvInitFn,
-        eval_fn: EvalFn,
         train_step_fn: TrainStepFn,
         evaluator_test: Optional[Evaluator] = None,
         extract_model_params_fn: Optional[ExtractModelParamsFn] = extract_params,
@@ -64,7 +63,6 @@ class Trainer:
         self.memory_buffer = memory_buffer
         self.env_step_fn = env_step_fn
         self.env_init_fn = env_init_fn
-        self.eval_fn = eval_fn
         self.train_step_fn = train_step_fn
         self.extract_model_params_fn = extract_model_params_fn
         
@@ -78,12 +76,10 @@ class Trainer:
             ckpt_dir, orbax_checkpointer, options)
 
         self.evaluate_fn_train = partial(self.evaluator_train.evaluate, 
-            env_step_fn=self.env_step_fn,
-            eval_fn=self.eval_fn)
+            env_step_fn=self.env_step_fn)
         
         self.evaluate_fn_test = partial(self.evaluator_test.evaluate, 
-            env_step_fn=self.env_step_fn,
-            eval_fn=self.eval_fn)
+            env_step_fn=self.env_step_fn)
         
         self.wandb_project_name = wandb_project_name
         self.use_wandb = wandb_project_name != ""
