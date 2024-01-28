@@ -1,7 +1,7 @@
 from functools import partial
 import os
 import shutil
-from typing import Any, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 from chex import dataclass
 import chex
 import wandb
@@ -9,7 +9,8 @@ import jax
 import jax.numpy as jnp
 from core.evaluators.evaluator import EvalOutput, Evaluator
 from core.memory.replay_memory import BaseExperience, EpisodeReplayBuffer, ReplayBufferState
-from core.testing.common import step_env_and_evaluator
+from core.common import step_env_and_evaluator
+from core.testing.tester import BaseTester
 from core.types import EnvInitFn, EnvStepFn, EvalFn, ExtractModelParamsFn, StepMetadata, TrainStepFn
 from flax.training.train_state import TrainState
 import orbax
@@ -36,7 +37,8 @@ class TestState:
 class TrainLoopOutput:
     collection_state: CollectionState
     train_state: TrainState
-    best_params: Optional[chex.ArrayTree]
+    test_states: List[TestState]
+    cur_epoch: int
 
 def extract_params(state: TrainState) -> chex.ArrayTree:
     if hasattr(state, 'batch_stats'):
@@ -49,6 +51,7 @@ class Trainer:
         train_batch_size: int,
         evaluator: Evaluator,        
         memory_buffer: EpisodeReplayBuffer,
+        testers: List[BaseTester],
         env_step_fn: EnvStepFn,
         env_init_fn: EnvInitFn,
         train_step_fn: TrainStepFn,
@@ -66,7 +69,8 @@ class Trainer:
         self.env_init_fn = env_init_fn
         self.train_step_fn = train_step_fn
         self.extract_model_params_fn = extract_model_params_fn
-        
+        self.testers = testers
+
         self.ckpt_dir = ckpt_dir
         if os.path.exists(ckpt_dir):
             shutil.rmtree(ckpt_dir)  
@@ -181,68 +185,6 @@ class Trainer:
         
         return collection_state.replace(key=new_cs_keys), train_state, mean_metrics 
     
-    def test(self,
-        key: jax.random.PRNGKey,
-        params: chex.ArrayTree,
-        num_episodes: int,
-        best_params: Optional[chex.ArrayTree] = None
-    ) -> Tuple[CollectionState, dict]:
-        # init a new test env state w/ batch size = num_episodes
-        env_init_key, eval_init_key, step_key = jax.random.split(key, 3)
-        env_init_keys = jax.random.split(env_init_key, num_episodes)
-        eval_init_keys = jax.random.split(eval_init_key, num_episodes)
-        env_state, metadata = jax.vmap(self.env_init_fn)(env_init_keys)
-        evaluator_init = partial(self.evaluator_test.init, template_embedding=self.template_env_state)
-        eval_state = jax.vmap(evaluator_init)(eval_init_keys)
-
-        test_state = TestState(
-            key=step_key,
-            eval_state=eval_state,
-            env_state=env_state,
-            outcomes=jnp.zeros((num_episodes,)),
-            completed=jnp.zeros((num_episodes,), dtype=jnp.bool_),
-            metadata=metadata
-        )
-
-        def test_step(state: TestState) -> TestState:
-            new_key, step_key = jax.random.split(state.key)
-            eval_output, env_state, metadata, terminated, rewards = \
-                self.step_test(
-                    step_key,
-                    env_state = state.env_state,
-                    env_state_metadata = state.metadata,
-                    eval_state = state.eval_state,
-                    params = params,
-                )
-            return state.replace(
-                key=new_key,
-                eval_state=eval_output.eval_state,
-                env_state=env_state,
-                outcomes=jnp.where(
-                    (terminated & ~state.completed)[..., None],
-                    rewards,
-                    state.outcomes
-                ),
-                completed = state.completed | terminated,
-                metadata = metadata
-            )
-        
-        def step_while(state: TestState) -> TestState:
-            return jax.lax.while_loop(
-                lambda s: ~s.completed,
-                lambda s: test_step(s),
-                state
-            )
-        
-        test_state = jax.vmap(step_while)(test_state)
-        
-        # ok now we can return some metrics or something
-        metrics = {
-            "avg_test_reward": test_state.outcomes.mean(),
-        }
-
-        return metrics, best_params
-    
     def log_metrics(self, metrics: dict, epoch: int, step: Optional[int] = None):
         print(f"Epoch {epoch}: {metrics}")
         if self.use_wandb:
@@ -256,70 +198,6 @@ class Trainer:
     def load_train_state_from_checkpoint(self, path_to_checkpoint: str) -> TrainState:
         ckpt = self.checkpoint_manager.restore(path_to_checkpoint)
         return ckpt['train_state']
-    
-    def train_loop(self,
-        key: jax.random.PRNGKey,
-        batch_size: int,
-        train_state: TrainState,
-        warmup_steps: int,
-        collection_steps_per_epoch: int,
-        train_steps_per_epoch: int,
-        test_episodes_per_epoch: int,
-        num_epochs: int,
-        cur_epoch: int = 0,
-        best_params: Optional[chex.ArrayTree] = None,
-        collection_state: Optional[CollectionState] = None,
-        wandb_run: Optional[Any] = None,
-        extra_wandb_config: Optional[dict] = {}
-    ) -> Tuple[CollectionState, TrainState]:
-        if wandb_run is None and self.use_wandb:
-            self.run = wandb.init(
-            # Set the project where this run will be logged
-                project=self.wandb_project_name,
-                # Track hyperparameters and run metadata
-                config={
-                    'collection_batch_size': batch_size,
-                    'warmup_steps': warmup_steps,
-                    'collection_steps_per_epoch': collection_steps_per_epoch,
-                    'train_steps_per_epoch': train_steps_per_epoch,
-                    'test_episodes_per_epoch': test_episodes_per_epoch,
-                    **self.get_config(), **extra_wandb_config
-                },
-            )
-
-        init_key, key = jax.random.split(key)
-
-        if collection_state is None:
-            collection_state = self.init_collection_state(init_key, batch_size)
-        collection_batch_size = collection_state.key.shape[0]
-
-        params = self.extract_model_params_fn(train_state)
-        collect_steps = jax.jit(self.collect_steps)
-        warmup = jax.vmap(partial(collect_steps, params=params, num_steps=warmup_steps))
-        collection_state = warmup(collection_state)
-
-        train = jax.jit(partial(self.train_steps, num_steps=train_steps_per_epoch))
-        test = jax.jit(partial(self.test, num_episodes=test_episodes_per_epoch))
-
-        while cur_epoch < num_epochs:
-            cur_epoch += 1
-            collection_steps = collection_batch_size * cur_epoch * collection_steps_per_epoch
-            collection_state = jax.vmap(partial(collect_steps, params=params, num_steps=collection_steps_per_epoch))(collection_state)
-            collection_state, train_state, metrics = train(collection_state, train_state)
-            self.log_metrics(metrics, cur_epoch, step=collection_steps)
-            params = self.extract_model_params_fn(train_state)
-            test_key, key = jax.random.split(key)
-            metrics, best_params = test(test_key, params, best_params=best_params)
-            self.log_metrics(metrics, cur_epoch, step=collection_steps)
-            self.save_checkpoint(train_state, cur_epoch, best_params)
-    
-        return TrainLoopOutput(
-            collection_state=collection_state,
-            train_state=train_state,
-            best_params=best_params
-        )
-
-    
     
     def make_template_env_state(self) -> chex.ArrayTree:
         env_state, _ = self.env_init_fn(jax.random.PRNGKey(0))
@@ -357,4 +235,78 @@ class Trainer:
             metadata=metadata
         )
 
+
+    def train_loop(self,
+        key: jax.random.PRNGKey,
+        batch_size: int,
+        train_state: TrainState,
+        warmup_steps: int,
+        collection_steps_per_epoch: int,
+        train_steps_per_epoch: int,
+        num_epochs: int,
+        cur_epoch: int = 0,
+        collection_state: Optional[CollectionState] = None,
+        test_states: Optional[List[chex.ArrayTree]] = [], 
+        wandb_run: Optional[Any] = None,
+        extra_wandb_config: Optional[dict] = {}
+    ) -> Tuple[CollectionState, TrainState]:
+        
+        if wandb_run is None and self.use_wandb:
+            self.run = wandb.init(
+            # Set the project where this run will be logged
+                project=self.wandb_project_name,
+                # Track hyperparameters and run metadata
+                config={
+                    'collection_batch_size': batch_size,
+                    'warmup_steps': warmup_steps,
+                    'collection_steps_per_epoch': collection_steps_per_epoch,
+                    'train_steps_per_epoch': train_steps_per_epoch,
+                    **self.get_config(), **extra_wandb_config
+                },
+            )
+
+        if not test_states:
+            for tester in self.testers:
+                tester_init_key, key = jax.random.split(key)
+                test_states.append(tester.init(tester_init_key, params=self.extract_model_params_fn(train_state)))
+
+        if collection_state is None:
+            init_key, key = jax.random.split(key)
+            collection_state = self.init_collection_state(init_key, batch_size)
+        collection_batch_size = collection_state.key.shape[0]
+
+        params = self.extract_model_params_fn(train_state)
+        collect_steps = jax.jit(self.collect_steps)
+        warmup = jax.vmap(partial(collect_steps, params=params, num_steps=warmup_steps))
+        collection_state = warmup(collection_state)
+
+        train = jax.jit(partial(self.train_steps, num_steps=train_steps_per_epoch))
+        test_fns = [
+            jax.jit(partial(tester.test, env_step_fn=self.env_step_fn, env_init_fn=self.env_init_fn, evaluator=self.evaluator_test))
+            for tester in self.testers
+        ]
+
+        while cur_epoch < num_epochs:
+            collection_steps = collection_batch_size * (cur_epoch+1) * collection_steps_per_epoch
+            
+            collection_state = jax.vmap(partial(collect_steps, params=params, num_steps=collection_steps_per_epoch))(collection_state)
+            collection_state, train_state, metrics = train(collection_state, train_state)
+            self.log_metrics(metrics, cur_epoch, step=collection_steps)
+            params = self.extract_model_params_fn(train_state)
+            
+            for i, (test_fn, test_state) in enumerate(zip(test_fns, test_states)):
+                new_test_state, metrics = test_fn(params=params, state=test_state)
+                self.log_metrics(metrics, cur_epoch, step=collection_steps)
+                test_states[i] = new_test_state
+
+            cur_epoch += 1
+            self.save_checkpoint(train_state, cur_epoch)
+    
+        return TrainLoopOutput(
+            collection_state=collection_state,
+            train_state=train_state,
+            test_states=test_states,
+            cur_epoch=cur_epoch
+        )
+    
     
