@@ -10,7 +10,7 @@ import jax.numpy as jnp
 from core.evaluators.evaluator import EvalOutput, Evaluator
 from core.memory.replay_memory import BaseExperience, EpisodeReplayBuffer, ReplayBufferState
 from core.common import step_env_and_evaluator
-from core.testing.tester import BaseTester
+from core.testing.tester import BaseTester, TestState
 from core.types import EnvInitFn, EnvStepFn, EvalFn, ExtractModelParamsFn, StepMetadata, TrainStepFn
 from flax.training.train_state import TrainState
 import orbax
@@ -22,15 +22,6 @@ class CollectionState:
     eval_state: chex.ArrayTree
     env_state: chex.ArrayTree
     buffer_state: ReplayBufferState
-    metadata: StepMetadata
-
-@dataclass(frozen=True)
-class TestState:
-    key: jax.random.PRNGKey
-    eval_state: chex.ArrayTree
-    env_state: chex.ArrayTree
-    outcomes: chex.Array
-    completed: chex.Array
     metadata: StepMetadata
 
 @dataclass(frozen=True)
