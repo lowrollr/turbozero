@@ -71,7 +71,7 @@ class ApproxEloTester(BaseTester):
         )
         
         opponent_params = jax.tree_util.tree_map(
-            lambda x: jnp.tile(x, (self.num_opponents, *([1] * (len(x.shape) - 1)))),
+            lambda x: jnp.tile(x, (self.episodes_per_opponent, *([1] * (len(x.shape) - 1)))),
             state.past_opponent_params
         )
 
