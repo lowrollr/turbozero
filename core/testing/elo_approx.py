@@ -108,7 +108,7 @@ class ApproxEloTester(BaseTester):
         elo_ratings = self.get_elo_rating(matchup_matrix)
 
         metrics = {
-            "ratings": elo_ratings,
+            "elo_rating": elo_ratings[-1],
         }
     
         new_opponent_params = jax.tree_util.tree_map(
