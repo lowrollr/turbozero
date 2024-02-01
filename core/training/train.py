@@ -238,10 +238,14 @@ class Trainer:
         num_epochs: int,
         cur_epoch: int = 0,
         collection_state: Optional[CollectionState] = None,
-        test_states: Optional[List[chex.ArrayTree]] = [], 
+        test_states: List[chex.ArrayTree] = None, 
         wandb_run: Optional[Any] = None,
-        extra_wandb_config: Optional[dict] = {}
+        extra_wandb_config: Optional[dict] = None
     ) -> Tuple[CollectionState, TrainState]:
+        if test_states is None:
+            test_states = []
+        if extra_wandb_config is None:
+            extra_wandb_config = {}
         
         if wandb_run is None and self.use_wandb:
             self.run = wandb.init(

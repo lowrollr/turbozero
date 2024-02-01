@@ -13,6 +13,7 @@ from core.types import EnvInitFn, EnvStepFn
 @chex.dataclass(frozen=True)
 class ApproxEloTesterState(TestState):
     past_opponent_params: chex.ArrayTree
+    past_opponent_mask: chex.Array
     next_idx: chex.Array
     generation: chex.Array
     past_opponent_ids: chex.Array
@@ -48,9 +49,10 @@ class ApproxEloTester(BaseTester):
                 lambda x: jnp.stack([x] * self.num_opponents),
                 params
             ),
-            next_idx = jnp.array(0, dtype=jnp.int32),
+            next_idx = jnp.array(1, dtype=jnp.int32),
             generation = jnp.array(1, dtype=jnp.int32),
             past_opponent_ids = jnp.zeros(self.num_opponents, dtype=jnp.int32),
+            past_opponent_mask = jnp.zeros(self.num_opponents, dtype=jnp.int32).at[0].set(1),
             matchup_matrix = jnp.zeros((self.total_epochs+1,self.total_epochs+1,2), dtype=jnp.float32),
             ratings = jnp.full((self.total_epochs+1,), self.baseline_rating, dtype=jnp.float32)
         )
@@ -82,6 +84,7 @@ class ApproxEloTester(BaseTester):
         )
 
         opp_ids = jnp.tile(state.past_opponent_ids, self.episodes_per_opponent)
+        opp_mask = jnp.tile(state.past_opponent_mask, self.episodes_per_opponent)
 
         results = jax.vmap(game_fn)(game_keys, params_2=opponent_params)
 
@@ -92,16 +95,17 @@ class ApproxEloTester(BaseTester):
 
         def add_results(idx, matchup_matrix):
             opp_id = state.past_opponent_ids[idx]
+            mask = jnp.logical_and(opp_mask, opp_id == opp_ids)
             scores = jnp.where(
-                jnp.logical_and(wins, opp_id == opp_ids),
+                jnp.logical_and(wins, mask),
                 1.0,
                 jnp.where(
-                    jnp.logical_and(draws, opp_id == opp_ids),
+                    jnp.logical_and(draws, mask),
                     0.5,
                     0.0
                 )
             ).sum()
-            total_games = jnp.sum(opp_id == opp_ids)
+            total_games = jnp.sum(mask)
             matchup_matrix = matchup_matrix.at[state.generation, opp_id, 0].add(scores)
             matchup_matrix = matchup_matrix.at[state.generation, opp_id, 1].add(total_games)
             return matchup_matrix
@@ -128,6 +132,7 @@ class ApproxEloTester(BaseTester):
         return state.replace(
             key=key,
             past_opponent_params = new_opponent_params,
+            past_opponent_mask = state.past_opponent_mask.at[state.next_idx].set(1),
             next_idx = (state.next_idx + 1) % self.num_opponents,
             generation = state.generation + 1,
             matchup_matrix = matchup_matrix,
