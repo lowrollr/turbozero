@@ -1,4 +1,5 @@
 
+from functools import partial
 from chex import dataclass
 import chex
 import jax
@@ -20,7 +21,8 @@ class BaseTester:
     def run(self, epoch_num: int, **kwargs) -> TestState:
         if epoch_num % self.epochs_per_test == 0:
             return self.test(**kwargs)
-        
+    
+    @partial(jax.jit, static_argnums=(0, 1, 2, 3))
     def test(self, 
         env_step_fn: EnvStepFn, 
         env_init_fn: EnvInitFn,

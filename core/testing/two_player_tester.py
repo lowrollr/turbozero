@@ -24,6 +24,7 @@ class TwoPlayerTester(BaseTester):
     def init(self, key: jax.random.PRNGKey, params: chex.ArrayTree, **kwargs) -> TwoPlayerTestState:
         return TwoPlayerTestState(key=key, best_params=params)
     
+    @partial(jax.jit, static_argnums=(0, 1, 2, 3))
     def test(self,  
         env_step_fn: EnvStepFn, 
         env_init_fn: EnvInitFn,

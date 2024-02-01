@@ -86,6 +86,7 @@ class Trainer:
         self.wandb_project_name = wandb_project_name
         self.use_wandb = wandb_project_name != ""
         self.template_env_state = self.make_template_env_state()
+        
 
         
     def get_config(self):
@@ -138,7 +139,7 @@ class Trainer:
             metadata=new_metadata
         )
 
-    
+    @partial(jax.jit, static_argnums=(0, 3))
     def collect_steps(self,
         state: CollectionState,
         params: chex.ArrayTree,
@@ -151,6 +152,7 @@ class Trainer:
             state
         )
     
+    @partial(jax.jit, static_argnums=(0, 3))
     def train_steps(self,
         collection_state: CollectionState,
         train_state: TrainState,
@@ -226,7 +228,6 @@ class Trainer:
             metadata=metadata
         )
 
-
     def train_loop(self,
         key: jax.random.PRNGKey,
         batch_size: int,
@@ -267,26 +268,24 @@ class Trainer:
         collection_batch_size = collection_state.key.shape[0]
 
         params = self.extract_model_params_fn(train_state)
-        collect_steps = jax.jit(self.collect_steps)
-        warmup = jax.vmap(partial(collect_steps, params=params, num_steps=warmup_steps))
+        warmup = jax.vmap(partial(self.collect_steps, params=params, num_steps=warmup_steps))
         collection_state = warmup(collection_state)
 
-        train = jax.jit(partial(self.train_steps, num_steps=train_steps_per_epoch))
+        train = partial(self.train_steps, num_steps=train_steps_per_epoch)
         test_fns = [
-            jax.jit(partial(tester.test, env_step_fn=self.env_step_fn, env_init_fn=self.env_init_fn, evaluator=self.evaluator_test))
+            partial(tester.run, env_step_fn=self.env_step_fn, env_init_fn=self.env_init_fn, evaluator=self.evaluator_test)
             for tester in self.testers
         ]
 
         while cur_epoch < num_epochs:
             collection_steps = collection_batch_size * (cur_epoch+1) * collection_steps_per_epoch
-            
-            collection_state = jax.vmap(partial(collect_steps, params=params, num_steps=collection_steps_per_epoch))(collection_state)
+            collection_state = jax.vmap(partial(self.collect_steps, params=params, num_steps=collection_steps_per_epoch))(collection_state)
             collection_state, train_state, metrics = train(collection_state, train_state)
             self.log_metrics(metrics, cur_epoch, step=collection_steps)
             params = self.extract_model_params_fn(train_state)
             
             for i, (test_fn, test_state) in enumerate(zip(test_fns, test_states)):
-                new_test_state, metrics = test_fn(params=params, state=test_state)
+                new_test_state, metrics = test_fn(epoch_num=cur_epoch, params=params, state=test_state)
                 self.log_metrics(metrics, cur_epoch, step=collection_steps)
                 test_states[i] = new_test_state
 
