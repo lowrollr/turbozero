@@ -78,7 +78,7 @@ class MCTS(Evaluator):
         Returns:
         - `MCTSOutput`: contains new tree state, selected action, root value, and policy weights
         """
-        eval_state = self.update_root(eval_state, env_state, root_metadata, params)
+        eval_state = self.update_root(eval_state, env_state, params, root_metadata=root_metadata)
         iterate = partial(self.iterate, 
             params=params,
             env_step_fn=env_step_fn

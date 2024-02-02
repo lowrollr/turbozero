@@ -27,7 +27,7 @@ class _AlphaZero:
             **super().get_config()
         }
 
-    def update_root(self, tree: MCTSTree, root_embedding: chex.ArrayTree, root_metadata: StepMetadata, params: chex.ArrayTree) -> MCTSTree:
+    def update_root(self, tree: MCTSTree, root_embedding: chex.ArrayTree, params: chex.ArrayTree, root_metadata: StepMetadata) -> MCTSTree:
         key, tree = get_rng(tree)
         root_policy_logits, root_value = self.eval_fn(root_embedding, params, key)
         root_policy = jax.nn.softmax(root_policy_logits)
