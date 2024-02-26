@@ -41,6 +41,7 @@ poetry add jax[cuda12_pip]
 ```
 See https://jax.readthedocs.io/en/latest/installation.html for other devices/cuda versions
 
+I have had issues with this command when using poetry 1.8.1 -- but it works with 1.7.1.
 I wish this could be done without extra commands but poetry does not support it :(
 
 To launch an ipython kernel, run:
