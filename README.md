@@ -37,7 +37,7 @@ If you're using a GPU/TPU/etc., after running the previous command you'll need t
 For a GPU w/ CUDA 12:
 ```
 poetry source add jax https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
-poetry add jax[cuda12_pip]
+poetry add jax[cuda12_pip]==0.4.24
 ```
 See https://jax.readthedocs.io/en/latest/installation.html for other devices/cuda versions
 
