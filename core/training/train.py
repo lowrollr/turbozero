@@ -363,6 +363,7 @@ class Trainer:
                 new_test_state, metrics = self.testers[i].run(
                     cur_epoch, self.env_step_fn, self.env_init_fn, 
                     self.evaluator_test, test_state, params)
+                metrics = {k: v.mean() for k, v in metrics.items()}
                 self.log_metrics(metrics, cur_epoch, step=collection_steps)
                 test_states[i] = new_test_state
 

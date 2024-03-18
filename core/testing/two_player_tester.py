@@ -46,8 +46,8 @@ class TwoPlayerTester(BaseTester):
 
         results = jax.vmap(game_fn)(game_keys)
         
-        wins = jax.lax.psum((results[:, 0] > results[:, 1]).sum(), axis_name='d')
-        draws = jax.lax.psum((results[:, 0] == results[:, 1]).sum(), axis_name='d')
+        wins = (results[:, 0] > results[:, 1]).sum()
+        draws = (results[:, 0] == results[:, 1]).sum()
         
         win_rate = (wins + (0.5 * draws)) / self.num_episodes
 
