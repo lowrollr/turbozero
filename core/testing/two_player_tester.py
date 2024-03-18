@@ -32,7 +32,7 @@ class TwoPlayerTester(BaseTester):
         state: TestState, 
         params: chex.ArrayTree
     ) -> Tuple[TwoPlayerTestState, Dict]:
-        key, subkey = jax.random.split(state.key[0])
+        key, subkey = jax.random.split(state.key)
         game_keys = jax.random.split(subkey, self.num_episodes)
 
         game_fn = partial(two_player_game,
@@ -62,7 +62,7 @@ class TwoPlayerTester(BaseTester):
             None
         )
 
-        return state.replace(key=[key], best_params=best_params), metrics
+        return state.replace(key=key, best_params=best_params), metrics
 
 
 

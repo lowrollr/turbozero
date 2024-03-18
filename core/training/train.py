@@ -328,21 +328,19 @@ class Trainer:
         if train_state is None:
             train_key, key = jax.random.split(key)
             train_state = self.init_train_state(train_key)
+            train_state = flax.jax_utils.replicate(train_state)
 
         if not test_states:
             for tester in self.testers:
                 tester_init_key, key = jax.random.split(key)
                 init_keys = jax.random.split(tester_init_key, num_devices)
                 state = tester.init(init_keys, params=self.extract_model_params_fn(train_state))
-                state = partition(state, num_devices)
                 test_states.append(state)
         
         if collection_state is None:
             init_key, key = jax.random.split(key)
             collection_state = partition(self.init_collection_state(init_key, batch_size), num_devices)
 
-        # copy train_state params to all devices
-        train_state = flax.jax_utils.replicate(train_state)
 
         params = self.extract_model_params_fn(train_state)
         collect = jax.vmap(self.collect_steps, in_axes=(1, None, None), out_axes=1)
