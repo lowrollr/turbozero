@@ -1,6 +1,6 @@
 
 from functools import partial
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 import chex
 import jax
 import optax
@@ -57,14 +57,14 @@ class ApproxEloTester(BaseTester):
             ratings = jnp.full((self.total_epochs+1,), self.baseline_rating, dtype=jnp.float32)
         )
 
-    @partial(jax.jit, static_argnums=(0, 1, 2, 3))
+    @partial(jax.pmap, static_broadcasted_argnums=(0, 1, 2, 3))
     def test(self,
         env_step_fn: EnvStepFn,
         env_init_fn: EnvInitFn,
         evaluator: Evaluator,
         state: TestState,
         params: chex.ArrayTree         
-    ) -> [ApproxEloTesterState, Dict]:
+    ) -> Tuple[ApproxEloTesterState, Dict]:
         num_episodes = self.episodes_per_opponent * self.num_opponents
 
         key, subkey = jax.random.split(state.key)

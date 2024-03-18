@@ -3,7 +3,7 @@
 
 
 from functools import partial
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 from chex import dataclass
 import chex
 import jax
@@ -24,14 +24,14 @@ class TwoPlayerTester(BaseTester):
     def init(self, key: jax.random.PRNGKey, params: chex.ArrayTree, **kwargs) -> TwoPlayerTestState:
         return TwoPlayerTestState(key=key, best_params=params)
     
-    @partial(jax.jit, static_argnums=(0, 1, 2, 3))
+    @partial(jax.pmap, static_broadcasted_argnums=(0, 1, 2, 3))
     def test(self,  
         env_step_fn: EnvStepFn, 
         env_init_fn: EnvInitFn,
         evaluator: Evaluator,
         state: TestState, 
         params: chex.ArrayTree
-    ) -> [TwoPlayerTestState, Dict]:
+    ) -> Tuple[TwoPlayerTestState, Dict]:
         key, subkey = jax.random.split(state.key)
         game_keys = jax.random.split(subkey, self.num_episodes)
 

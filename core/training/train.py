@@ -4,14 +4,16 @@ import shutil
 from typing import Any, List, Optional, Tuple
 from chex import dataclass
 import chex
+import flax
+import optax
 import wandb
 import jax
 import jax.numpy as jnp
-from core.evaluators.evaluator import EvalOutput, Evaluator
+from core.evaluators.evaluator import Evaluator
 from core.memory.replay_memory import BaseExperience, EpisodeReplayBuffer, ReplayBufferState
 from core.common import partition, step_env_and_evaluator
 from core.testing.tester import BaseTester, TestState
-from core.types import EnvInitFn, EnvStepFn, EvalFn, ExtractModelParamsFn, StepMetadata, TrainStepFn
+from core.types import EnvInitFn, EnvStepFn, ExtractModelParamsFn, LossFn, StateToNNInputFn, StepMetadata
 from flax.training.train_state import TrainState
 import orbax
 from flax.training import orbax_utils
@@ -30,6 +32,11 @@ class TrainLoopOutput:
     train_state: TrainState
     test_states: List[TestState]
     cur_epoch: int
+
+
+class TrainStateWithBS(TrainState):
+    batch_stats: chex.ArrayTree
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         
 
 def extract_params(state: TrainState) -> chex.ArrayTree:
     if hasattr(state, 'batch_stats'):
@@ -54,7 +61,10 @@ class Trainer:
         testers: List[BaseTester],
         env_step_fn: EnvStepFn,
         env_init_fn: EnvInitFn,
-        train_step_fn: TrainStepFn,
+        state_to_nn_input_fn: StateToNNInputFn,
+        nn: flax.linen.Module,
+        loss_fn: LossFn,
+        optimizer: optax.GradientTransformation,
         evaluator_test: Optional[Evaluator] = None,
         extract_model_params_fn: Optional[ExtractModelParamsFn] = extract_params,
         wandb_project_name: str = "",
@@ -67,7 +77,12 @@ class Trainer:
         self.memory_buffer = memory_buffer
         self.env_step_fn = env_step_fn
         self.env_init_fn = env_init_fn
-        self.train_step_fn = train_step_fn
+
+        self.state_to_nn_input_fn = state_to_nn_input_fn
+        self.nn = nn
+        self.loss_fn = loss_fn
+        self.optimizer = optimizer
+
         self.extract_model_params_fn = extract_model_params_fn
         self.testers = testers
 
@@ -96,6 +111,25 @@ class Trainer:
         self.use_wandb = wandb_project_name != ""
         self.template_env_state = self.make_template_env_state()
         
+
+    def init_train_state(self, key: jax.random.PRNGKey) -> TrainState:
+        sample_env_state = self.make_template_env_state()
+        sample_obs = self.state_to_nn_input_fn(sample_env_state)
+        variables = self.nn.init(key, sample_obs[None, ...], train=False)
+        params = variables['params']
+        if 'batch_stats' in variables:
+            return TrainStateWithBS.create(
+                apply_fn=self.nn.apply,
+                params=params,
+                tx=self.optimizer,
+                batch_stats=variables['batch_stats']
+            )
+    
+        return TrainState.create(
+            apply_fn=self.nn.apply,
+            params=params,
+            tx=self.optimizer,
+        )
 
         
     def get_config(self):
@@ -126,10 +160,11 @@ class Trainer:
         buffer_state = self.memory_buffer.add_experience(
             state = state.buffer_state,
             experience = BaseExperience(
-                env_state=state.env_state,
+                observation_nn=self.state_to_nn_input_fn(new_env_state),
                 policy_mask=state.metadata.action_mask,
                 policy_weights=eval_output.policy_weights,
-                reward=jnp.empty_like(state.metadata.rewards)
+                reward=jnp.empty_like(state.metadata.rewards),
+                cur_player_id=state.metadata.cur_player_id
             )
         )
         
@@ -148,7 +183,7 @@ class Trainer:
             metadata=new_metadata
         )
 
-    @partial(jax.pmap, axis_name='b', static_broadcasted_argnums=(0, 3))
+    @partial(jax.pmap, axis_name='d', static_broadcasted_argnums=(0, 3))
     def collect_steps(self,
         state: CollectionState,
         params: chex.ArrayTree,
@@ -161,7 +196,6 @@ class Trainer:
             state
         )
     
-    @partial(jax.pmap, axis_name='b', static_broadcasted_argnums=(0, 3))
     def train_steps(self,
         collection_state: CollectionState,
         train_state: TrainState,
@@ -169,13 +203,27 @@ class Trainer:
     ) -> Tuple[CollectionState, TrainState, dict]:
         buffer_state = collection_state.buffer_state
         
-
-        def sample_and_train(ts: TrainState, key: jax.random.PRNGKey) -> TrainState:
-            samples = self.memory_buffer.sample_across_batches(buffer_state, key, sample_size=self.train_batch_size)
-            return self.train_step_fn(samples, ts)
+        @partial(jax.pmap, axis_name='d', static_broadcasted_argnums=(1,))
+        def sample_and_train(ts: TrainState, key: chex.PRNGKey) -> TrainState:
+            samples = self.memory_buffer.sample(buffer_state, key, sample_size=self.train_batch_size)
+            # re-partition samples across available devices
+            # partitioned_samples = partition(samples, jax.local_device_count())
+            grad_fn = jax.value_and_grad(self.loss_fn, has_aux=True)
+            (loss, (metrics, updates)), grads = grad_fn(ts.params, ts, samples)
+            loss = jax.lax.pmean(loss, axis_name='d')
+            grads = jax.lax.pmean(grads, axis_name='d')
+            metrics = jax.tree_map(lambda x: jax.lax.pmean(x, axis_name='d'), metrics)
+            ts = ts.apply_gradients(grads=grads)
+            if hasattr(ts, 'batch_stats'):
+                ts = ts.replace(batch_stats=jax.lax.pmean(updates['batch_stats'], axis_name='d'))
+            metrics = {
+                **metrics,
+                'loss': loss
+            }
+            return ts, metrics
         
-        sample_key, new_key = jax.random.split(collection_state.key[0], 2)
-        new_cs_keys = collection_state.key.at[0].set(new_key)
+        sample_key, new_key = jax.random.split(collection_state.key[0,0], 2)
+        new_cs_keys = collection_state.key.at[0,0].set(new_key)
         sample_keys = jax.random.split(sample_key, num_steps)
 
         train_state, metrics = jax.lax.scan(
@@ -209,10 +257,11 @@ class Trainer:
     def make_template_experience(self) -> BaseExperience:
         env_state, metadata = self.env_init_fn(jax.random.PRNGKey(0))
         return BaseExperience(
-            env_state=env_state,
+            observation_nn=self.state_to_nn_input_fn(env_state),
             policy_mask=metadata.action_mask,
             policy_weights=jnp.zeros_like(metadata.action_mask, dtype=jnp.float32),
-            reward=jnp.zeros_like(metadata.rewards)
+            reward=jnp.zeros_like(metadata.rewards),
+            cur_player_id=metadata.cur_player_id
         )
     
 
@@ -240,12 +289,13 @@ class Trainer:
     def train_loop(self,
         key: jax.random.PRNGKey,
         batch_size: int,
-        train_state: TrainState,
+        
         warmup_steps: int,
         collection_steps_per_epoch: int,
         train_steps_per_epoch: int,
         num_epochs: int,
         cur_epoch: int = 0,
+        train_state: Optional[TrainState] = None,
         collection_state: Optional[CollectionState] = None,
         test_states: List[chex.ArrayTree] = [], 
         wandb_run: Optional[Any] = None,
@@ -275,37 +325,40 @@ class Trainer:
                 },
             )
 
+        if train_state is None:
+            train_key, key = jax.random.split(key)
+            train_state = self.init_train_state(train_key)
+
         if not test_states:
             for tester in self.testers:
                 tester_init_key, key = jax.random.split(key)
-                test_states.append(tester.init(tester_init_key, params=self.extract_model_params_fn(train_state)))
-
+                state = tester.init(tester_init_key, params=self.extract_model_params_fn(train_state))
+                state = partition(state, num_devices)
+                test_states.append(state)
+        
         if collection_state is None:
             init_key, key = jax.random.split(key)
             collection_state = partition(self.init_collection_state(init_key, batch_size), num_devices)
 
         # copy train_state params to all devices
-        train_state = copy_for_devices(train_state, num_devices)
+        train_state = flax.jax_utils.replicate(train_state)
 
         params = self.extract_model_params_fn(train_state)
-        warmup = jax.vmap(partial(self.collect_steps, params=params, num_steps=warmup_steps))
-        collection_state = warmup(collection_state)
+        collect = jax.vmap(self.collect_steps, in_axes=(1, None, None), out_axes=1)
+        collection_state = collect(collection_state, params, warmup_steps)
 
-        train = partial(self.train_steps, num_steps=train_steps_per_epoch)
-        test_fns = [
-            partial(tester.run, env_step_fn=self.env_step_fn, env_init_fn=self.env_init_fn, evaluator=self.evaluator_test)
-            for tester in self.testers
-        ]
 
         while cur_epoch < num_epochs:
             collection_steps = batch_size * (cur_epoch+1) * collection_steps_per_epoch
-            collection_state = jax.vmap(partial(self.collect_steps, params=params, num_steps=collection_steps_per_epoch))(collection_state)
-            collection_state, train_state, metrics = train(collection_state, train_state)
+            collection_state = collect(collection_state, params, collection_steps_per_epoch)
+            collection_state, train_state, metrics = self.train_steps(collection_state, train_state, train_steps_per_epoch)
             self.log_metrics(metrics, cur_epoch, step=collection_steps)
             params = self.extract_model_params_fn(train_state)
             
-            for i, (test_fn, test_state) in enumerate(zip(test_fns, test_states)):
-                new_test_state, metrics = test_fn(epoch_num=cur_epoch, params=params, state=test_state)
+            for i, test_state in enumerate(test_states):
+                new_test_state, metrics = self.testers[i].run(
+                    cur_epoch, self.env_step_fn, self.env_init_fn, 
+                    self.evaluator_test, test_state, params)
                 self.log_metrics(metrics, cur_epoch, step=collection_steps)
                 test_states[i] = new_test_state
 
@@ -318,5 +371,4 @@ class Trainer:
             test_states=test_states,
             cur_epoch=cur_epoch
         )
-    
-    
+
