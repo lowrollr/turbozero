@@ -7,7 +7,19 @@ from chex import dataclass
 import jax
 import jax.numpy as jnp
 from core.evaluators.evaluator import EvalOutput, Evaluator
-from core.types import EnvInitFn, EnvStepFn, EvalFn, StepMetadata
+from core.types import EnvInitFn, EnvStepFn, StepMetadata
+
+def partition(
+    data: chex.ArrayTree,
+    num_partitions: int
+) -> chex.ArrayTree:
+    """
+    Partition an array into num_partitions
+    """
+    return jax.tree_map(
+        lambda x: x.reshape(num_partitions, x.shape[0] // num_partitions, *x.shape[1:]),
+        data
+    )
 
 def step_env_and_evaluator(
     key: jax.random.PRNGKey,

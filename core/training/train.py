@@ -9,7 +9,7 @@ import jax
 import jax.numpy as jnp
 from core.evaluators.evaluator import EvalOutput, Evaluator
 from core.memory.replay_memory import BaseExperience, EpisodeReplayBuffer, ReplayBufferState
-from core.common import step_env_and_evaluator
+from core.common import partition, step_env_and_evaluator
 from core.testing.tester import BaseTester, TestState
 from core.types import EnvInitFn, EnvStepFn, EvalFn, ExtractModelParamsFn, StepMetadata, TrainStepFn
 from flax.training.train_state import TrainState
@@ -36,6 +36,15 @@ def extract_params(state: TrainState) -> chex.ArrayTree:
         return {'params': state.params, 'batch_stats': state.batch_stats}
     return {'params': state.params}
 
+def copy_for_devices(state: TrainState, num_devices: int) -> TrainState:
+    if hasattr(state, 'batch_stats'):
+        return state.replace(
+            params = jax.tree_map(lambda x: jnp.array([x] * num_devices), state.params),
+            batch_stats = jax.tree_map(lambda x: jnp.array([x] * num_devices), state.batch_stats)
+        )
+    return state.replace(
+        params = jax.tree_map(lambda x: jnp.array([x] * num_devices), state.params)
+    )
 
 class Trainer:
     def __init__(self,
@@ -139,7 +148,7 @@ class Trainer:
             metadata=new_metadata
         )
 
-    @partial(jax.jit, static_argnums=(0, 3))
+    @partial(jax.pmap, axis_name='b', static_broadcasted_argnums=(0, 3))
     def collect_steps(self,
         state: CollectionState,
         params: chex.ArrayTree,
@@ -152,7 +161,7 @@ class Trainer:
             state
         )
     
-    @partial(jax.jit, static_argnums=(0, 3))
+    @partial(jax.pmap, axis_name='b', static_broadcasted_argnums=(0, 3))
     def train_steps(self,
         collection_state: CollectionState,
         train_state: TrainState,
@@ -238,10 +247,15 @@ class Trainer:
         num_epochs: int,
         cur_epoch: int = 0,
         collection_state: Optional[CollectionState] = None,
-        test_states: List[chex.ArrayTree] = None, 
+        test_states: List[chex.ArrayTree] = [], 
         wandb_run: Optional[Any] = None,
-        extra_wandb_config: Optional[dict] = None
+        extra_wandb_config: Optional[dict] = None,
+        num_devices: Optional[int] = None
     ) -> Tuple[CollectionState, TrainState]:
+        if num_devices is None:
+            num_devices = jax.local_device_count()
+        if batch_size % num_devices != 0:
+            raise ValueError(f"Batch size must be divisible by the number of devices. Got {batch_size} batch size and {num_devices} devices.")
         if test_states is None:
             test_states = []
         if extra_wandb_config is None:
@@ -268,8 +282,10 @@ class Trainer:
 
         if collection_state is None:
             init_key, key = jax.random.split(key)
-            collection_state = self.init_collection_state(init_key, batch_size)
-        collection_batch_size = collection_state.key.shape[0]
+            collection_state = partition(self.init_collection_state(init_key, batch_size), num_devices)
+
+        # copy train_state params to all devices
+        train_state = copy_for_devices(train_state, num_devices)
 
         params = self.extract_model_params_fn(train_state)
         warmup = jax.vmap(partial(self.collect_steps, params=params, num_steps=warmup_steps))
@@ -282,7 +298,7 @@ class Trainer:
         ]
 
         while cur_epoch < num_epochs:
-            collection_steps = collection_batch_size * (cur_epoch+1) * collection_steps_per_epoch
+            collection_steps = batch_size * (cur_epoch+1) * collection_steps_per_epoch
             collection_state = jax.vmap(partial(self.collect_steps, params=params, num_steps=collection_steps_per_epoch))(collection_state)
             collection_state, train_state, metrics = train(collection_state, train_state)
             self.log_metrics(metrics, cur_epoch, step=collection_steps)
