@@ -332,7 +332,8 @@ class Trainer:
         if not test_states:
             for tester in self.testers:
                 tester_init_key, key = jax.random.split(key)
-                state = tester.init(tester_init_key, params=self.extract_model_params_fn(train_state))
+                init_keys = jax.random.split(tester_init_key, num_devices)
+                state = tester.init(init_keys, params=self.extract_model_params_fn(train_state))
                 state = partition(state, num_devices)
                 test_states.append(state)
         
