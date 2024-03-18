@@ -209,9 +209,7 @@ class Trainer:
             # partitioned_samples = partition(samples, jax.local_device_count())
             grad_fn = jax.value_and_grad(self.loss_fn, has_aux=True)
             (loss, (metrics, updates)), grads = grad_fn(ts.params, ts, samples)
-            loss = jax.lax.pmean(loss, axis_name='d')
             grads = jax.lax.pmean(grads, axis_name='d')
-            metrics = jax.tree_map(lambda x: jax.lax.pmean(x, axis_name='d'), metrics)
             ts = ts.apply_gradients(grads=grads)
             if hasattr(ts, 'batch_stats'):
                 ts = ts.replace(batch_stats=jax.lax.pmean(updates['batch_stats'], axis_name='d'))
@@ -229,6 +227,7 @@ class Trainer:
                 ts,
                 xs=keys,
             )
+            # mean across steps
             mean_metrics = jax.tree_map(lambda x: x.mean(), metrics)
             return ts, mean_metrics
         
@@ -236,6 +235,8 @@ class Trainer:
         new_keys = collection_state.key.at[0,0].set(new_key)
         sample_keys = jax.random.split(sample_key, jax.local_device_count())
         train_state, metrics = train(train_state, sample_keys)
+        # mean across devices
+        metrics = jax.tree_map(lambda x: x.mean(), metrics)
         return collection_state.replace(key=new_keys), train_state, metrics
     
     
