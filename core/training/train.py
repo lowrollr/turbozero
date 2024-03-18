@@ -203,8 +203,7 @@ class Trainer:
     ) -> Tuple[CollectionState, TrainState, dict]:
         buffer_state = collection_state.buffer_state
         
-        @partial(jax.pmap, axis_name='d', static_broadcasted_argnums=(1,))
-        def sample_and_train(ts: TrainState, key: chex.PRNGKey) -> TrainState:
+        def one_train_step(ts: TrainState, key: chex.PRNGKey) -> Tuple[TrainState, dict]:
             samples = self.memory_buffer.sample(buffer_state, key, sample_size=self.train_batch_size)
             # re-partition samples across available devices
             # partitioned_samples = partition(samples, jax.local_device_count())
@@ -222,26 +221,32 @@ class Trainer:
             }
             return ts, metrics
         
-        sample_key, new_key = jax.random.split(collection_state.key[0,0], 2)
-        new_cs_keys = collection_state.key.at[0,0].set(new_key)
-        sample_keys = jax.random.split(sample_key, num_steps)
-
-        train_state, metrics = jax.lax.scan(
-            sample_and_train,
-            train_state,
-            xs=sample_keys,
-        )
-        mean_metrics = jax.tree_map(lambda x: x.mean(), metrics)
+        @partial(jax.pmap, axis_name='d')
+        def train(ts: TrainState, key: chex.PRNGKey) -> Tuple[TrainState, dict]:
+            keys = jax.random.split(key, num_steps)
+            ts, metrics = jax.lax.scan(
+                one_train_step,
+                ts,
+                xs=keys,
+            )
+            mean_metrics = jax.tree_map(lambda x: x.mean(), metrics)
+            return ts, mean_metrics
         
-        return collection_state.replace(key=new_cs_keys), train_state, mean_metrics 
+        sample_key, new_key = jax.random.split(collection_state.key[0,0], 2)
+        new_keys = collection_state.key.at[0,0].set(new_key)
+        sample_keys = jax.random.split(sample_key, jax.local_device_count())
+        train_state, metrics = train(train_state, sample_keys)
+        return collection_state.replace(key=new_keys), train_state, metrics
+    
     
     def log_metrics(self, metrics: dict, epoch: int, step: Optional[int] = None):
+        metrics = {k: f"{v.item():.4f}" for k, v in metrics.items()}
         print(f"Epoch {epoch}: {metrics}")
         if self.use_wandb:
             wandb.log(metrics, step)
 
     def save_checkpoint(self, train_state: TrainState, epoch: int, **kwargs):
-        ckpt = {'train_state': train_state}
+        ckpt = {'train_state': flax.jax_utils.unreplicate(train_state)}
         save_args = orbax_utils.save_args_from_target(ckpt)
         self.checkpoint_manager.save(epoch, ckpt, save_kwargs={'save_args': save_args})
 

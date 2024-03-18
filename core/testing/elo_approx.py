@@ -57,7 +57,7 @@ class ApproxEloTester(BaseTester):
             ratings = jnp.full((self.total_epochs+1,), self.baseline_rating, dtype=jnp.float32)
         )
 
-    @partial(jax.pmap, static_broadcasted_argnums=(0, 1, 2, 3))
+    @partial(jax.pmap, axis_name='d', static_broadcasted_argnums=(0, 1, 2, 3))
     def test(self,
         env_step_fn: EnvStepFn,
         env_init_fn: EnvInitFn,

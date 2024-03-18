@@ -15,7 +15,7 @@ class SinglePlayerTester(BaseTester):
         super().__init__(*args, **kwargs)
         self.num_episodes = num_episodes
 
-    @partial(jax.pmap, static_broadcasted_argnums=(0, 1, 2, 3))
+    @partial(jax.pmap, axis_name='d', static_broadcasted_argnums=(0, 1, 2, 3))
     def test(self, 
         env_step_fn: EnvStepFn, 
         env_init_fn: EnvInitFn,

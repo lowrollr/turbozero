@@ -24,7 +24,7 @@ class TwoPlayerTester(BaseTester):
     def init(self, key: jax.random.PRNGKey, params: chex.ArrayTree, **kwargs) -> TwoPlayerTestState:
         return TwoPlayerTestState(key=key, best_params=params)
     
-    @partial(jax.pmap, static_broadcasted_argnums=(0, 1, 2, 3))
+    @partial(jax.pmap, axis_name='d', static_broadcasted_argnums=(0, 1, 2, 3))
     def test(self,  
         env_step_fn: EnvStepFn, 
         env_init_fn: EnvInitFn,
@@ -46,8 +46,8 @@ class TwoPlayerTester(BaseTester):
 
         results = jax.vmap(game_fn)(game_keys)
         
-        wins = (results[:, 0] > results[:, 1]).sum()
-        draws = (results[:, 0] == results[:, 1]).sum()
+        wins = jax.lax.psum((results[:, 0] > results[:, 1]).sum(), axis_name='d')
+        draws = jax.lax.psum((results[:, 0] == results[:, 1]).sum(), axis_name='d')
         
         win_rate = (wins + (0.5 * draws)) / self.num_episodes
 
