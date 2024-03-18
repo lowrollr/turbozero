@@ -23,7 +23,7 @@ class SinglePlayerTester(BaseTester):
         state: TestState, 
         params: chex.ArrayTree
     ) -> Tuple[TestState, Dict]:
-        key, subkey = jax.random.split(state.key)
+        key, subkey = jax.random.split(state.key[0])
         game_keys = jax.random.split(subkey, self.num_episodes)
 
         game_fn = partial(single_player_game,
@@ -37,5 +37,5 @@ class SinglePlayerTester(BaseTester):
 
         metrics = {'mean_reward': rewards.mean()}
 
-        return state.replace(key=key), metrics
+        return state.replace(key=[key]), metrics
         
