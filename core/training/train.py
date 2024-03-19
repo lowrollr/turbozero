@@ -250,6 +250,20 @@ class Trainer:
             state
         )
     
+    @partial(jax.pmap, axis_name='d', static_broadcasted_argnums=(0,))
+    def one_train_step(self, ts: TrainState, batch: BaseExperience) -> Tuple[TrainState, dict]:
+        grad_fn = jax.value_and_grad(self.loss_fn, has_aux=True)
+        (loss, (metrics, updates)), grads = grad_fn(ts.params, ts, batch)
+        grads = jax.lax.pmean(grads, axis_name='d')
+        ts = ts.apply_gradients(grads=grads)
+        if hasattr(ts, 'batch_stats'):
+            ts = ts.replace(batch_stats=jax.lax.pmean(updates['batch_stats'], axis_name='d'))
+        metrics = {
+            **metrics,
+            'loss': loss
+        }
+        return ts, metrics
+    
     def train_steps(self,
         collection_state: CollectionState,
         train_state: TrainState,
@@ -257,20 +271,6 @@ class Trainer:
     ) -> Tuple[CollectionState, TrainState, dict]:
         buffer_state = collection_state.buffer_state
         
-        @partial(jax.pmap, axis_name='d')
-        def one_train_step(ts: TrainState, batch: BaseExperience) -> Tuple[TrainState, dict]:
-            grad_fn = jax.value_and_grad(self.loss_fn, has_aux=True)
-            (loss, (metrics, updates)), grads = grad_fn(ts.params, ts, batch)
-            grads = jax.lax.pmean(grads, axis_name='d')
-            ts = ts.apply_gradients(grads=grads)
-            if hasattr(ts, 'batch_stats'):
-                ts = ts.replace(batch_stats=jax.lax.pmean(updates['batch_stats'], axis_name='d'))
-            metrics = {
-                **metrics,
-                'loss': loss
-            }
-            return ts, metrics
-
         key, new_key = jax.random.split(collection_state.key[0,0], 2)
         new_keys = collection_state.key.at[0,0].set(new_key)
 
@@ -282,11 +282,14 @@ class Trainer:
             batch = self.memory_buffer.sample(buffer_state, step_key, self.train_batch_size)
             batch = jax.tree_map(lambda x: x.reshape((self.num_devices, -1, *x.shape[1:])), batch)
 
-            train_state, metrics = one_train_step(train_state, batch)
+            train_state, metrics = self.one_train_step(train_state, batch)
+            if metrics:
+                batch_metrics.append(metrics)
 
-            batch_metrics.append(metrics)
-
-        metrics = {k: jnp.stack([m[k] for m in batch_metrics]).mean() for k in batch_metrics[0].keys()}
+        if batch_metrics:
+            metrics = {k: jnp.stack([m[k] for m in batch_metrics]).mean() for k in batch_metrics[0].keys()}
+        else:
+            metrics = {}
         return collection_state.replace(key=new_keys), train_state, metrics
     
     
