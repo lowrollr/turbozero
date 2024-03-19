@@ -257,10 +257,10 @@ class Trainer:
     ) -> Tuple[CollectionState, TrainState, dict]:
         buffer_state = collection_state.buffer_state
         
-        def one_train_step(ts: TrainState, key: chex.PRNGKey) -> Tuple[TrainState, dict]:
-            samples = self.memory_buffer.sample(buffer_state, key, sample_size=self.train_batch_size)
+        @partial(jax.pmap, axis_name='d')
+        def one_train_step(ts: TrainState, batch: BaseExperience) -> Tuple[TrainState, dict]:
             grad_fn = jax.value_and_grad(self.loss_fn, has_aux=True)
-            (loss, (metrics, updates)), grads = grad_fn(ts.params, ts, samples)
+            (loss, (metrics, updates)), grads = grad_fn(ts.params, ts, batch)
             grads = jax.lax.pmean(grads, axis_name='d')
             ts = ts.apply_gradients(grads=grads)
             if hasattr(ts, 'batch_stats'):
@@ -270,25 +270,23 @@ class Trainer:
                 'loss': loss
             }
             return ts, metrics
-        
-        @partial(jax.pmap, axis_name='d')
-        def train(ts: TrainState, key: chex.PRNGKey) -> Tuple[TrainState, dict]:
-            keys = jax.random.split(key, num_steps)
-            ts, metrics = jax.lax.scan(
-                one_train_step,
-                ts,
-                xs=keys,
-            )
-            # mean across steps
-            mean_metrics = jax.tree_map(lambda x: x.mean(), metrics)
-            return ts, mean_metrics
-        
-        sample_key, new_key = jax.random.split(collection_state.key[0,0], 2)
+
+        key, new_key = jax.random.split(collection_state.key[0,0], 2)
         new_keys = collection_state.key.at[0,0].set(new_key)
-        sample_keys = jax.random.split(sample_key, self.num_devices)
-        train_state, metrics = train(train_state, sample_keys)
-        # mean across devices
-        metrics = jax.tree_map(lambda x: x.mean(), metrics)
+
+        batch_metrics = []
+        
+        for _ in range(num_steps):
+            step_key, key = jax.random.split(key)
+
+            batch = self.memory_buffer.sample(buffer_state, step_key, self.train_batch_size)
+            batch = jax.tree_map(lambda x: x.reshape((self.num_devices, -1, *x.shape[1:])), batch)
+
+            train_state, metrics = one_train_step(train_state, batch)
+
+            batch_metrics.append(metrics)
+
+        metrics = {k: jnp.stack([m[k] for m in batch_metrics]).mean() for k in batch_metrics[0].keys()}
         return collection_state.replace(key=new_keys), train_state, metrics
     
     
