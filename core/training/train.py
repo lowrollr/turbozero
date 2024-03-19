@@ -214,7 +214,7 @@ class Trainer:
         buffer_state = self.memory_buffer.add_experience(
             state = state.buffer_state,
             experience = BaseExperience(
-                observation_nn=self.state_to_nn_input_fn(new_env_state),
+                observation_nn=self.state_to_nn_input_fn(state.env_state),
                 policy_mask=state.metadata.action_mask,
                 policy_weights=eval_output.policy_weights,
                 reward=jnp.empty_like(state.metadata.rewards),
