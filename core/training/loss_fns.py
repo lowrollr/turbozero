@@ -11,19 +11,17 @@ from core.memory.replay_memory import BaseExperience
 
 def az_default_loss_fn(params: chex.ArrayTree, train_state: TrainState, experience: BaseExperience, 
                        l2_reg_lambda: float = 0.0001) -> Tuple[chex.Array, Tuple[chex.ArrayTree, optax.OptState]]:
-
-    apply_input = {'params': params, 'batch_stats': train_state.batch_stats} \
-        if hasattr(train_state, 'batch_stats') else {'params': params}
-    
+    variables = train_state.variables.copy({'params': params})
     mutables = ['batch_stats'] if hasattr(train_state, 'batch_stats') else []
 
     (pred_policy, pred_value), updates = train_state.apply_fn(
-        apply_input, 
+        variables, 
         x=experience.observation_nn,
         train=True,
         mutable=mutables
     )
 
+    variables = variables.copy(updates)
     pred_policy = jnp.where(
         experience.policy_mask,
         pred_policy,
@@ -48,5 +46,5 @@ def az_default_loss_fn(params: chex.ArrayTree, train_state: TrainState, experien
         'policy_loss': policy_loss,
         'value_loss': value_loss
     }
-    return loss, (aux_metrics, updates)
+    return loss, (aux_metrics, variables)
 
