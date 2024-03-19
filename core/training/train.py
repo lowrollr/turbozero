@@ -56,19 +56,19 @@ def copy_for_devices(state: TrainState, num_devices: int) -> TrainState:
 class Trainer:
     def __init__(self,
         batch_size: int,
+        train_batch_size: int,
         warmup_steps: int,
         collection_steps_per_epoch: int,
         train_steps_per_epoch: int,
-        train_batch_size: int,
-        evaluator: Evaluator,        
-        memory_buffer: EpisodeReplayBuffer,
-        testers: List[BaseTester],
-        env_step_fn: EnvStepFn,
-        env_init_fn: EnvInitFn,
-        state_to_nn_input_fn: StateToNNInputFn,
         nn: flax.linen.Module,
         loss_fn: LossFn,
         optimizer: optax.GradientTransformation,
+        evaluator: Evaluator,        
+        memory_buffer: EpisodeReplayBuffer,
+        env_step_fn: EnvStepFn,
+        env_init_fn: EnvInitFn,
+        state_to_nn_input_fn: StateToNNInputFn,
+        testers: List[BaseTester],
         evaluator_test: Optional[Evaluator] = None,
         extract_model_params_fn: Optional[ExtractModelParamsFn] = extract_params,
         wandb_project_name: str = "",
@@ -344,10 +344,12 @@ class Trainer:
     
 
     def train_loop(self,
-        key: jax.random.PRNGKey,
+        seed: int,
         num_epochs: int,
         initial_state: Optional[TrainLoopOutput] = None
     ) -> Tuple[CollectionState, TrainState]:
+        key = jax.random.PRNGKey(seed)
+
         if initial_state:
             collection_state = initial_state.collection_state
             train_state = initial_state.train_state

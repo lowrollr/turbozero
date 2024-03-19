@@ -4,7 +4,6 @@
 from typing import Dict, Tuple
 from chex import dataclass
 import chex
-from core.evaluators.mcts.action_selection import MCTSActionSelector
 from core.evaluators.mcts.mcts import MCTS
 from core.evaluators.mcts.state import BackpropState, MCTSNode, MCTSTree
 from core.trees.tree import get_child_data, get_rng, update_node

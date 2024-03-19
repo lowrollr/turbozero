@@ -3,11 +3,10 @@ from typing import Dict
 import chex
 import jax 
 import jax.numpy as jnp
-from core.evaluators.mcts.action_selection import MCTSActionSelector
 from core.evaluators.mcts.state import MCTSTree
 from core.evaluators.mcts.mcts import MCTS
 from core.trees.tree import get_rng, set_root
-from core.types import EvalFn, StepMetadata
+from core.types import StepMetadata
 
 
 class _AlphaZero:
