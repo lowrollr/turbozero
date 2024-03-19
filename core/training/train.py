@@ -159,6 +159,7 @@ class Trainer:
             tester.check_size_compatibilities(self.num_devices)
 
 
+    @partial(jax.pmap, axis_name='d', static_broadcasted_argnums=(0,))
     def init_train_state(self, key: jax.random.PRNGKey) -> TrainState:
         sample_env_state = self.make_template_env_state()
         sample_obs = self.state_to_nn_input_fn(sample_env_state)
@@ -298,7 +299,7 @@ class Trainer:
             wandb.log(metrics, step)
 
     def save_checkpoint(self, train_state: TrainState, epoch: int, **kwargs):
-        ckpt = {'train_state': flax.jax_utils.unreplicate(train_state)}
+        ckpt = {'train_state': jax.tree_map(lambda x: x[0], train_state)}
         save_args = orbax_utils.save_args_from_target(ckpt)
         self.checkpoint_manager.save(epoch, ckpt, save_kwargs={'save_args': save_args})
 
@@ -361,8 +362,8 @@ class Trainer:
             collection_state = partition(self.init_collection_state(init_key, self.batch_size), self.num_devices)
             # initialize train state
             init_key, key = jax.random.split(key)
-            train_state = self.init_train_state(init_key)
-            train_state = flax.jax_utils.replicate(train_state)
+            init_keys = jnp.tile(init_key[None], (self.num_devices, 1))
+            train_state = self.init_train_state(init_keys)
             params = self.extract_model_params_fn(train_state)
             # initialize tester states
             tester_states = []
