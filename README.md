@@ -11,7 +11,7 @@ It contains:
 
 #### *`turbozero`* is *_fast_* and *_parallelized_*:
  * every consequential part of the training loop is JIT-compiled
- * parititions across multiple GPUs by default when available
+ * parititions across multiple GPUs by default when available 🚀 NEW! 🚀
  * self-play and evaluation episodes are batched/vmapped with hardware-acceleration in mind
 
 #### *`turbozero`* is *_extendable_*:
