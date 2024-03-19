@@ -227,13 +227,13 @@ files = [
 
 [[package]]
 name = "chex"
-version = "0.1.85"
+version = "0.1.86"
 description = "Chex: Testing made fun, in JAX!"
 optional = false
 python-versions = ">=3.9"
 files = [
-    {file = "chex-0.1.85-py3-none-any.whl", hash = "sha256:32c96719aa94045339174138a6aec14aed2630a8a17fb2633ad3eb868890551d"},
-    {file = "chex-0.1.85.tar.gz", hash = "sha256:a27cfe87119d6e1fe24ccc1438a59195e6dc1d6e0e10099fcf618c3f64771faf"},
+    {file = "chex-0.1.86-py3-none-any.whl", hash = "sha256:251c20821092323a3d9c28e1cf80e4a58180978bec368f531949bd9847eee568"},
+    {file = "chex-0.1.86.tar.gz", hash = "sha256:e8b0f96330eba4144659e1617c0f7a57b161e8cbb021e55c6d5056c7378091d1"},
 ]
 
 [package.dependencies]
@@ -440,13 +440,13 @@ testing = ["black[jupyter] (==23.7.0)", "clu", "clu (<=0.0.9)", "einops", "gymna
 
 [[package]]
 name = "fsspec"
-version = "2024.3.0"
+version = "2024.3.1"
 description = "File-system specification"
 optional = false
 python-versions = ">=3.8"
 files = [
-    {file = "fsspec-2024.3.0-py3-none-any.whl", hash = "sha256:779001bd0122c9c4975cf03827d5e86c3afb914a3ae27040f15d341ab506a693"},
-    {file = "fsspec-2024.3.0.tar.gz", hash = "sha256:f13a130c0ed07e15c4e1aeb0472a823e9c426b0b5792a1f40d902b0a71972d43"},
+    {file = "fsspec-2024.3.1-py3-none-any.whl", hash = "sha256:918d18d41bf73f0e2b261824baeb1b124bcf771767e3a26425cd7dec3332f512"},
+    {file = "fsspec-2024.3.1.tar.gz", hash = "sha256:f39780e282d7d117ffb42bb96992f8a90795e4d0fb0f661a70ca39fe9c43ded9"},
 ]
 
 [package.extras]
@@ -533,13 +533,13 @@ files = [
 
 [[package]]
 name = "importlib-resources"
-version = "6.3.1"
+version = "6.3.2"
 description = "Read resources from Python packages"
 optional = false
 python-versions = ">=3.8"
 files = [
-    {file = "importlib_resources-6.3.1-py3-none-any.whl", hash = "sha256:4811639ca7fa830abdb8e9ca0a104dc6ad13de691d9fe0d3173a71304f068159"},
-    {file = "importlib_resources-6.3.1.tar.gz", hash = "sha256:29a3d16556e330c3c8fb8202118c5ff41241cc34cbfb25989bbad226d99b7995"},
+    {file = "importlib_resources-6.3.2-py3-none-any.whl", hash = "sha256:f41f4098b16cd140a97d256137cfd943d958219007990b2afb00439fc623f580"},
+    {file = "importlib_resources-6.3.2.tar.gz", hash = "sha256:963eb79649252b0160c1afcfe5a1d3fe3ad66edd0a8b114beacffb70c0674223"},
 ]
 
 [package.extras]
@@ -655,31 +655,28 @@ tpu = ["jaxlib (==0.4.24)", "libtpu-nightly (==0.1.dev20240205)", "requests"]
 
 [[package]]
 name = "jaxlib"
-version = "0.4.25"
+version = "0.4.24"
 description = "XLA library for JAX"
 optional = false
 python-versions = ">=3.9"
 files = [
-    {file = "jaxlib-0.4.25-cp310-cp310-macosx_10_14_x86_64.whl", hash = "sha256:be1b26e96e80d42f54f77226a016717cb969d7d208d0dcb61997f19dc7b2d8e2"},
-    {file = "jaxlib-0.4.25-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:3b5cbd3a4f731636469cdaf06c4413208811ca458ee312647e8f3faca32f6445"},
-    {file = "jaxlib-0.4.25-cp310-cp310-manylinux2014_aarch64.whl", hash = "sha256:89a011330aaeaf19027bba5e3236be155cc8d73d94aa9db84d817d414f4a7647"},
-    {file = "jaxlib-0.4.25-cp310-cp310-manylinux2014_x86_64.whl", hash = "sha256:dcda74c7c8eb328cde8afeebcf21ec9240138fac54f9631a60b679a211f7e100"},
-    {file = "jaxlib-0.4.25-cp310-cp310-win_amd64.whl", hash = "sha256:fd751b10e60c085dec42bec6c27c9905f5c57d12323190eea0df10ee14c574e0"},
-    {file = "jaxlib-0.4.25-cp311-cp311-macosx_10_14_x86_64.whl", hash = "sha256:37da780cb545ca210bfa0402b5081452ad830bb06fe9e970fd16ad14d2fdc6a6"},
-    {file = "jaxlib-0.4.25-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:0df7e2193b216e195dfc7a8aa14527eb52614ec3ba4c59a199af2f17195ae1c1"},
-    {file = "jaxlib-0.4.25-cp311-cp311-manylinux2014_aarch64.whl", hash = "sha256:0ce2a25263e7504d575e8ba5ba4f53aef6fe274679785bcf87ab06b0aaec0b90"},
-    {file = "jaxlib-0.4.25-cp311-cp311-manylinux2014_x86_64.whl", hash = "sha256:a0dd09cbb62583941872b6a198894e87a1b64d8e4dd6b53946dbb41d642b8f5f"},
-    {file = "jaxlib-0.4.25-cp311-cp311-win_amd64.whl", hash = "sha256:dfb1ef8c2e6a01ecb60f8833552ff077cd593154fd75739050fba9148879a2a4"},
-    {file = "jaxlib-0.4.25-cp312-cp312-macosx_10_14_x86_64.whl", hash = "sha256:425d6f3fa57ea1d1674ae84b5a3d3588ba0937f3c47fd4f166eb84c4240887b8"},
-    {file = "jaxlib-0.4.25-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:0e97542bbd89f4316d2feb599119d8a43440ca151b7a165eff0fc127cf4512e7"},
-    {file = "jaxlib-0.4.25-cp312-cp312-manylinux2014_aarch64.whl", hash = "sha256:c4e3bc32aea275e025e762612216954626478c9cf5c44131e248cdd17e361efd"},
-    {file = "jaxlib-0.4.25-cp312-cp312-manylinux2014_x86_64.whl", hash = "sha256:dcfb71a7f559c13734584769ca30373bc4b73d0fe105790462370e49f35dcbe4"},
-    {file = "jaxlib-0.4.25-cp312-cp312-win_amd64.whl", hash = "sha256:f7aa9682b6806e4197ad51294e87e77f04f5eee7ced4e841aa7ccc7320c6d96b"},
-    {file = "jaxlib-0.4.25-cp39-cp39-macosx_10_14_x86_64.whl", hash = "sha256:6660b68741286bd4b849c149d86a8c36e448f7e39e1d483e79dab79ea300bf1b"},
-    {file = "jaxlib-0.4.25-cp39-cp39-macosx_11_0_arm64.whl", hash = "sha256:32881f93d5de195a0fd19e091a2aa89418fa27f630d30c79b4613a51cff4d1c6"},
-    {file = "jaxlib-0.4.25-cp39-cp39-manylinux2014_aarch64.whl", hash = "sha256:ad1ab653265c33b8d54bdcc40867a8ffd61fea879176e4d4cd0b585fe52521fc"},
-    {file = "jaxlib-0.4.25-cp39-cp39-manylinux2014_x86_64.whl", hash = "sha256:0fd113ab414de856f90f07264e6ccd0cb95d392f3579c0deab4ff0943ef75f73"},
-    {file = "jaxlib-0.4.25-cp39-cp39-win_amd64.whl", hash = "sha256:b11aef2bd6cf873b39399fda122170b625776d977bbc56b4635f46c396279b8b"},
+    {file = "jaxlib-0.4.24-cp310-cp310-macosx_10_14_x86_64.whl", hash = "sha256:be1c942f0fb3069cf55048b6b6a80131013363d6ba601804220e80e0f3e1ddb4"},
+    {file = "jaxlib-0.4.24-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:2e02023b20c6b6cf38d12410261fb238ca1b30049beb6965bc98e91af873ad2c"},
+    {file = "jaxlib-0.4.24-cp310-cp310-manylinux2014_aarch64.whl", hash = "sha256:0bcabf20b7004b3c0e0072904bced64bb15590d898d9dfa8b2f1d82c7fbacf9b"},
+    {file = "jaxlib-0.4.24-cp310-cp310-manylinux2014_x86_64.whl", hash = "sha256:fd5c142086bb993b3fc0bcf402bb047cdaf3da91ab895553e465fd5d1151c5f6"},
+    {file = "jaxlib-0.4.24-cp310-cp310-win_amd64.whl", hash = "sha256:fdb129e52bc2561b88bd009dc7a9375d0fe9a2f523dbe0974e653658b379a739"},
+    {file = "jaxlib-0.4.24-cp311-cp311-macosx_10_14_x86_64.whl", hash = "sha256:e038f974418a6fd8698371e556880d3b519cf5489b261cb57b29b69a38afc404"},
+    {file = "jaxlib-0.4.24-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:56dbb05f1baba52a75288f2dcb56e2cece5c772f061013763204b6dbbb0e0a61"},
+    {file = "jaxlib-0.4.24-cp311-cp311-manylinux2014_aarch64.whl", hash = "sha256:2225761734434e357e1f6d73a7945a6577d94feee99ec8bdce9eaea855ec3107"},
+    {file = "jaxlib-0.4.24-cp311-cp311-manylinux2014_x86_64.whl", hash = "sha256:5493bf555c01164384b6ae32fec2d580057c0ae9e0d352542e2b93e96f7a13ff"},
+    {file = "jaxlib-0.4.24-cp312-cp312-macosx_10_14_x86_64.whl", hash = "sha256:f7f8f0ff0afaa140fda4e69d54068c44bd3cea254c517c1582750c706d5436f1"},
+    {file = "jaxlib-0.4.24-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:148c0ae421b29108ed7ae5b32d99dbb408202312d078657de9b5e5646132b4dd"},
+    {file = "jaxlib-0.4.24-cp312-cp312-manylinux2014_aarch64.whl", hash = "sha256:8ebcbd903a85d5999f04df03e944fd2b93e802c69f313e081a4a5c1a49dac523"},
+    {file = "jaxlib-0.4.24-cp312-cp312-manylinux2014_x86_64.whl", hash = "sha256:4e5ac656d6f73532e686720b58f2c947e8c8482679494578c31345a527e4081a"},
+    {file = "jaxlib-0.4.24-cp39-cp39-macosx_10_14_x86_64.whl", hash = "sha256:3a031e767f461c6b394c765fde990fdc0c3f8c9d2f2f9a8ad5bf8bcdfeb7e089"},
+    {file = "jaxlib-0.4.24-cp39-cp39-macosx_11_0_arm64.whl", hash = "sha256:db7250651c0c2edb7bb0afc994206aa91c9f4d520054914ddac2fe9c091082f5"},
+    {file = "jaxlib-0.4.24-cp39-cp39-manylinux2014_aarch64.whl", hash = "sha256:01dc5e63af01824658f73f1fb35c8c95ce96cde07c388963c83f86fc1249697c"},
+    {file = "jaxlib-0.4.24-cp39-cp39-manylinux2014_x86_64.whl", hash = "sha256:e8fe40acca0b6625241d4a10fe625c71b363e7fede97fa29f90a3a706437df11"},
 ]
 
 [package.dependencies]
@@ -1842,13 +1839,13 @@ zstd = ["zstandard (>=0.18.0)"]
 
 [[package]]
 name = "wandb"
-version = "0.16.4"
+version = "0.16.2"
 description = "A CLI and library for interacting with the Weights & Biases API."
 optional = false
 python-versions = ">=3.7"
 files = [
-    {file = "wandb-0.16.4-py3-none-any.whl", hash = "sha256:bb9eb5aa2c2c85e11c76040c4271366f54d4975167aa6320ba86c3f2d97fe5fa"},
-    {file = "wandb-0.16.4.tar.gz", hash = "sha256:8752c67d1347a4c29777e64dc1e1a742a66c5ecde03aebadf2b0d62183fa307c"},
+    {file = "wandb-0.16.2-py3-none-any.whl", hash = "sha256:6b119cf3c01f35e7276b62d052128e5320621d182c9eb5796a12cf62a9b3134f"},
+    {file = "wandb-0.16.2.tar.gz", hash = "sha256:e40cd79ea6272fe4762a80b9f47b172e141daeb3b56eb9d1e192ebd10752e64e"},
 ]
 
 [package.dependencies]
@@ -1869,13 +1866,11 @@ async = ["httpx (>=0.23.0)"]
 aws = ["boto3"]
 azure = ["azure-identity", "azure-storage-blob"]
 gcp = ["google-cloud-storage"]
-importers = ["filelock", "mlflow", "polars", "rich", "tenacity"]
 kubeflow = ["google-cloud-storage", "kubernetes", "minio", "sh"]
-launch = ["PyYAML (>=6.0.0)", "awscli", "azure-containerregistry", "azure-identity", "azure-storage-blob", "boto3", "botocore", "chardet", "google-auth", "google-cloud-aiplatform", "google-cloud-artifact-registry", "google-cloud-compute", "google-cloud-storage", "iso8601", "kubernetes", "kubernetes-asyncio", "nbconvert", "nbformat", "optuna", "pydantic", "tomli", "typing-extensions"]
+launch = ["PyYAML (>=6.0.0)", "awscli", "azure-containerregistry", "azure-identity", "azure-storage-blob", "boto3", "botocore", "chardet", "google-auth", "google-cloud-aiplatform", "google-cloud-artifact-registry", "google-cloud-compute", "google-cloud-storage", "iso8601", "kubernetes", "kubernetes-asyncio", "nbconvert", "nbformat", "optuna", "pydantic", "typing-extensions"]
 media = ["bokeh", "moviepy", "numpy", "pillow", "plotly (>=5.18.0)", "rdkit-pypi", "soundfile"]
 models = ["cloudpickle"]
 perf = ["orjson"]
-reports = ["pydantic (>=2.0.0)"]
 sweeps = ["sweeps (>=0.2.0)"]
 
 [[package]]
@@ -1907,4 +1902,4 @@ testing = ["big-O", "jaraco.functools", "jaraco.itertools", "more-itertools", "p
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.10"
-content-hash = "502659d44ea4b2abd6d2c87c7f8a5e4c19e11dacf398ced438abf0b3d81bad76"
+content-hash = "39990355c6c274642f8101141f61d10efb2584e3be3465d5a4222f5e98cb0677"
