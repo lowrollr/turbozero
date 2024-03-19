@@ -294,8 +294,8 @@ class Trainer:
     
     
     def log_metrics(self, metrics: dict, epoch: int, step: Optional[int] = None):
-        metrics = {k: f"{v.item():.4f}" for k, v in metrics.items()}
-        print(f"Epoch {epoch}: {metrics}")
+        metrics_str = {k: f"{v.item():.4f}" for k, v in metrics.items()}
+        print(f"Epoch {epoch}: {metrics_str}")
         if self.use_wandb:
             wandb.log(metrics, step)
 
