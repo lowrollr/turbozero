@@ -1,6 +1,6 @@
 
 from functools import partial
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 import chex
 import jax
 import optax
@@ -56,16 +56,24 @@ class ApproxEloTester(BaseTester):
             matchup_matrix = jnp.zeros((self.total_epochs+1,self.total_epochs+1,2), dtype=jnp.float32),
             ratings = jnp.full((self.total_epochs+1,), self.baseline_rating, dtype=jnp.float32)
         )
+    
 
-    @partial(jax.jit, static_argnums=(0, 1, 2, 3))
+    def check_size_compatibilities(self, num_devices: int) -> None:
+        if self.episodes_per_opponent % num_devices != 0:
+            raise ValueError(f"{self.__class__.__name__}: episodes_per_opponent ({self.episodes_per_opponent}) must be divisible by number of devices ({num_devices})")
+
+    @partial(jax.pmap, axis_name='d', static_broadcasted_argnums=(0, 1, 2, 3, 4))
     def test(self,
         env_step_fn: EnvStepFn,
         env_init_fn: EnvInitFn,
         evaluator: Evaluator,
+        num_partitions: int,
         state: TestState,
         params: chex.ArrayTree         
-    ) -> [ApproxEloTesterState, Dict]:
-        num_episodes = self.episodes_per_opponent * self.num_opponents
+    ) -> Tuple[ApproxEloTesterState, Dict]:
+        
+        episodes_per_opponent = self.episodes_per_opponent // num_partitions
+        num_episodes = episodes_per_opponent * self.num_opponents
 
         key, subkey = jax.random.split(state.key)
         game_keys = jax.random.split(subkey, num_episodes)
@@ -79,12 +87,12 @@ class ApproxEloTester(BaseTester):
         )
         
         opponent_params = jax.tree_util.tree_map(
-            lambda x: jnp.tile(x, (self.episodes_per_opponent, *([1] * (len(x.shape) - 1)))),
+            lambda x: jnp.tile(x, (episodes_per_opponent, *([1] * (len(x.shape) - 1)))),
             state.past_opponent_params
         )
 
-        opp_ids = jnp.tile(state.past_opponent_ids, self.episodes_per_opponent)
-        opp_mask = jnp.tile(state.past_opponent_mask, self.episodes_per_opponent)
+        opp_ids = jnp.tile(state.past_opponent_ids, episodes_per_opponent)
+        opp_mask = jnp.tile(state.past_opponent_mask, episodes_per_opponent)
 
         results = jax.vmap(game_fn)(game_keys, params_2=opponent_params)
 
@@ -126,8 +134,7 @@ class ApproxEloTester(BaseTester):
             params
         )
 
-        new_opponent_ids = state.past_opponent_ids.at[state.next_idx].set(state.generation)
-    
+        new_opponent_ids = state.past_opponent_ids.at[state.next_idx].set(state.generation)    
 
         return state.replace(
             key=key,

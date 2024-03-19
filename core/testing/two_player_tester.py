@@ -3,7 +3,7 @@
 
 
 from functools import partial
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 from chex import dataclass
 import chex
 import jax
@@ -24,16 +24,22 @@ class TwoPlayerTester(BaseTester):
     def init(self, key: jax.random.PRNGKey, params: chex.ArrayTree, **kwargs) -> TwoPlayerTestState:
         return TwoPlayerTestState(key=key, best_params=params)
     
-    @partial(jax.jit, static_argnums=(0, 1, 2, 3))
+    def check_size_compatibilities(self, num_devices: int) -> None:
+        if self.num_episodes % num_devices != 0:
+            raise ValueError(f"{self.__class__.__name__}: number of episodes ({self.num_episodes}) must be divisible by number of devices ({num_devices})")
+
+    @partial(jax.pmap, axis_name='d', static_broadcasted_argnums=(0, 1, 2, 3, 4))
     def test(self,  
         env_step_fn: EnvStepFn, 
         env_init_fn: EnvInitFn,
         evaluator: Evaluator,
+        num_partitions: int,
         state: TestState, 
         params: chex.ArrayTree
-    ) -> [TwoPlayerTestState, Dict]:
+    ) -> Tuple[TwoPlayerTestState, Dict]:
         key, subkey = jax.random.split(state.key)
-        game_keys = jax.random.split(subkey, self.num_episodes)
+        num_episodes = self.num_episodes // num_partitions
+        game_keys = jax.random.split(subkey, num_episodes)
 
         game_fn = partial(two_player_game,
             evaluator_1 = evaluator,
@@ -49,7 +55,7 @@ class TwoPlayerTester(BaseTester):
         wins = (results[:, 0] > results[:, 1]).sum()
         draws = (results[:, 0] == results[:, 1]).sum()
         
-        win_rate = (wins + (0.5 * draws)) / self.num_episodes
+        win_rate = (wins + (0.5 * draws)) / num_episodes
 
         metrics = {
             "performance_vs_best": win_rate

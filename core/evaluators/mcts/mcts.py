@@ -79,7 +79,7 @@ class MCTS(Evaluator):
         - `MCTSOutput`: contains new tree state, selected action, root value, and policy weights
         """
         eval_state = self.update_root(eval_state, env_state, params, root_metadata=root_metadata)
-        iterate = partial(self.iterate, 
+        iterate = partial(self.iterate,
             params=params,
             env_step_fn=env_step_fn
         )
@@ -96,9 +96,7 @@ class MCTS(Evaluator):
 
     def update_root(self, tree: MCTSTree, root_embedding: chex.ArrayTree, 
                     params: chex.ArrayTree, **kwargs) -> MCTSTree:
-        """Populates the root node of an MCTSTree.
-        
-        """
+        """Populates the root node of an MCTSTree."""
         key, tree = get_rng(tree)
         root_policy_logits, root_value = self.eval_fn(root_embedding, params, key)
         root_policy = jax.nn.softmax(root_policy_logits)
@@ -124,9 +122,9 @@ class MCTS(Evaluator):
 
         tree = jax.lax.cond(
             node_exists,
-            lambda _: update_node(tree, node_idx, self.visit_node(node=tree.at(node_idx), value=value, p=policy, 
-                                 terminated=metadata.terminated, embedding=new_embedding)), 
-            lambda _: add_node(tree, parent, action, 
+            lambda _: update_node(tree, node_idx, self.visit_node(node=tree.at(node_idx), value=value, p=policy,
+                                 terminated=metadata.terminated, embedding=new_embedding)),
+            lambda _: add_node(tree, parent, action,
                 self.new_node(policy=policy, value=value, terminated=metadata.terminated, embedding=new_embedding)),
             None
         )

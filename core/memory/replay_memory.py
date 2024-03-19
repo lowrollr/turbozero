@@ -11,7 +11,8 @@ class BaseExperience:
     reward: chex.Array
     policy_weights: chex.Array
     policy_mask: chex.Array
-    env_state: chex.ArrayTree
+    observation_nn: chex.Array
+    cur_player_id: chex.Array
 
 @dataclass(frozen=True)
 class ReplayBufferState:
@@ -95,7 +96,7 @@ class EpisodeReplayBuffer:
         )(keys, self.capacity, template_experience)
     
     # assumes input is batched!! (dont vmap)
-    def sample_across_batches(self,
+    def sample(self,
         state: ReplayBufferState,
         key: jax.random.PRNGKey,
         sample_size: int
@@ -106,18 +107,23 @@ class EpisodeReplayBuffer:
             state.has_reward
         ).reshape(-1)
 
+        num_partitions = state.populated.shape[0]
+        num_batches = state.populated.shape[1]
+
         indices = jax.random.choice(
             key,
-            self.capacity * state.populated.shape[0],
+            self.capacity * num_partitions * num_batches,
             shape=(sample_size,),
             replace=False,
             p = masked_weights / masked_weights.sum()
         )
-        batch_indices = indices // self.capacity
+
+        partition_indices = indices // (self.capacity * num_batches)
+        batch_indices = (indices // self.capacity) % num_partitions
         item_indices = indices % self.capacity
 
         sampled_buffer_items = jax.tree_util.tree_map(
-            lambda x: x[batch_indices, item_indices],
+            lambda x: x[partition_indices, batch_indices, item_indices],
             state.buffer
         )
 
