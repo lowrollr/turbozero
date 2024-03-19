@@ -56,17 +56,22 @@ class ApproxEloTester(BaseTester):
             matchup_matrix = jnp.zeros((self.total_epochs+1,self.total_epochs+1,2), dtype=jnp.float32),
             ratings = jnp.full((self.total_epochs+1,), self.baseline_rating, dtype=jnp.float32)
         )
+    
 
-    @partial(jax.pmap, axis_name='d', static_broadcasted_argnums=(0, 1, 2, 3))
+    def check_size_compatibilities(self, num_devices: int) -> None:
+        if self.episodes_per_opponent % num_devices != 0:
+            raise ValueError(f"{self.__class__.__name__}: episodes_per_opponent ({self.episodes_per_opponent}) must be divisible by number of devices ({num_devices})")
+
+    @partial(jax.pmap, axis_name='d', static_broadcasted_argnums=(0, 1, 2, 3, 4))
     def test(self,
         env_step_fn: EnvStepFn,
         env_init_fn: EnvInitFn,
         evaluator: Evaluator,
+        num_partitions: int,
         state: TestState,
         params: chex.ArrayTree         
     ) -> Tuple[ApproxEloTesterState, Dict]:
-        num_episodes = self.episodes_per_opponent * self.num_opponents
-
+        num_episodes = self.episodes_per_opponent * self.num_opponents // num_partitions
         key, subkey = jax.random.split(state.key)
         game_keys = jax.random.split(subkey, num_episodes)
         
@@ -126,8 +131,7 @@ class ApproxEloTester(BaseTester):
             params
         )
 
-        new_opponent_ids = state.past_opponent_ids.at[state.next_idx].set(state.generation)
-    
+        new_opponent_ids = state.past_opponent_ids.at[state.next_idx].set(state.generation)    
 
         return state.replace(
             key=key,

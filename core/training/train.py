@@ -55,6 +55,10 @@ def copy_for_devices(state: TrainState, num_devices: int) -> TrainState:
 
 class Trainer:
     def __init__(self,
+        batch_size: int,
+        warmup_steps: int,
+        collection_steps_per_epoch: int,
+        train_steps_per_epoch: int,
         train_batch_size: int,
         evaluator: Evaluator,        
         memory_buffer: EpisodeReplayBuffer,
@@ -69,8 +73,16 @@ class Trainer:
         extract_model_params_fn: Optional[ExtractModelParamsFn] = extract_params,
         wandb_project_name: str = "",
         ckpt_dir: str = "/tmp/turbozero_checkpoints",
-        max_checkpoints: int = 2
+        max_checkpoints: int = 2,
+        num_devices: Optional[int] = None,
+        wandb_run: Optional[Any] = None,
+        extra_wandb_config: Optional[dict] = None
     ):
+        self.batch_size = batch_size
+        self.warmup_steps = warmup_steps
+        self.collection_steps_per_epoch = collection_steps_per_epoch
+        self.train_steps_per_epoch = train_steps_per_epoch
+
         self.train_batch_size = train_batch_size
         self.evaluator_train = evaluator
         self.evaluator_test = evaluator_test if evaluator_test is not None else evaluator
@@ -111,6 +123,41 @@ class Trainer:
         self.use_wandb = wandb_project_name != ""
         self.template_env_state = self.make_template_env_state()
         
+        self.num_devices = num_devices if num_devices is not None else jax.local_device_count()
+
+        if self.use_wandb:
+            if wandb_run is not None:
+                self.run = wandb_run
+            else:
+                self.run = self.init_wandb(wandb_project_name, extra_wandb_config)
+        else:
+            self.run = None
+
+        # check batch sizes, etc. are compatible with number of devices
+        self.check_size_compatibilities()
+
+
+    def init_wandb(self, project_name: str, extra_wandb_config: Optional[dict]):
+        if extra_wandb_config is None:
+            extra_wandb_config = {} 
+        return wandb.init(
+            project=project_name,
+            config={**self.get_config(), **extra_wandb_config}
+        )
+    
+
+    def check_size_compatibilities(self):
+        err_fmt = "Batch size must be divisible by the number of devices. Got {b} batch size and {d} devices."
+        # check train batch size
+        if self.train_batch_size % self.num_devices != 0:
+            raise ValueError(err_fmt.format(b=self.train_batch_size, d=self.num_devices))
+        # check collection batch size
+        if self.batch_size % self.num_devices != 0:
+            raise ValueError(err_fmt.format(b=self.batch_size, d=self.num_devices))
+        # check testers 
+        for tester in self.testers:
+            tester.check_size_compatibilities(self.num_devices)
+
 
     def init_train_state(self, key: jax.random.PRNGKey) -> TrainState:
         sample_env_state = self.make_template_env_state()
@@ -134,7 +181,12 @@ class Trainer:
         
     def get_config(self):
         return {
+            'batch_size': self.batch_size,
             'train_batch_size': self.train_batch_size,
+            'warmup_steps': self.warmup_steps,
+            'collection_steps_per_epoch': self.collection_steps_per_epoch,
+            'train_steps_per_epoch': self.train_steps_per_epoch,
+            'num_devices': self.num_devices,
             'evaluator_train': self.evaluator_train.__class__.__name__,
             'evaluator_train_config': self.evaluator_train.get_config(),
             'evaluator_test': self.evaluator_test.__class__.__name__,
@@ -142,6 +194,7 @@ class Trainer:
             'memory_buffer': self.memory_buffer.__class__.__name__,
             'memory_buffer_config': self.memory_buffer.get_config(),
         }
+    
     
     def collect(self,
         state: CollectionState,
@@ -205,8 +258,6 @@ class Trainer:
         
         def one_train_step(ts: TrainState, key: chex.PRNGKey) -> Tuple[TrainState, dict]:
             samples = self.memory_buffer.sample(buffer_state, key, sample_size=self.train_batch_size)
-            # re-partition samples across available devices
-            # partitioned_samples = partition(samples, jax.local_device_count())
             grad_fn = jax.value_and_grad(self.loss_fn, has_aux=True)
             (loss, (metrics, updates)), grads = grad_fn(ts.params, ts, samples)
             grads = jax.lax.pmean(grads, axis_name='d')
@@ -233,7 +284,7 @@ class Trainer:
         
         sample_key, new_key = jax.random.split(collection_state.key[0,0], 2)
         new_keys = collection_state.key.at[0,0].set(new_key)
-        sample_keys = jax.random.split(sample_key, jax.local_device_count())
+        sample_keys = jax.random.split(sample_key, self.num_devices)
         train_state, metrics = train(train_state, sample_keys)
         # mean across devices
         metrics = jax.tree_map(lambda x: x.mean(), metrics)
@@ -291,90 +342,71 @@ class Trainer:
             buffer_state=buffer_state,
             metadata=metadata
         )
+    
 
     def train_loop(self,
         key: jax.random.PRNGKey,
-        batch_size: int,
-        
-        warmup_steps: int,
-        collection_steps_per_epoch: int,
-        train_steps_per_epoch: int,
         num_epochs: int,
-        cur_epoch: int = 0,
-        train_state: Optional[TrainState] = None,
-        collection_state: Optional[CollectionState] = None,
-        test_states: List[chex.ArrayTree] = [], 
-        wandb_run: Optional[Any] = None,
-        extra_wandb_config: Optional[dict] = None,
-        num_devices: Optional[int] = None
+        initial_state: Optional[TrainLoopOutput] = None
     ) -> Tuple[CollectionState, TrainState]:
-        if num_devices is None:
-            num_devices = jax.local_device_count()
-        if batch_size % num_devices != 0:
-            raise ValueError(f"Batch size must be divisible by the number of devices. Got {batch_size} batch size and {num_devices} devices.")
-        if test_states is None:
-            test_states = []
-        if extra_wandb_config is None:
-            extra_wandb_config = {}
-        
-        if wandb_run is None and self.use_wandb:
-            self.run = wandb.init(
-            # Set the project where this run will be logged
-                project=self.wandb_project_name,
-                # Track hyperparameters and run metadata
-                config={
-                    'collection_batch_size': batch_size,
-                    'warmup_steps': warmup_steps,
-                    'collection_steps_per_epoch': collection_steps_per_epoch,
-                    'train_steps_per_epoch': train_steps_per_epoch,
-                    **self.get_config(), **extra_wandb_config
-                },
-            )
-
-        if train_state is None:
-            train_key, key = jax.random.split(key)
-            train_state = self.init_train_state(train_key)
+        if initial_state:
+            collection_state = initial_state.collection_state
+            train_state = initial_state.train_state
+            tester_states = initial_state.test_states
+            cur_epoch = initial_state.cur_epoch
+        else:
+            cur_epoch = 0
+            # initialize collection state
+            init_key, key = jax.random.split(key)
+            collection_state = partition(self.init_collection_state(init_key, self.batch_size), self.num_devices)
+            # initialize train state
+            init_key, key = jax.random.split(key)
+            train_state = self.init_train_state(init_key)
             train_state = flax.jax_utils.replicate(train_state)
-
-        if not test_states:
+            params = self.extract_model_params_fn(train_state)
+            # initialize tester states
+            tester_states = []
             for tester in self.testers:
                 tester_init_key, key = jax.random.split(key)
-                init_keys = jax.random.split(tester_init_key, num_devices)
-                state = tester.init(init_keys, params=self.extract_model_params_fn(train_state))
-                test_states.append(state)
+                init_keys = jax.random.split(tester_init_key, self.num_devices)
+                state = jax.pmap(tester.init, axis_name='d')(init_keys, params)
+                tester_states.append(state)
         
-        if collection_state is None:
-            init_key, key = jax.random.split(key)
-            collection_state = partition(self.init_collection_state(init_key, batch_size), num_devices)
-
-
-        params = self.extract_model_params_fn(train_state)
+        # warmup
+        # populate replay buffer with initial self-play games
         collect = jax.vmap(self.collect_steps, in_axes=(1, None, None), out_axes=1)
-        collection_state = collect(collection_state, params, warmup_steps)
+        params = self.extract_model_params_fn(train_state)
+        collection_state = collect(collection_state, params, self.warmup_steps)
 
-
+        # training loop
         while cur_epoch < num_epochs:
-            collection_steps = batch_size * (cur_epoch+1) * collection_steps_per_epoch
-            collection_state = collect(collection_state, params, collection_steps_per_epoch)
-            collection_state, train_state, metrics = self.train_steps(collection_state, train_state, train_steps_per_epoch)
+            # collect self-play games
+            collection_state = collect(collection_state, params, self.collection_steps_per_epoch)
+            # train
+            collection_state, train_state, metrics = self.train_steps(collection_state, train_state, self.train_steps_per_epoch)
+            # log metrics
+            collection_steps = self.batch_size * (cur_epoch+1) * self.collection_steps_per_epoch
             self.log_metrics(metrics, cur_epoch, step=collection_steps)
+
+            # test 
             params = self.extract_model_params_fn(train_state)
-            
-            for i, test_state in enumerate(test_states):
+            for i, test_state in enumerate(tester_states):
                 new_test_state, metrics = self.testers[i].run(
-                    cur_epoch, self.env_step_fn, self.env_init_fn, 
-                    self.evaluator_test, test_state, params)
+                    cur_epoch, self.env_step_fn, self.env_init_fn,
+                    self.evaluator_test, self.num_devices, test_state, params)
                 metrics = {k: v.mean() for k, v in metrics.items()}
                 self.log_metrics(metrics, cur_epoch, step=collection_steps)
-                test_states[i] = new_test_state
-
-            cur_epoch += 1
+                tester_states[i] = new_test_state
+            # save checkpoint
             self.save_checkpoint(train_state, cur_epoch)
-    
+            # next epoch
+            cur_epoch += 1
+            
+        # return state so that training can be continued!
         return TrainLoopOutput(
             collection_state=collection_state,
             train_state=train_state,
-            test_states=test_states,
+            test_states=tester_states,
             cur_epoch=cur_epoch
         )
 
