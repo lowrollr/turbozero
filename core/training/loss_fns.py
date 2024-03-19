@@ -24,8 +24,6 @@ def az_default_loss_fn(params: chex.ArrayTree, train_state: TrainState, experien
         mutable=mutables
     )
 
-    variables = variables.copy(updates)
-
     pred_policy = jnp.where(
         experience.policy_mask,
         pred_policy,
@@ -50,5 +48,5 @@ def az_default_loss_fn(params: chex.ArrayTree, train_state: TrainState, experien
         'policy_loss': policy_loss,
         'value_loss': value_loss
     }
-    return loss, (aux_metrics, variables)
+    return loss, (aux_metrics, updates)
 
