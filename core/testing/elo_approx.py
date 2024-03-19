@@ -71,7 +71,10 @@ class ApproxEloTester(BaseTester):
         state: TestState,
         params: chex.ArrayTree         
     ) -> Tuple[ApproxEloTesterState, Dict]:
-        num_episodes = self.episodes_per_opponent * self.num_opponents // num_partitions
+        
+        episodes_per_opponent = self.episodes_per_opponent // num_partitions
+        num_episodes = episodes_per_opponent * self.num_opponents
+
         key, subkey = jax.random.split(state.key)
         game_keys = jax.random.split(subkey, num_episodes)
         
@@ -84,12 +87,12 @@ class ApproxEloTester(BaseTester):
         )
         
         opponent_params = jax.tree_util.tree_map(
-            lambda x: jnp.tile(x, (self.episodes_per_opponent, *([1] * (len(x.shape) - 1)))),
+            lambda x: jnp.tile(x, (episodes_per_opponent, *([1] * (len(x.shape) - 1)))),
             state.past_opponent_params
         )
 
-        opp_ids = jnp.tile(state.past_opponent_ids, self.episodes_per_opponent)
-        opp_mask = jnp.tile(state.past_opponent_mask, self.episodes_per_opponent)
+        opp_ids = jnp.tile(state.past_opponent_ids, episodes_per_opponent)
+        opp_mask = jnp.tile(state.past_opponent_mask, episodes_per_opponent)
 
         results = jax.vmap(game_fn)(game_keys, params_2=opponent_params)
 
