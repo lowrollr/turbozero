@@ -114,40 +114,57 @@ class TwoPlayerGameState:
     key: jax.random.PRNGKey
     env_state: chex.ArrayTree
     env_state_metadata: StepMetadata
-    active_eval_state: chex.ArrayTree
-    other_eval_state: chex.ArrayTree
+    p1_eval_state: chex.ArrayTree
+    p2_eval_state: chex.ArrayTree
     outcomes: float
     completed: bool
 
 
 def two_player_game_step(
     state: TwoPlayerGameState,
-    active_evaluator: Evaluator,
-    other_evaluator: Evaluator,
+    p1_evaluator: Evaluator,
+    p2_evaluator: Evaluator,
     params: chex.ArrayTree,
     env_step_fn: EnvStepFn,
     env_init_fn: EnvInitFn,
+    use_p1: bool
 ) -> TwoPlayerGameState:
+    if use_p1:
+        active_evaluator = p1_evaluator
+        other_evaluator = p2_evaluator
+        active_eval_state = state.p1_eval_state
+        other_eval_state = state.p2_eval_state
+    else:
+        active_evaluator = p2_evaluator
+        other_evaluator = p1_evaluator
+        active_eval_state = state.p2_eval_state
+        other_eval_state = state.p1_eval_state
+
     step_key, key = jax.random.split(state.key)
     output, env_state, env_state_metadata, terminated, rewards = step_env_and_evaluator(
         key = step_key,
         env_state = state.env_state,
         env_state_metadata = state.env_state_metadata,
-        eval_state = state.active_eval_state,
+        eval_state = active_eval_state,
         params = params,
         evaluator = active_evaluator,
         env_step_fn = env_step_fn,
         env_init_fn = env_init_fn
     )
     active_eval_state = output.eval_state
-    other_eval_state = other_evaluator.step(state.other_eval_state, output.action)
+    other_eval_state = other_evaluator.step(other_eval_state, output.action)
+
+    if use_p1:
+        p1_eval_state, p2_eval_state = active_eval_state, other_eval_state
+    else:
+        p1_eval_state, p2_eval_state = other_eval_state, active_eval_state
 
     return state.replace(
         key = key,
         env_state = env_state,
         env_state_metadata = env_state_metadata,
-        active_eval_state = other_eval_state,
-        other_eval_state = active_eval_state,
+        p1_eval_state = p1_eval_state,
+        p2_eval_state = p2_eval_state,
         outcomes=jnp.where(
             (terminated & ~state.completed)[..., None],
             rewards,
@@ -175,35 +192,22 @@ def two_player_game(
     env_state, metadata = env_init_fn(env_key)    
     # init evaluator states
     eval1_key, eval2_key = jax.random.split(eval_key, 2)
-    evaluator_1_state = evaluator_1.init(eval1_key, template_embedding=env_state)
-    evaluator_2_state = evaluator_2.init(eval2_key, template_embedding=env_state)
+    p1_eval_state = evaluator_1.init(eval1_key, template_embedding=env_state)
+    p2_eval_state = evaluator_2.init(eval2_key, template_embedding=env_state)
     # compile step functions
-    step_p1 = partial(two_player_game_step,
-        active_evaluator=evaluator_1,
-        other_evaluator=evaluator_2,
-        params=params_1,
+    game_step = partial(two_player_game_step,
+        p1_evaluator=evaluator_1,
+        p2_evaluator=evaluator_2,
         env_step_fn=env_step_fn,
-        env_init_fn=env_init_fn,
+        env_init_fn=env_init_fn
     )
-
-    step_p2 = partial(two_player_game_step,
-        active_evaluator=evaluator_2,
-        other_evaluator=evaluator_1,
-        params=params_2,
-        env_step_fn=env_step_fn,
-        env_init_fn=env_init_fn,
-    )
+    step_p1 = partial(game_step, params=params_1, use_p1=True)
+    step_p2 = partial(game_step, params=params_2, use_p1=False)
     
     # determine who goes first
     first_player = jax.random.randint(turn_key, (), 0, 2)
     p1_first = first_player == 0
 
-    active_state, other_state = jax.lax.cond(
-        p1_first,
-        lambda _: (evaluator_1_state, evaluator_2_state),
-        lambda _: (evaluator_2_state, evaluator_1_state),
-        None
-    )
     
     p1_id, p2_id = jax.lax.cond(
         p1_first,
@@ -216,8 +220,8 @@ def two_player_game(
         key = key,
         env_state = env_state,
         env_state_metadata = metadata,
-        active_eval_state = active_state,
-        other_eval_state = other_state,
+        p1_eval_state = p1_eval_state,
+        p2_eval_state = p2_eval_state,
         outcomes = jnp.zeros((2,), dtype=jnp.float32),
         completed = jnp.zeros((), dtype=jnp.bool_)
     )     

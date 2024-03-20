@@ -373,7 +373,7 @@ class Trainer:
             for tester in self.testers:
                 tester_init_key, key = jax.random.split(key)
                 init_keys = jax.random.split(tester_init_key, self.num_devices)
-                state = jax.pmap(tester.init, axis_name='d')(init_keys, params)
+                state = jax.pmap(tester.init, axis_name='d')(init_keys, params=params)
                 tester_states.append(state)
         
         # warmup
@@ -400,6 +400,8 @@ class Trainer:
                     self.evaluator_test, self.num_devices, test_state, params)
                 metrics = {k: v.mean() for k, v in metrics.items()}
                 self.log_metrics(metrics, cur_epoch, step=collection_steps)
+                # if rendered:
+                #     self.run.log({f'tester_video_{i}': wandb.Video(rendered)}, step=collection_steps)
                 tester_states[i] = new_test_state
             # save checkpoint
             self.save_checkpoint(train_state, cur_epoch)
