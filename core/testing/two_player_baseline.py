@@ -27,15 +27,16 @@ class TwoPlayerBaseline(BaseTester):
         if self.num_episodes % num_devices != 0:
             raise ValueError(f"{self.__class__.__name__}: number of episodes ({self.num_episodes}) must be divisible by number of devices ({num_devices})")
 
-    @partial(jax.pmap, axis_name='d', static_broadcasted_argnums=(0, 1, 2, 3, 4))
+    @partial(jax.pmap, axis_name='d', static_broadcasted_argnums=(0, 1, 2, 3, 4, 5))
     def test(self,  
         env_step_fn: EnvStepFn, 
         env_init_fn: EnvInitFn,
         evaluator: Evaluator,
         num_partitions: int,
+        max_steps: int,
         state: TestState, 
         params: chex.ArrayTree
-    ) -> Tuple[TestState, Dict]:
+    ) -> Tuple[TestState, Dict, chex.ArrayTree]:
         key, subkey = jax.random.split(state.key)
         num_episodes = self.num_episodes // num_partitions
         game_keys = jax.random.split(subkey, num_episodes)
@@ -46,10 +47,12 @@ class TwoPlayerBaseline(BaseTester):
             params_1 = params,
             params_2 = self.baseline_params,
             env_step_fn = env_step_fn,
-            env_init_fn = env_init_fn   
+            env_init_fn = env_init_fn,
+            max_steps = max_steps
         )
 
-        results = jax.vmap(game_fn)(game_keys)
+        results, frames = jax.vmap(game_fn)(game_keys)
+        frames = jax.tree_map(lambda x: x[0], frames)
         
         wins = (results[:, 0] > results[:, 1]).sum()
         draws = (results[:, 0] == results[:, 1]).sum()
@@ -60,5 +63,5 @@ class TwoPlayerBaseline(BaseTester):
             "performance_vs_baseline": win_rate
         }
 
-        return state.replace(key=key), metrics
+        return state.replace(key=key), metrics, frames
         

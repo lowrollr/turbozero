@@ -34,9 +34,11 @@ class TwoPlayerTester(BaseTester):
         env_init_fn: EnvInitFn,
         evaluator: Evaluator,
         num_partitions: int,
+        max_steps: int,
         state: TwoPlayerTestState,
         params: chex.ArrayTree
-    ) -> Tuple[TwoPlayerTestState, Dict, Any]:
+    ) -> Tuple[TwoPlayerTestState, Dict, chex.ArrayTree]:
+        
         key, subkey = jax.random.split(state.key)
         num_episodes = self.num_episodes // num_partitions
         game_keys = jax.random.split(subkey, num_episodes)
@@ -47,10 +49,12 @@ class TwoPlayerTester(BaseTester):
             params_1 = params,
             params_2 = state.best_params,
             env_step_fn = env_step_fn,
-            env_init_fn = env_init_fn   
+            env_init_fn = env_init_fn,
+            max_steps = max_steps
         )
 
-        results = jax.vmap(game_fn)(game_keys)
+        results, frames = jax.vmap(game_fn)(game_keys)
+        frames = jax.tree_map(lambda x: x[0], frames)
         
         wins = (results[:, 0] > results[:, 1]).sum()
         draws = (results[:, 0] == results[:, 1]).sum()
@@ -68,9 +72,4 @@ class TwoPlayerTester(BaseTester):
             None
         )
 
-        return state.replace(key=key, best_params=best_params), metrics
-
-
-
-
-    
+        return state.replace(key=key, best_params=best_params), metrics, frames

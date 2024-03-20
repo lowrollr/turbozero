@@ -13,6 +13,7 @@ class StepMetadata:
     action_mask: chex.Array
     terminated: bool
     cur_player_id: int
+    step: int
     
 
 EnvStepFn = Callable[[chex.ArrayTree, int], Tuple[chex.ArrayTree, StepMetadata]]

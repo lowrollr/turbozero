@@ -62,12 +62,13 @@ class ApproxEloTester(BaseTester):
         if self.episodes_per_opponent % num_devices != 0:
             raise ValueError(f"{self.__class__.__name__}: episodes_per_opponent ({self.episodes_per_opponent}) must be divisible by number of devices ({num_devices})")
 
-    @partial(jax.pmap, axis_name='d', static_broadcasted_argnums=(0, 1, 2, 3, 4))
+    @partial(jax.pmap, axis_name='d', static_broadcasted_argnums=(0, 1, 2, 3, 4, 5))
     def test(self,
         env_step_fn: EnvStepFn,
         env_init_fn: EnvInitFn,
         evaluator: Evaluator,
         num_partitions: int,
+        max_steps: int,
         state: TestState,
         params: chex.ArrayTree         
     ) -> Tuple[ApproxEloTesterState, Dict]:
@@ -83,7 +84,8 @@ class ApproxEloTester(BaseTester):
             evaluator_2 = evaluator,
             params_1 = params,
             env_step_fn = env_step_fn,
-            env_init_fn = env_init_fn
+            env_init_fn = env_init_fn,
+            max_steps = max_steps
         )
         
         opponent_params = jax.tree_util.tree_map(
@@ -94,7 +96,8 @@ class ApproxEloTester(BaseTester):
         opp_ids = jnp.tile(state.past_opponent_ids, episodes_per_opponent)
         opp_mask = jnp.tile(state.past_opponent_mask, episodes_per_opponent)
 
-        results = jax.vmap(game_fn)(game_keys, params_2=opponent_params)
+        results, frames = jax.vmap(game_fn)(game_keys, params_2=opponent_params)
+        frames = jax.tree_map(lambda x: x[0], frames)
 
         wins = results[:, 0] > results[:, 1]
         draws = results[:, 0] == results[:, 1]
@@ -145,7 +148,7 @@ class ApproxEloTester(BaseTester):
             matchup_matrix = matchup_matrix,
             past_opponent_ids = new_opponent_ids,
             ratings = ratings
-        ), metrics
+        ), metrics, frames
     
 
     def update_ratings(self, matchup_matrix, ratings) -> float:

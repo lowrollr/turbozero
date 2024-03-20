@@ -1,6 +1,6 @@
 
 from functools import partial
-from typing import Dict, Tuple
+from typing import Tuple
 import chex
 from chex import dataclass
 
@@ -30,6 +30,7 @@ def step_env_and_evaluator(
     evaluator: Evaluator,
     env_step_fn: EnvStepFn,
     env_init_fn: EnvInitFn,
+    max_steps: int
 ) -> Tuple[EvalOutput, chex.ArrayTree,  StepMetadata, bool, chex.Array]:
     output = evaluator.evaluate(
         eval_state=eval_state,
@@ -39,24 +40,27 @@ def step_env_and_evaluator(
         env_step_fn=env_step_fn
     )
     env_state, env_state_metadata = env_step_fn(env_state, output.action)
+
     terminated = env_state_metadata.terminated
+    truncated = env_state_metadata.step > max_steps 
+    
     rewards = env_state_metadata.rewards
     eval_state = jax.lax.cond(
-        terminated,
-        lambda s: evaluator.reset(s),
+        terminated | truncated,
+        evaluator.reset,
         lambda s: evaluator.step(s, output.action),
         output.eval_state
     )
     
     env_state, env_state_metadata = jax.lax.cond(
-        terminated,
+        terminated | truncated,
         lambda _: env_init_fn(key),
         lambda _: (env_state, env_state_metadata),
         None
     )
 
     output = output.replace(eval_state=eval_state)
-    return output, env_state, env_state_metadata, terminated, rewards
+    return output, env_state, env_state_metadata, terminated, truncated, rewards
 
 
 
@@ -127,7 +131,8 @@ def two_player_game_step(
     params: chex.ArrayTree,
     env_step_fn: EnvStepFn,
     env_init_fn: EnvInitFn,
-    use_p1: bool
+    use_p1: bool,
+    max_steps: int
 ) -> TwoPlayerGameState:
     if use_p1:
         active_evaluator = p1_evaluator
@@ -141,7 +146,7 @@ def two_player_game_step(
         other_eval_state = state.p1_eval_state
 
     step_key, key = jax.random.split(state.key)
-    output, env_state, env_state_metadata, terminated, rewards = step_env_and_evaluator(
+    output, env_state, env_state_metadata, terminated, truncated, rewards = step_env_and_evaluator(
         key = step_key,
         env_state = state.env_state,
         env_state_metadata = state.env_state_metadata,
@@ -149,8 +154,10 @@ def two_player_game_step(
         params = params,
         evaluator = active_evaluator,
         env_step_fn = env_step_fn,
-        env_init_fn = env_init_fn
+        env_init_fn = env_init_fn,
+        max_steps = max_steps
     )
+
     active_eval_state = output.eval_state
     other_eval_state = other_evaluator.step(other_eval_state, output.action)
 
@@ -166,11 +173,11 @@ def two_player_game_step(
         p1_eval_state = p1_eval_state,
         p2_eval_state = p2_eval_state,
         outcomes=jnp.where(
-            (terminated & ~state.completed)[..., None],
+            ((terminated | truncated) & ~state.completed)[..., None],
             rewards,
             state.outcomes
         ),
-        completed = state.completed | terminated,
+        completed = state.completed | terminated | truncated,
     )
 
 
@@ -182,6 +189,7 @@ def two_player_game(
     params_2: chex.ArrayTree,
     env_step_fn: EnvStepFn,
     env_init_fn: EnvInitFn,
+    max_steps: int
 ) -> chex.Array:
     """
     Run a two player game between two evaluators
@@ -199,7 +207,8 @@ def two_player_game(
         p1_evaluator=evaluator_1,
         p2_evaluator=evaluator_2,
         env_step_fn=env_step_fn,
-        env_init_fn=env_init_fn
+        env_init_fn=env_init_fn,
+        max_steps=max_steps
     )
     step_p1 = partial(game_step, params=params_1, use_p1=True)
     step_p2 = partial(game_step, params=params_2, use_p1=False)
@@ -226,18 +235,39 @@ def two_player_game(
         completed = jnp.zeros((), dtype=jnp.bool_)
     )     
 
-    def step_step(state: TwoPlayerGameState) -> TwoPlayerGameState:
-        return jax.lax.cond(
-            p1_first,
-            lambda s: step_p2(step_p1(s)),
-            lambda s: step_p1(step_p2(s)),
+    def step_step(state: TwoPlayerGameState, _) -> TwoPlayerGameState:
+        state = jax.lax.cond(
+            state.completed,
+            lambda s: s,
+            lambda s: jax.lax.cond(
+                p1_first,
+                step_p1,
+                step_p2,
+                s
+            ),
             state
         )
+        frame1 = state.env_state
+        state = jax.lax.cond(
+            state.completed,
+            lambda s: s,
+            lambda s: jax.lax.cond(
+                p1_first,
+                step_p2,
+                step_p1,
+                s
+            ),
+            state
+        )
+        frame2 = state.env_state
+        return state, jax.tree_map(lambda x, y: jnp.stack([x, y]), frame1, frame2)
     
-    state = jax.lax.while_loop(
-        lambda s: ~s.completed,
+    state, frames = jax.lax.scan(
         step_step,
-        state
+        state,
+        xs=jnp.arange(max_steps//2)
     )
 
-    return jnp.array([state.outcomes[p1_id], state.outcomes[p2_id]])
+    frames = jax.tree_map(lambda x: x.reshape(max_steps, *x.shape[2:]), frames)
+
+    return jnp.array([state.outcomes[p1_id], state.outcomes[p2_id]]), frames

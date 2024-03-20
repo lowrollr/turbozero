@@ -65,6 +65,7 @@ class Trainer:
         optimizer: optax.GradientTransformation,
         evaluator: Evaluator,        
         memory_buffer: EpisodeReplayBuffer,
+        max_episode_steps: int,
         env_step_fn: EnvStepFn,
         env_init_fn: EnvInitFn,
         state_to_nn_input_fn: StateToNNInputFn,
@@ -87,6 +88,8 @@ class Trainer:
         self.evaluator_train = evaluator
         self.evaluator_test = evaluator_test if evaluator_test is not None else evaluator
         self.memory_buffer = memory_buffer
+
+        self.max_episode_steps = max_episode_steps
         self.env_step_fn = env_step_fn
         self.env_init_fn = env_init_fn
 
@@ -105,13 +108,15 @@ class Trainer:
         self.step_train = partial(step_env_and_evaluator,
             evaluator=self.evaluator_train,
             env_step_fn=self.env_step_fn,
-            env_init_fn=self.env_init_fn
+            env_init_fn=self.env_init_fn,
+            max_steps=self.max_episode_steps
         )
         
         self.step_test = partial(step_env_and_evaluator,
             evaluator=self.evaluator_test,
             env_step_fn=self.env_step_fn,
-            env_init_fn=self.env_init_fn
+            env_init_fn=self.env_init_fn,
+            max_steps=self.max_episode_steps
         )
         
         orbax_checkpointer = orbax.checkpoint.PyTreeCheckpointer()
@@ -202,7 +207,7 @@ class Trainer:
         params: chex.ArrayTree
     ) -> CollectionState:
         step_key, new_key = jax.random.split(state.key)
-        eval_output, new_env_state, new_metadata, terminated, rewards = \
+        eval_output, new_env_state, new_metadata, terminated, truncated, rewards = \
             self.step_train(
                 key = step_key,
                 env_state = state.env_state,
@@ -225,6 +230,13 @@ class Trainer:
         buffer_state = jax.lax.cond(
             terminated,
             lambda s: self.memory_buffer.assign_rewards(s, rewards),
+            lambda s: s,
+            buffer_state
+        )
+
+        buffer_state = jax.lax.cond(
+            truncated,
+            self.memory_buffer.truncate,
             lambda s: s,
             buffer_state
         )
@@ -395,13 +407,13 @@ class Trainer:
             # test 
             params = self.extract_model_params_fn(train_state)
             for i, test_state in enumerate(tester_states):
-                new_test_state, metrics = self.testers[i].run(
-                    cur_epoch, self.env_step_fn, self.env_init_fn,
-                    self.evaluator_test, self.num_devices, test_state, params)
+                new_test_state, metrics, rendered = self.testers[i].run(
+                    cur_epoch, self.env_step_fn, self.env_init_fn, self.evaluator_test, 
+                    self.num_devices, self.max_episode_steps, test_state, params)
                 metrics = {k: v.mean() for k, v in metrics.items()}
                 self.log_metrics(metrics, cur_epoch, step=collection_steps)
-                # if rendered:
-                #     self.run.log({f'tester_video_{i}': wandb.Video(rendered)}, step=collection_steps)
+                if rendered:
+                    self.run.log({f'tester_video_{i}': wandb.Video(rendered)}, step=collection_steps)
                 tester_states[i] = new_test_state
             # save checkpoint
             self.save_checkpoint(train_state, cur_epoch)
