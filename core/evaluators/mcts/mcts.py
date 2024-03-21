@@ -174,18 +174,20 @@ class MCTS(Evaluator):
 
     def sample_root_action(self, tree: MCTSTree) -> Tuple[MCTSTree, int, chex.Array]:
         action_visits = get_child_data(tree, tree.data.n, tree.ROOT_INDEX)
-        policy_weights = action_visits / action_visits.sum()
+        total_visits = action_visits.sum(axis=-1)
+        policy_weights = action_visits / jnp.maximum(total_visits, 1)
+        policy_weights = jnp.where(total_visits > 0, policy_weights, 1 / self.branching_factor)
         
         if self.temperature == 0:
             rand_key, tree = get_rng(tree)
             noise = jax.random.uniform(rand_key, shape=policy_weights.shape, maxval=self.tiebreak_noise)
-            policy_weights += noise
-            return tree, jnp.argmax(policy_weights), policy_weights
+            noisy_policy_weights = policy_weights + noise
+            return tree, jnp.argmax(noisy_policy_weights), policy_weights
         
-        policy_weights = policy_weights ** (1/self.temperature)
-        policy_weights /= policy_weights.sum()
+        policy_weights_t = policy_weights ** (1/self.temperature)
+        policy_weights_t /= policy_weights_t.sum()
         rand_key, tree = get_rng(tree)
-        action = jax.random.choice(rand_key, policy_weights.shape[-1], p=policy_weights)
+        action = jax.random.choice(rand_key, policy_weights_t.shape[-1], p=policy_weights_t)
         return tree, action, policy_weights
     
     @staticmethod

@@ -1,7 +1,5 @@
 
-
-
-from typing import Callable, Dict
+from typing import Dict
 import chex
 from chex import dataclass
 import jax
@@ -10,11 +8,12 @@ import jax
 class EvalOutput:
     eval_state: chex.ArrayTree
     action: int
+    policy_weights: chex.Array
 
 class Evaluator:
     def __init__(self, discount: float, *args, **kwargs):
         self.discount = discount
-        
+
     def init(self, key: jax.random.PRNGKey, **kwargs) -> chex.ArrayTree:
         raise NotImplementedError()
 
