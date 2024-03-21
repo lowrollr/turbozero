@@ -415,7 +415,7 @@ class Trainer:
                     metrics = {k: v.mean() for k, v in metrics.items()}
                     self.log_metrics(metrics, cur_epoch, step=collection_steps)
                     if rendered and self.run is not None:
-                        self.run.log({f'tester_video_{i}': wandb.Video(rendered)}, step=collection_steps)
+                        self.run.log({f'{self.testers[i].name}_game': wandb.Video(rendered)}, step=collection_steps)
                     tester_states[i] = new_test_state
             # save checkpoint
             self.save_checkpoint(train_state, cur_epoch)
