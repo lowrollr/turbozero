@@ -13,10 +13,13 @@ class TestState:
     key: jax.random.PRNGKey
 
 class BaseTester:
-    def __init__(self, epochs_per_test: int = 1, render_fn: Optional[Callable] = None, render_dir: str = '/tmp/turbozero/'):
+    def __init__(self, epochs_per_test: int = 1, render_fn: Optional[Callable] = None, render_dir: str = '/tmp/turbozero/', name: Optional[str] = None):
         self.epochs_per_test = epochs_per_test
         self.render_fn = render_fn
         self.render_dir = render_dir
+        if name is None:
+            name = self.__class__.__name__
+        self.name = name
 
     def init(self, key: jax.random.PRNGKey, **kwargs) -> TestState:
         return TestState(key=key)
@@ -31,7 +34,7 @@ class BaseTester:
             frames = jax.tree_map(lambda x: x[0], frames)
             if self.render_fn is not None:
                 frame_list = [jax.device_get(jax.tree_map(lambda x: x[i], frames)) for i in range(max_steps)]
-                path_to_rendering = self.render_fn(frame_list, f"{self.__class__.__name__}_{epoch_num}", self.render_dir)
+                path_to_rendering = self.render_fn(frame_list, f"{self.name}_{epoch_num}", self.render_dir)
             else:
                 path_to_rendering = None
             return state, metrics, path_to_rendering
