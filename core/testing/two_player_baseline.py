@@ -54,13 +54,10 @@ class TwoPlayerBaseline(BaseTester):
         results, frames = jax.vmap(game_fn)(game_keys)
         frames = jax.tree_map(lambda x: x[0], frames)
         
-        wins = (results[:, 0] > results[:, 1]).sum()
-        draws = (results[:, 0] == results[:, 1]).sum()
-        
-        win_rate = (wins + (0.5 * draws)) / num_episodes
+        avg = results[:, 0].mean()
 
         metrics = {
-            "performance_vs_baseline": win_rate
+            f"{self.name}_avg_outcome": avg
         }
 
         return state.replace(key=key), metrics, frames
