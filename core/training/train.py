@@ -410,11 +410,11 @@ class Trainer:
                 params = self.extract_model_params_fn(train_state)
                 for i, test_state in enumerate(tester_states):
                     new_test_state, metrics, rendered = self.testers[i].run(
-                        cur_epoch, self.env_step_fn, self.env_init_fn, self.evaluator_test, 
-                        self.num_devices, self.max_episode_steps, test_state, params)
+                        cur_epoch, self.max_episode_steps, self.env_step_fn, self.env_init_fn,
+                        self.evaluator_test, self.num_devices,  test_state, params)
                     metrics = {k: v.mean() for k, v in metrics.items()}
                     self.log_metrics(metrics, cur_epoch, step=collection_steps)
-                    if rendered:
+                    if rendered and self.run is not None:
                         self.run.log({f'tester_video_{i}': wandb.Video(rendered)}, step=collection_steps)
                     tester_states[i] = new_test_state
             # save checkpoint

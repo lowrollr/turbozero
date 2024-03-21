@@ -30,11 +30,11 @@ class TwoPlayerTester(BaseTester):
 
     @partial(jax.pmap, axis_name='d', static_broadcasted_argnums=(0, 1, 2, 3, 4))
     def test(self,
+        max_steps: int,
         env_step_fn: EnvStepFn,
         env_init_fn: EnvInitFn,
         evaluator: Evaluator,
         num_partitions: int,
-        max_steps: int,
         state: TwoPlayerTestState,
         params: chex.ArrayTree
     ) -> Tuple[TwoPlayerTestState, Dict, chex.ArrayTree]:

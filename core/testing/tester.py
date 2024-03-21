@@ -24,13 +24,14 @@ class BaseTester:
     def check_size_compatibilities(self, num_devices: int) -> None:
         raise NotImplementedError()
 
-    def run(self, epoch_num: int, *args) -> Tuple[TestState, Dict, str]:
+    def run(self, epoch_num: int, max_steps: int, *args) -> Tuple[TestState, Dict, str]:
         if epoch_num % self.epochs_per_test == 0:
-            state, metrics, frames = self.test(*args)
+            state, metrics, frames = self.test(max_steps, *args)
             # get one set of frames
             frames = jax.tree_map(lambda x: x[0], frames)
             if self.render_fn is not None:
-                path_to_rendering = self.render_fn(frames, epoch_num, self.render_dir)
+                frame_list = [jax.device_get(jax.tree_map(lambda x: x[i], frames)) for i in range(max_steps)]
+                path_to_rendering = self.render_fn(frame_list, f"{self.__class__.__name__}_{epoch_num}", self.render_dir)
             else:
                 path_to_rendering = None
             return state, metrics, path_to_rendering
@@ -38,11 +39,11 @@ class BaseTester:
     
     @partial(jax.pmap, axis_name='d', static_broadcasted_argnums=(0, 1, 2, 3, 4, 5))
     def test(self, 
+        max_steps: int,
         env_step_fn: EnvStepFn, 
         env_init_fn: EnvInitFn,
         evaluator: Evaluator,
         num_partitions: int,
-        max_steps: int,
         state: TestState, 
         params: chex.ArrayTree
     ) -> Tuple[TestState, Dict, chex.ArrayTree]:
