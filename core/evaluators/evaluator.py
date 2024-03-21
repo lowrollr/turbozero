@@ -24,16 +24,8 @@ class Evaluator:
     def step(self, state: chex.ArrayTree, action: chex.Array) -> chex.ArrayTree:
         return state
     
+    def get_value(self, state: chex.ArrayTree) -> chex.Array:
+        raise NotImplementedError()
+    
     def get_config(self) -> Dict:
         return {}
-    
-
-def make_stateless_evaluator(evaluation_fn: Callable[[chex.ArrayTree], EvalOutput]) -> Evaluator:
-    class StatelessEvaluator(Evaluator):
-        def evaluate(self, eval_state: chex.ArrayTree, env_state: chex.ArrayTree, **kwargs) -> EvalOutput:
-            return evaluation_fn(eval_state, env_state)
-        def reset(self, state: chex.ArrayTree) -> chex.ArrayTree:
-            return state
-        def init(self, key: jax.random.PRNGKey, **kwargs) -> chex.ArrayTree:
-            return key
-    return StatelessEvaluator()

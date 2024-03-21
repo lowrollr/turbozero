@@ -8,7 +8,7 @@ from typing import Dict, Optional, Tuple
 import chex
 import jax
 import jax.numpy as jnp
-from core.common import two_player_game
+from core.common import GameFrame, two_player_game
 from core.evaluators.evaluator import Evaluator
 from core.testing.tester import BaseTester, TestState
 from core.types import EnvInitFn, EnvStepFn
@@ -36,7 +36,7 @@ class TwoPlayerBaseline(BaseTester):
         num_partitions: int,
         state: TestState, 
         params: chex.ArrayTree
-    ) -> Tuple[TestState, Dict, chex.ArrayTree]:
+    ) -> Tuple[TestState, Dict, GameFrame, chex.Array]:
         key, subkey = jax.random.split(state.key)
         num_episodes = self.num_episodes // num_partitions
         game_keys = jax.random.split(subkey, num_episodes)
@@ -51,8 +51,9 @@ class TwoPlayerBaseline(BaseTester):
             max_steps = max_steps
         )
 
-        results, frames = jax.vmap(game_fn)(game_keys)
+        results, frames, p_ids = jax.vmap(game_fn)(game_keys)
         frames = jax.tree_map(lambda x: x[0], frames)
+        p_ids = p_ids[0]
         
         avg = results[:, 0].mean()
 
@@ -60,5 +61,5 @@ class TwoPlayerBaseline(BaseTester):
             f"{self.name}_avg_outcome": avg
         }
 
-        return state.replace(key=key), metrics, frames
+        return state.replace(key=key), metrics, frames, p_ids
         

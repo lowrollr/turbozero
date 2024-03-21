@@ -39,7 +39,6 @@ class BackpropState:
 @dataclass(frozen=True)
 class MCTSOutput(EvalOutput):
     eval_state: MCTSTree
-    root_value: float
     policy_weights: chex.Array
 
 def tree_to_graph(tree, batch_id=0):

@@ -29,12 +29,13 @@ class BaseTester:
 
     def run(self, epoch_num: int, max_steps: int, *args) -> Tuple[TestState, Dict, str]:
         if epoch_num % self.epochs_per_test == 0:
-            state, metrics, frames = self.test(max_steps, *args)
+            state, metrics, frames, p_ids = self.test(max_steps, *args)
             # get one set of frames
             frames = jax.tree_map(lambda x: x[0], frames)
+            p_ids = p_ids[0]
             if self.render_fn is not None:
                 frame_list = [jax.device_get(jax.tree_map(lambda x: x[i], frames)) for i in range(max_steps)]
-                path_to_rendering = self.render_fn(frame_list, f"{self.name}_{epoch_num}", self.render_dir)
+                path_to_rendering = self.render_fn(frame_list, p_ids, f"{self.name}_{epoch_num}", self.render_dir)
             else:
                 path_to_rendering = None
             return state, metrics, path_to_rendering

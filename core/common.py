@@ -30,7 +30,8 @@ def step_env_and_evaluator(
     evaluator: Evaluator,
     env_step_fn: EnvStepFn,
     env_init_fn: EnvInitFn,
-    max_steps: int
+    max_steps: int,
+    reset: bool = True
 ) -> Tuple[EvalOutput, chex.ArrayTree,  StepMetadata, bool, chex.Array]:
     output = evaluator.evaluate(
         eval_state=eval_state,
@@ -45,19 +46,20 @@ def step_env_and_evaluator(
     truncated = env_state_metadata.step > max_steps 
     
     rewards = env_state_metadata.rewards
-    eval_state = jax.lax.cond(
-        terminated | truncated,
-        evaluator.reset,
-        lambda s: evaluator.step(s, output.action),
-        output.eval_state
-    )
-    
-    env_state, env_state_metadata = jax.lax.cond(
-        terminated | truncated,
-        lambda _: env_init_fn(key),
-        lambda _: (env_state, env_state_metadata),
-        None
-    )
+    if reset:
+        eval_state = jax.lax.cond(
+            terminated | truncated,
+            evaluator.reset,
+            lambda s: evaluator.step(s, output.action),
+            output.eval_state
+        )
+        
+        env_state, env_state_metadata = jax.lax.cond(
+            terminated | truncated,
+            lambda _: env_init_fn(key),
+            lambda _: (env_state, env_state_metadata),
+            None
+        )
 
     output = output.replace(eval_state=eval_state)
     return output, env_state, env_state_metadata, terminated, truncated, rewards
@@ -92,7 +94,8 @@ def single_player_game(
         env_step_fn=env_step_fn,
         env_init_fn=env_init_fn,
         evaluator=evaluator,
-        params=params
+        params=params,
+        reset=False
     )
 
     state = SinglePlayerGameState(
@@ -120,9 +123,17 @@ class TwoPlayerGameState:
     env_state_metadata: StepMetadata
     p1_eval_state: chex.ArrayTree
     p2_eval_state: chex.ArrayTree
+    p1_value_estimate: chex.Array
+    p2_value_estimate: chex.Array
     outcomes: float
     completed: bool
 
+@dataclass(frozen=True)
+class GameFrame:
+    env_state: chex.ArrayTree
+    p1_value_estimate: chex.Array
+    p2_value_estimate: chex.Array
+    completed: chex.Array
 
 def two_player_game_step(
     state: TwoPlayerGameState,
@@ -155,7 +166,8 @@ def two_player_game_step(
         evaluator = active_evaluator,
         env_step_fn = env_step_fn,
         env_init_fn = env_init_fn,
-        max_steps = max_steps
+        max_steps = max_steps,
+        reset = False
     )
 
     active_eval_state = output.eval_state
@@ -172,6 +184,8 @@ def two_player_game_step(
         env_state_metadata = env_state_metadata,
         p1_eval_state = p1_eval_state,
         p2_eval_state = p2_eval_state,
+        p1_value_estimate = p1_evaluator.get_value(p1_eval_state),
+        p2_value_estimate = p2_evaluator.get_value(p2_eval_state),
         outcomes=jnp.where(
             ((terminated | truncated) & ~state.completed)[..., None],
             rewards,
@@ -190,7 +204,7 @@ def two_player_game(
     env_step_fn: EnvStepFn,
     env_init_fn: EnvInitFn,
     max_steps: int
-) -> chex.Array:
+) -> Tuple[chex.Array, TwoPlayerGameState, chex.Array, chex.Array]:
     """
     Run a two player game between two evaluators
     """
@@ -231,6 +245,8 @@ def two_player_game(
         env_state_metadata = metadata,
         p1_eval_state = p1_eval_state,
         p2_eval_state = p2_eval_state,
+        p1_value_estimate = evaluator_1.get_value(p1_eval_state),
+        p2_value_estimate = evaluator_2.get_value(p2_eval_state),
         outcomes = jnp.zeros((2,), dtype=jnp.float32),
         completed = jnp.zeros((), dtype=jnp.bool_)
     )     
@@ -247,7 +263,12 @@ def two_player_game(
             ),
             state
         )
-        frame1 = state.env_state
+        frame1 = GameFrame(
+            env_state = state.env_state,
+            p1_value_estimate = state.p1_value_estimate,
+            p2_value_estimate = state.p2_value_estimate,
+            completed = state.completed
+        )
         state = jax.lax.cond(
             state.completed,
             lambda s: s,
@@ -259,7 +280,12 @@ def two_player_game(
             ),
             state
         )
-        frame2 = state.env_state
+        frame2 = GameFrame(
+            env_state = state.env_state,
+            p1_value_estimate = state.p1_value_estimate,
+            p2_value_estimate = state.p2_value_estimate,
+            completed = state.completed
+        )
         return state, jax.tree_map(lambda x, y: jnp.stack([x, y]), frame1, frame2)
     
     state, frames = jax.lax.scan(
@@ -270,4 +296,4 @@ def two_player_game(
 
     frames = jax.tree_map(lambda x: x.reshape(max_steps, *x.shape[2:]), frames)
 
-    return jnp.array([state.outcomes[p1_id], state.outcomes[p2_id]]), frames
+    return jnp.array([state.outcomes[p1_id], state.outcomes[p2_id]]), frames, jnp.array([p1_id, p2_id])

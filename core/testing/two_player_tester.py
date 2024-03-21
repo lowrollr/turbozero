@@ -53,9 +53,10 @@ class TwoPlayerTester(BaseTester):
             max_steps = max_steps
         )
 
-        results, frames = jax.vmap(game_fn)(game_keys)
+        results, frames, p_ids = jax.vmap(game_fn)(game_keys)
         frames = jax.tree_map(lambda x: x[0], frames)
-
+        p_ids = p_ids[0]
+        
         avg = results[:, 0].mean()
 
         metrics = {
@@ -69,4 +70,4 @@ class TwoPlayerTester(BaseTester):
             None
         )
 
-        return state.replace(key=key, best_params=best_params), metrics, frames
+        return state.replace(key=key, best_params=best_params), metrics, frames, p_ids
