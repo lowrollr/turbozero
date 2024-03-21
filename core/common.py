@@ -40,26 +40,27 @@ def step_env_and_evaluator(
         params=params,
         env_step_fn=env_step_fn
     )
+    
     env_state, env_state_metadata = env_step_fn(env_state, output.action)
 
     terminated = env_state_metadata.terminated
     truncated = env_state_metadata.step > max_steps 
     
     rewards = env_state_metadata.rewards
-    if reset:
-        eval_state = jax.lax.cond(
-            terminated | truncated,
-            evaluator.reset,
-            lambda s: evaluator.step(s, output.action),
-            output.eval_state
-        )
-        
-        env_state, env_state_metadata = jax.lax.cond(
-            terminated | truncated,
-            lambda _: env_init_fn(key),
-            lambda _: (env_state, env_state_metadata),
-            None
-        )
+    eval_state = jax.lax.cond(
+        terminated | truncated,
+        evaluator.reset if reset else lambda s: s,
+        lambda s: evaluator.step(s, output.action),
+        output.eval_state
+    )
+    
+    env_state, env_state_metadata = jax.lax.cond(
+        terminated | truncated,
+        lambda _: env_init_fn(key) if reset else (env_state, env_state_metadata),
+        lambda _: (env_state, env_state_metadata),
+        None
+    )
+
 
     output = output.replace(eval_state=eval_state)
     return output, env_state, env_state_metadata, terminated, truncated, rewards
@@ -272,6 +273,7 @@ def two_player_game(
             ),
             state
         )
+        
         frame1 = GameFrame(
             env_state = state.env_state,
             p1_value_estimate = state.p1_value_estimate,
