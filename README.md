@@ -52,15 +52,6 @@ To launch an ipython kernel, run:
 poetry run python -m ipykernel install --user --name turbozero
 ```
 
-## Future Work
-While the current code is usable, I plan to continue to add features and documentation daily. I'll do a formal release or something when that slows down.
-#### Priorities
-* *speed improvements*: (there is plenty to be gained still)
-* *new evaluation features*: mainly baselines and elo/tournament fun
-* *documentation*: at the bare minimum trying for docstrings but having wiki pages again would also be nice
-
-Once these short-term priorities are complete I'll be focusing on implementing other algorithms -- the long-term vision is to be the go-to source for anything in RL using a search tree. Not just MCTS. Not just two-player perfect information games. Also unit tests.
-
 ## Issues
 If you use this project and encounter an issue, error, or undesired behavior, please submit a [GitHub Issue](https://github.com/lowrollr/turbozero/issues) and I will do my best to resolve it as soon as I can. You may also contact me directly via `hello@jacob.land`.
 
