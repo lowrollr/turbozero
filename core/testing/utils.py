@@ -6,9 +6,9 @@ import xml.etree.ElementTree as ET
 import cairosvg
 from PIL import Image
 
-def render_pgx_2p(frames, p_ids, title, frame_dir, p1_label='black', p2_label='white', duration=900):
+def render_pgx_2p(frames, p_ids, title, frame_dir, p1_label='Black', p2_label='White', duration=900):
     digit_length = len(str(len(frames)))
-    trained_agent_color = p1_label if p_ids[0] == 0 else p2_label
+    trained_agent_color = p1_label if frames[0].env_state.current_player == p_ids[0] else p2_label
     opponent_color = p2_label if trained_agent_color == p1_label else p1_label
     agent_win = False
     opp_win = False
