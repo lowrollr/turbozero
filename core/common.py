@@ -40,7 +40,7 @@ def step_env_and_evaluator(
         params=params,
         env_step_fn=env_step_fn
     )
-    
+
     env_state, env_state_metadata = env_step_fn(env_state, output.action)
 
     terminated = env_state_metadata.terminated
@@ -173,12 +173,22 @@ def two_player_game_step(
     )
 
     active_eval_state = output.eval_state
+    active_value_estimate = active_evaluator.get_value(active_eval_state)
+    active_value_estimate = jax.lax.cond(
+        terminated | truncated,
+        lambda a: a,
+        lambda a: active_evaluator.discount * a,
+        active_value_estimate
+    )
     other_eval_state = other_evaluator.step(other_eval_state, output.action)
+    other_value_estimate = other_evaluator.get_value(other_eval_state)
 
     if use_p1:
         p1_eval_state, p2_eval_state = active_eval_state, other_eval_state
+        p1_value_estimate, p2_value_estimate = active_value_estimate, other_value_estimate
     else:
         p1_eval_state, p2_eval_state = other_eval_state, active_eval_state
+        p1_value_estimate, p2_value_estimate = other_value_estimate, active_value_estimate
 
     return state.replace(
         key = key,
@@ -186,8 +196,8 @@ def two_player_game_step(
         env_state_metadata = env_state_metadata,
         p1_eval_state = p1_eval_state,
         p2_eval_state = p2_eval_state,
-        p1_value_estimate = p1_evaluator.get_value(p1_eval_state),
-        p2_value_estimate = p2_evaluator.get_value(p2_eval_state),
+        p1_value_estimate = p1_value_estimate,
+        p2_value_estimate = p2_value_estimate,
         outcomes=jnp.where(
             ((terminated | truncated) & ~state.completed)[..., None],
             rewards,

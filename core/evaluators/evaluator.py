@@ -12,6 +12,9 @@ class EvalOutput:
     action: int
 
 class Evaluator:
+    def __init__(self, discount: float, *args, **kwargs):
+        self.discount = discount
+        
     def init(self, key: jax.random.PRNGKey, **kwargs) -> chex.ArrayTree:
         raise NotImplementedError()
 
