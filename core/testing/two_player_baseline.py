@@ -3,51 +3,49 @@
 
 
 from functools import partial
-from typing import Any, Dict, Optional, Tuple
-from chex import dataclass
+from typing import Dict, Optional, Tuple
+
 import chex
 import jax
-from core.common import two_player_game
+import jax.numpy as jnp
+from core.common import GameFrame, two_player_game
 from core.evaluators.evaluator import Evaluator
 from core.testing.tester import BaseTester, TestState
 from core.types import EnvInitFn, EnvStepFn
 
-@dataclass(frozen=True)
-class TwoPlayerTestState(TestState):
-    best_params: chex.ArrayTree
 
-class TwoPlayerTester(BaseTester):
-    def __init__(self, num_episodes: int, *args, **kwargs):
+class TwoPlayerBaseline(BaseTester):
+    def __init__(self, num_episodes: int, baseline_evaluator: Evaluator, baseline_params: Optional[chex.ArrayTree] = None, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.num_episodes = num_episodes
+        self.baseline_evaluator = baseline_evaluator
+        if baseline_params is None:
+            baseline_params = jnp.array([])
+        self.baseline_params = baseline_params
 
-    def init(self, key: jax.random.PRNGKey, params: chex.ArrayTree, **kwargs) -> TwoPlayerTestState:
-        return TwoPlayerTestState(key=key, best_params=params)
-    
     def check_size_compatibilities(self, num_devices: int) -> None:
         if self.num_episodes % num_devices != 0:
             raise ValueError(f"{self.__class__.__name__}: number of episodes ({self.num_episodes}) must be divisible by number of devices ({num_devices})")
 
-    @partial(jax.pmap, axis_name='d', static_broadcasted_argnums=(0, 1, 2, 3, 4))
-    def test(self,
+    @partial(jax.pmap, axis_name='d', static_broadcasted_argnums=(0, 1, 2, 3, 4, 5))
+    def test(self,  
         max_steps: int,
-        env_step_fn: EnvStepFn,
+        env_step_fn: EnvStepFn, 
         env_init_fn: EnvInitFn,
         evaluator: Evaluator,
         num_partitions: int,
-        state: TwoPlayerTestState,
+        state: TestState, 
         params: chex.ArrayTree
-    ) -> Tuple[TwoPlayerTestState, Dict, chex.ArrayTree]:
-        
+    ) -> Tuple[TestState, Dict, GameFrame, chex.Array]:
         key, subkey = jax.random.split(state.key)
         num_episodes = self.num_episodes // num_partitions
         game_keys = jax.random.split(subkey, num_episodes)
 
         game_fn = partial(two_player_game,
             evaluator_1 = evaluator,
-            evaluator_2 = evaluator,
+            evaluator_2 = self.baseline_evaluator,
             params_1 = params,
-            params_2 = state.best_params,
+            params_2 = self.baseline_params,
             env_step_fn = env_step_fn,
             env_init_fn = env_init_fn,
             max_steps = max_steps
@@ -63,11 +61,5 @@ class TwoPlayerTester(BaseTester):
             f"{self.name}_avg_outcome": avg
         }
 
-        best_params = jax.lax.cond(
-            avg > 0.0,
-            lambda _: params,
-            lambda _: state.best_params,
-            None
-        )
-
-        return state.replace(key=key, best_params=best_params), metrics, frames, p_ids
+        return state.replace(key=key), metrics, frames, p_ids
+        

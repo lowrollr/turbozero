@@ -37,7 +37,7 @@ class MCTS(Evaluator):
         - `temperature`: temperature for root action selection
         - `tiebreak_noise`: magnitude of noise to add to policy weights for breaking ties
         """
-        super().__init__()
+        super().__init__(discount=discount)
         self.eval_fn = eval_fn
         self.num_iterations = num_iterations
         self.branching_factor = branching_factor
@@ -85,14 +85,17 @@ class MCTS(Evaluator):
         )
         eval_state = jax.lax.fori_loop(0, self.num_iterations, lambda _, t: iterate(t), eval_state)
         eval_state, action, policy_weights = self.sample_root_action(eval_state)
-        root_node = eval_state.at(eval_state.ROOT_INDEX)
+        
         return MCTSOutput(
             eval_state=eval_state,
             action=action,
-            root_value=root_node.q,
             policy_weights=policy_weights
         )
+    
 
+    def get_value(self, state: MCTSTree) -> chex.Array:
+        return state.at(state.ROOT_INDEX).q
+    
 
     def update_root(self, tree: MCTSTree, root_embedding: chex.ArrayTree, 
                     params: chex.ArrayTree, **kwargs) -> MCTSTree:

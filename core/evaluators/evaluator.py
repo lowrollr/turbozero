@@ -1,7 +1,7 @@
 
 
 
-from typing import Dict
+from typing import Callable, Dict
 import chex
 from chex import dataclass
 import jax
@@ -12,6 +12,9 @@ class EvalOutput:
     action: int
 
 class Evaluator:
+    def __init__(self, discount: float, *args, **kwargs):
+        self.discount = discount
+        
     def init(self, key: jax.random.PRNGKey, **kwargs) -> chex.ArrayTree:
         raise NotImplementedError()
 
@@ -24,7 +27,8 @@ class Evaluator:
     def step(self, state: chex.ArrayTree, action: chex.Array) -> chex.ArrayTree:
         return state
     
+    def get_value(self, state: chex.ArrayTree) -> chex.Array:
+        raise NotImplementedError()
+    
     def get_config(self) -> Dict:
         return {}
-    
-    
