@@ -134,6 +134,7 @@ class GameFrame:
     p1_value_estimate: chex.Array
     p2_value_estimate: chex.Array
     completed: chex.Array
+    outcomes: chex.Array
 
 def two_player_game_step(
     state: TwoPlayerGameState,
@@ -255,7 +256,8 @@ def two_player_game(
         env_state = state.env_state,
         p1_value_estimate = state.p1_value_estimate,
         p2_value_estimate = state.p2_value_estimate,
-        completed = state.completed
+        completed = state.completed,
+        outcomes = state.outcomes
     )
 
     def step_step(state: TwoPlayerGameState, _) -> TwoPlayerGameState:
@@ -274,7 +276,8 @@ def two_player_game(
             env_state = state.env_state,
             p1_value_estimate = state.p1_value_estimate,
             p2_value_estimate = state.p2_value_estimate,
-            completed = state.completed
+            completed = state.completed,
+            outcomes = state.outcomes
         )
         state = jax.lax.cond(
             state.completed,
@@ -291,7 +294,8 @@ def two_player_game(
             env_state = state.env_state,
             p1_value_estimate = state.p1_value_estimate,
             p2_value_estimate = state.p2_value_estimate,
-            completed = state.completed
+            completed = state.completed,
+            outcomes = state.outcomes
         )
         return state, jax.tree_map(lambda x, y: jnp.stack([x, y]), frame1, frame2)
     
