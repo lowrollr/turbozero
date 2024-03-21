@@ -245,11 +245,18 @@ def two_player_game(
         env_state_metadata = metadata,
         p1_eval_state = p1_eval_state,
         p2_eval_state = p2_eval_state,
-        p1_value_estimate = evaluator_1.get_value(p1_eval_state),
-        p2_value_estimate = evaluator_2.get_value(p2_eval_state),
+        p1_value_estimate = jnp.array(0.0, dtype=jnp.float32),
+        p2_value_estimate = jnp.array(0.0, dtype=jnp.float32),
         outcomes = jnp.zeros((2,), dtype=jnp.float32),
         completed = jnp.zeros((), dtype=jnp.bool_)
     )     
+
+    initial_game_frame = GameFrame(
+        env_state = state.env_state,
+        p1_value_estimate = state.p1_value_estimate,
+        p2_value_estimate = state.p2_value_estimate,
+        completed = state.completed
+    )
 
     def step_step(state: TwoPlayerGameState, _) -> TwoPlayerGameState:
         state = jax.lax.cond(
@@ -293,7 +300,9 @@ def two_player_game(
         state,
         xs=jnp.arange(max_steps//2)
     )
-
+    
     frames = jax.tree_map(lambda x: x.reshape(max_steps, *x.shape[2:]), frames)
+    # append initial state to front of frames
+    frames = jax.tree_map(lambda i, x: jnp.concatenate([jnp.expand_dims(i, 0), x]), initial_game_frame, frames)
 
     return jnp.array([state.outcomes[p1_id], state.outcomes[p2_id]]), frames, jnp.array([p1_id, p2_id])
