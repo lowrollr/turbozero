@@ -27,7 +27,7 @@ To get started, check out the [Hello World Notebook](https://github.com/lowrollr
 ## Installation
 `turbozero` uses `poetry` for dependency management, you can install it with:
 ```
-pip install poetry
+pip install poetry==1.7.1
 ```
 Then, to install dependencies:
 ```
@@ -38,12 +38,14 @@ If you're using a GPU/TPU/etc., after running the previous command you'll need t
 For a GPU w/ CUDA 12:
 ```
 poetry source add jax https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+```
+to point poetry towards JAX cuda releases, then use
+```
 poetry add jax[cuda12_pip]==0.4.24
 ```
-See https://jax.readthedocs.io/en/latest/installation.html for other devices/cuda versions
+to install the CUDA 12 release for JAX. See https://jax.readthedocs.io/en/latest/installation.html for other devices/cuda versions.
 
-I have had issues with this command when using poetry 1.8.1 -- but it works with 1.7.1.
-I wish this could be done without extra commands but poetry does not support it :(
+I have tested this project with CUDA 11 and CUDA 12.
 
 To launch an ipython kernel, run:
 ```
