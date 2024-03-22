@@ -118,10 +118,11 @@ class EpisodeReplayBuffer:
             p = masked_weights / masked_weights.sum()
         )
 
-        partition_indices = indices // (self.capacity * num_batches)
-        batch_indices = (indices // self.capacity) % num_partitions
-        item_indices = indices % self.capacity
-
+        partition_indices, batch_indices, item_indices = jnp.unravel_index(
+            indices,
+            (num_partitions, num_batches, self.capacity)
+        )
+        
         sampled_buffer_items = jax.tree_util.tree_map(
             lambda x: x[partition_indices, batch_indices, item_indices],
             state.buffer
