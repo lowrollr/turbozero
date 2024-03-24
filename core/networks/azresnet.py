@@ -1,16 +1,24 @@
+
 from dataclasses import dataclass
+
 import flax.linen as nn
-from flax import struct
 
 
 @dataclass
 class AZResnetConfig:
-    model_type: str
+    """Configuration for AlphaZero ResNet model:
+    - `policy_head_out_size`: output size of the policy head (number of actions)
+    - `num_blocks`: number of residual blocks
+    - `num_channels`: number of channels in each residual block
+    """
     policy_head_out_size: int
     num_blocks: int
     num_channels: int
 
+
 class ResidualBlock(nn.Module):
+    """Residual block for AlphaZero ResNet model.
+    - `channels`: number of channels"""
     channels: int
 
     @nn.compact
@@ -22,15 +30,20 @@ class ResidualBlock(nn.Module):
         y = nn.BatchNorm(use_running_average=not train)(y)
         return nn.relu(x + y)
 
+
 class AZResnet(nn.Module):
+    """Implements the AlphaZero ResNet model.
+    - `config`: network configuration"""
     config: AZResnetConfig
 
     @nn.compact
     def __call__(self, x, train: bool):
-        x = nn.Conv(features=self.config.num_channels, kernel_size=(1,1), strides=(1,1), padding='SAME', use_bias=False)(x)
+        # initial conv layer
+        x = nn.Conv(features=self.config.num_channels, kernel_size=(3,3), strides=(1,1), padding='SAME', use_bias=False)(x)
         x = nn.BatchNorm(use_running_average=not train)(x)
         x = nn.relu(x)
 
+        # residual blocks
         for _ in range(self.config.num_blocks):
             x = ResidualBlock(channels=self.config.num_channels)(x, train=train)
 
@@ -50,4 +63,3 @@ class AZResnet(nn.Module):
         value = nn.tanh(value)
 
         return policy, value
-    
