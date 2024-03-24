@@ -1,9 +1,7 @@
 from typing import Dict
 import chex
 from core.evaluators.mcts.state import MCTSTree
-from core.trees.tree import get_child_data
 import jax.numpy as jnp
-import jax
 
 def normalize_q_values(
     q_values: chex.Array, 
@@ -49,10 +47,10 @@ class PUCTSelector(MCTSActionSelector):
         }
 
     def __call__(self, tree: MCTSTree, index: int, discount: float) -> int:
-        node = tree.at(index)
-        q_values = get_child_data(tree, tree.data.q, index)
+        node = tree.data_at(index)
+        q_values = tree.get_child_data('q', index)
         discounted_q_values = q_values * discount
-        n_values = get_child_data(tree, tree.data.n, index)
+        n_values = tree.get_child_data('n', index)
         q_values = self.q_transform(discounted_q_values, n_values, node.q, self.epsilon)
         u_values = self.c * node.p * jnp.sqrt(node.n) / (n_values + 1)
         puct_values = q_values + u_values
@@ -79,10 +77,10 @@ class MuZeroPUCTSelector(MCTSActionSelector):
         }
 
     def __call__(self, tree: MCTSTree, index: int, discount: float) -> int:
-        node = tree.at(index)
-        q_values = get_child_data(tree, tree.data.q, index)
+        node = tree.data_at(index)
+        q_values = tree.get_child_data('q', index)
         discounted_q_values = q_values * discount
-        n_values = get_child_data(tree, tree.data.n, index)
+        n_values = tree.get_child_data('n', index)
         q_values = self.q_transform(discounted_q_values, q_values, n_values, node.q, self.epsilon)
         base_term = node.p * jnp.sqrt(node.n) / (n_values + 1)
         log_term = jnp.log((node.n + self.c2 + 1) / self.c2) + self.c1

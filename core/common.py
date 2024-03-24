@@ -13,8 +13,8 @@ def partition(
     data: chex.ArrayTree,
     num_partitions: int
 ) -> chex.ArrayTree:
-    """
-    Partition an array into num_partitions
+    """Partition an array into num_partitions along the first axis.
+    e.g. partitions an array of shape (N, ...) into (num_partitions, N//num_partitions, ...)
     """
     return jax.tree_map(
         lambda x: x.reshape(num_partitions, x.shape[0] // num_partitions, *x.shape[1:]),
@@ -33,7 +33,9 @@ def step_env_and_evaluator(
     max_steps: int,
     reset: bool = True
 ) -> Tuple[EvalOutput, chex.ArrayTree,  StepMetadata, bool, chex.Array]:
+    key, evaluate_key = jax.random.split(key)
     output = evaluator.evaluate(
+        key=evaluate_key,
         eval_state=eval_state,
         env_state=env_state,
         root_metadata=env_state_metadata,
@@ -221,13 +223,12 @@ def two_player_game(
     Run a two player game between two evaluators
     """
     # init rng
-    env_key, eval_key, turn_key, key = jax.random.split(key, 4)
+    env_key, turn_key, key = jax.random.split(key, 3)
     # init env state
-    env_state, metadata = env_init_fn(env_key)    
+    env_state, metadata = env_init_fn(env_key) 
     # init evaluator states
-    eval1_key, eval2_key = jax.random.split(eval_key, 2)
-    p1_eval_state = evaluator_1.init(eval1_key, template_embedding=env_state)
-    p2_eval_state = evaluator_2.init(eval2_key, template_embedding=env_state)
+    p1_eval_state = evaluator_1.init(template_embedding=env_state)
+    p2_eval_state = evaluator_2.init(template_embedding=env_state)
     # compile step functions
     game_step = partial(two_player_game_step,
         p1_evaluator=evaluator_1,

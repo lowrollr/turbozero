@@ -7,10 +7,15 @@ import jax.numpy as jnp
 from core.evaluators.evaluator import Evaluator
 from core.evaluators.mcts.action_selection import MCTSActionSelector
 from core.evaluators.mcts.state import BackpropState, MCTSNode, MCTSTree, TraversalState, MCTSOutput
-from core.trees.tree import _init, add_node, get_child_data, get_rng, get_subtree, reset_tree, set_root, update_node
+from core.trees.tree import init_tree
 from core.types import EnvStepFn, EvalFn, StepMetadata
 
 class MCTS(Evaluator):
+    """Batched implementation of Monte Carlo Tree Search (MCTS).
+    
+    Not stateful. This class operates on 'MCTSTree' state objects.
+    
+    Compatible with `jax.vmap`, `jax.pmap`, `jax.jit`, etc."""
     def __init__(self,
         eval_fn: EvalFn,
         action_selector: MCTSActionSelector,
@@ -19,23 +24,23 @@ class MCTS(Evaluator):
         num_iterations: int,
         discount: float = -1.0,
         temperature: float = 1.0,
-        tiebreak_noise: float = 1e-8
+        tiebreak_noise: float = 1e-8,
+        persist_tree: bool = True
     ):
-        """Batched implementation of Monte Carlo Tree Search (MCTS).
-        Not stateful. This class operates on batches of `MCTSTrees`.
-
-        functions are intended to be called with jax.vmap
-
+        """
         Args:
-        - `action_selector`: function that selects an action to take from a node
-        - `branching_factor`: number of discrete actions
-        - `max_nodes`: capacity of MCTSTree (in nodes)
+        - `eval_fn`: leaf node evaluation function (env_state -> (policy_logits, value))
+        - `action_selector`: action selection function (eval_state -> action)
+        - `branching_factor`: max number of actions (== children per node)
+        - `max_nodes`: allocated size of MCTS tree, any additional nodes will not be created, 
+                but values from out-of-bounds leaf nodes will still backpropagate
         - `num_iterations`: number of MCTS iterations to perform per evaluate call
         - `discount`: discount factor for MCTS (default: -1.0)
-        \t- use a negative discount in two-player games
-        \t- use a positive discount in single-player games
-        - `temperature`: temperature for root action selection
-        - `tiebreak_noise`: magnitude of noise to add to policy weights for breaking ties
+            - use a negative discount in two-player games (e.g. -1.0)
+            - use a positive discount in single-player games (e.g. 1.0)
+        - `temperature`: temperature for root action selection (default: 1.0)
+        - `tiebreak_noise`: magnitude of noise to add to policy weights for breaking ties (default: 1e-8)
+        - `persist_tree`: whether to persist search tree state between calls to `evaluate` (default: True)
         """
         super().__init__(discount=discount)
         self.eval_fn = eval_fn
@@ -43,49 +48,58 @@ class MCTS(Evaluator):
         self.branching_factor = branching_factor
         self.max_nodes = max_nodes
         self.action_selector = action_selector
-        self.discount = discount
         self.temperature = temperature
         self.tiebreak_noise = tiebreak_noise
-    
+        self.persist_tree = persist_tree
+
+
     def get_config(self) -> Dict:
-        """returns a config object stored in checkpoints"""
+        """returns a config object for checkpoints"""
         return {
+            "eval_fn": self.eval_fn.__name__,
             "num_iterations": self.num_iterations,
             "branching_factor": self.branching_factor,
             "max_nodes": self.max_nodes,
+            "action_selection_config": self.action_selector.get_config(),
             "discount": self.discount,
             "temperature": self.temperature,
             "tiebreak_noise": self.tiebreak_noise,
-            "action_selection_config": self.action_selector.get_config()
+            "persist_tree": self.persist_tree
         }
 
-    def evaluate(self, 
+
+    def evaluate(self, #pylint: disable=arguments-differ
+        key: chex.PRNGKey,
         eval_state: MCTSTree, 
         env_state: chex.ArrayTree,
         root_metadata: StepMetadata,
         params: chex.ArrayTree,
-        env_step_fn: EnvStepFn
+        env_step_fn: EnvStepFn,
+        **kwargs
     ) -> MCTSOutput:
         """Performs `self.num_iterations` MCTS iterations on an `MCTSTree`.
-        Samples an action to take from the root node of each tree after search is completed.
+        Samples an action to take from the root node after search is completed.
         
         Args:
         - `eval_state`: `MCTSTree` to evaluate, could be empty or partially complete
         - `env_state`: current environment state
-        - `root_metadata`: metadata for the root nodes of each tree
-        - `params`: parameters to pass to the the evaluation function
-        - `env_step_fn`: function that goes to next environment state given an action
+        - `root_metadata`: metadata for the root node of the tree
+        - `params`: parameters to pass to the the leaf evaluation function
+        - `env_step_fn`: env step fn: (env_state, action) -> (new_env_state, metadata)
+
         Returns:
-        - `MCTSOutput`: contains new tree state, selected action, root value, and policy weights
+        - (MCTSOutput): contains new tree state, selected action, root value, and policy weights
         """
-        eval_state = self.update_root(eval_state, env_state, params, root_metadata=root_metadata)
-        iterate = partial(self.iterate,
-            params=params,
-            env_step_fn=env_step_fn
-        )
-        eval_state = jax.lax.fori_loop(0, self.num_iterations, lambda _, t: iterate(t), eval_state)
-        eval_state, action, policy_weights = self.sample_root_action(eval_state)
-        
+        # store current state metadata in the root node
+        key, root_key = jax.random.split(key)
+        eval_state = self.update_root(root_key, eval_state, env_state, params, root_metadata=root_metadata)
+        # perform 'num_iterations' iterations of MCTS
+        iterate = partial(self.iterate, params=params, env_step_fn=env_step_fn)
+
+        iterate_keys = jax.random.split(key, self.num_iterations)
+        eval_state, _ = jax.lax.scan(lambda state, k: (iterate(k, state), None), eval_state, iterate_keys)
+        # sample action based on root visit counts
+        eval_state, action, policy_weights = self.sample_root_action(key, eval_state)
         return MCTSOutput(
             eval_state=eval_state,
             action=action,
@@ -94,55 +108,89 @@ class MCTS(Evaluator):
     
 
     def get_value(self, state: MCTSTree) -> chex.Array:
-        return state.at(state.ROOT_INDEX).q
+        """Returns value estimate of the environment state stored in the root node of the tree.
+
+        Args:
+        - `state`: MCTSTree to evaluate
+
+        Returns:
+        - (chex.Array): value estimate of the environment state stored in the root node of the tree
+        """
+        return state.data_at(state.ROOT_INDEX).q
     
 
-    def update_root(self, tree: MCTSTree, root_embedding: chex.ArrayTree, 
+    def update_root(self, key: chex.PRNGKey, tree: MCTSTree, root_embedding: chex.ArrayTree, 
                     params: chex.ArrayTree, **kwargs) -> MCTSTree:
         """Populates the root node of an MCTSTree."""
-        key, tree = get_rng(tree)
         root_policy_logits, root_value = self.eval_fn(root_embedding, params, key)
         root_policy = jax.nn.softmax(root_policy_logits)
-        root_node = tree.at(tree.ROOT_INDEX)
+        root_node = tree.data_at(tree.ROOT_INDEX)
         root_node = self.update_root_node(root_node, root_policy, root_value, root_embedding)
-        return set_root(tree, root_node)
+        return tree.set_root(root_node)
     
-    def iterate(self, tree: MCTSTree, params: chex.ArrayTree, env_step_fn: EnvStepFn) -> MCTSTree:
+    
+    def iterate(self, key: chex.PRNGKey, tree: MCTSTree, params: chex.ArrayTree, env_step_fn: EnvStepFn) -> MCTSTree:
+        """ Performs one iteration of MCTS.
+        1. Traverse to leaf node.
+        2. Evaluate Leaf Node
+        3. Expand Leaf Node (add to tree)
+        4. Backpropagate
+
+        Args:
+        - `tree`: MCTSTree to evaluate
+        - `params`: parameters to pass to the the leaf evaluation function
+        - `env_step_fn`: env step fn: (env_state, action) -> (new_env_state, metadata)
+
+        Returns:
+        - (MCTSTree): updated MCTSTree
+        """
         # traverse from root -> leaf
         traversal_state = self.traverse(tree)
         parent, action = traversal_state.parent, traversal_state.action
-        # evaluate and expand leaf
-        embedding = tree.at(parent).embedding
+        # get env state (embedding) for leaf node
+        embedding = tree.data_at(parent).embedding
         new_embedding, metadata = env_step_fn(embedding, action)
         player_reward = metadata.rewards[metadata.cur_player_id]
-        key, tree = get_rng(tree)
+        # evaluate leaf node
         policy_logits, value = self.eval_fn(new_embedding, params, key)
         policy_logits = jnp.where(metadata.action_mask, policy_logits, jnp.finfo(policy_logits).min)
         policy = jax.nn.softmax(policy_logits)
         value = jnp.where(metadata.terminated, player_reward, value)
+        # add leaf node to tree
         node_exists = tree.is_edge(parent, action)
         node_idx = tree.edge_map[parent, action]
 
+        node_data = jax.lax.cond(
+            node_exists,
+            lambda: self.visit_node(node=tree.data_at(node_idx), value=value, p=policy, terminated=metadata.terminated, embedding=new_embedding),
+            lambda: self.new_node(policy=policy, value=value, embedding=new_embedding, terminated=metadata.terminated)
+        )
+
         tree = jax.lax.cond(
             node_exists,
-            lambda _: update_node(tree, node_idx, self.visit_node(node=tree.at(node_idx), value=value, p=policy,
-                                 terminated=metadata.terminated, embedding=new_embedding)),
-            lambda _: add_node(tree, parent, action,
-                self.new_node(policy=policy, value=value, terminated=metadata.terminated, embedding=new_embedding)),
-            None
+            lambda: tree.update_node(index=node_idx, data = node_data),
+            lambda: tree.add_node(parent_index=parent, edge_index=action, data=node_data)
         )
         # backpropagate
         return self.backpropagate(tree, parent, value)
 
     
     def choose_root_action(self, tree: MCTSTree) -> int:
+        """ Choose an action to take from the root node of the search tree using `self.action_selector`
+
+        Args:
+        - `tree`: MCTSTree to evaluate
+
+        Returns:
+        - (int): action to take from the root node
+        """
         return self.action_selector(tree, tree.ROOT_INDEX, self.discount)
 
     def traverse(self, tree: MCTSTree) -> TraversalState:
         def cond_fn(state: TraversalState) -> bool:
             return jnp.logical_and(
                 tree.is_edge(state.parent, state.action),
-                ~(tree.at(tree.edge_map[state.parent, state.action]).terminated)
+                ~(tree.data_at(tree.edge_map[state.parent, state.action]).terminated)
                 # TODO: maximum depth
             )
         
@@ -161,9 +209,9 @@ class MCTS(Evaluator):
         def body_fn(state: BackpropState) -> Tuple[int, MCTSTree]:
             node_idx, value, tree = state.node_idx, state.value, state.tree
             value *= self.discount
-            node = tree.at(node_idx)
+            node = tree.data_at(node_idx)
             new_node = self.visit_node(node, value)
-            tree = update_node(tree, node_idx, new_node)
+            tree = tree.update_node(node_idx, new_node)
             return BackpropState(node_idx=tree.parents[node_idx], value=value, tree=tree)
         
         state = jax.lax.while_loop(
@@ -172,22 +220,20 @@ class MCTS(Evaluator):
         )
         return state.tree
 
-    def sample_root_action(self, tree: MCTSTree) -> Tuple[MCTSTree, int, chex.Array]:
-        action_visits = get_child_data(tree, tree.data.n, tree.ROOT_INDEX)
+    def sample_root_action(self, key: chex.PRNGKey, tree: MCTSTree) -> Tuple[MCTSTree, int, chex.Array]:
+        action_visits = tree.get_child_data('n', tree.ROOT_INDEX)
         total_visits = action_visits.sum(axis=-1)
         policy_weights = action_visits / jnp.maximum(total_visits, 1)
         policy_weights = jnp.where(total_visits > 0, policy_weights, 1 / self.branching_factor)
-        
+
         if self.temperature == 0:
-            rand_key, tree = get_rng(tree)
-            noise = jax.random.uniform(rand_key, shape=policy_weights.shape, maxval=self.tiebreak_noise)
+            noise = jax.random.uniform(key, shape=policy_weights.shape, maxval=self.tiebreak_noise)
             noisy_policy_weights = policy_weights + noise
             return tree, jnp.argmax(noisy_policy_weights), policy_weights
         
         policy_weights_t = policy_weights ** (1/self.temperature)
         policy_weights_t /= policy_weights_t.sum()
-        rand_key, tree = get_rng(tree)
-        action = jax.random.choice(rand_key, policy_weights_t.shape[-1], p=policy_weights_t)
+        action = jax.random.choice(key, policy_weights_t.shape[-1], p=policy_weights_t)
         return tree, action, policy_weights
     
     @staticmethod
@@ -235,13 +281,17 @@ class MCTS(Evaluator):
         )
 
     def reset(self, state: MCTSTree) -> MCTSTree:
-        return reset_tree(state)
+        return state.reset()
+
 
     def step(self, state: MCTSTree, action: int) -> MCTSTree:
-        return get_subtree(state, action)
-    
-    def init(self, key: jax.random.PRNGKey, template_embedding: chex.ArrayTree) -> MCTSTree:
-        return _init(key, self.max_nodes, self.branching_factor, self.new_node(
+        if self.persist_tree:
+            return state.get_subtree(action)
+        return state.reset()
+
+
+    def init(self, template_embedding: chex.ArrayTree, *args, **kwargs) -> MCTSTree: #pylint: disable=arguments-differ
+        return init_tree(self.max_nodes, self.branching_factor, self.new_node(
             policy=jnp.zeros((self.branching_factor,)),
             value=0.0,
             embedding=template_embedding,

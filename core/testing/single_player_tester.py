@@ -25,13 +25,10 @@ class SinglePlayerTester(BaseTester):
         env_step_fn: EnvStepFn, 
         env_init_fn: EnvInitFn,
         evaluator: Evaluator,
-        num_partitions: int,
+        keys: chex.PRNGKey,
         state: TestState, 
         params: chex.ArrayTree
     ) -> Tuple[TestState, Dict]:
-        key, subkey = jax.random.split(state.key)
-        num_episodes = self.num_episodes // num_partitions
-        game_keys = jax.random.split(subkey, num_episodes)
 
         game_fn = partial(single_player_game,
             evaluator = evaluator,
@@ -40,9 +37,9 @@ class SinglePlayerTester(BaseTester):
             env_init_fn = env_init_fn   
         )
 
-        rewards = jax.vmap(game_fn)(game_keys)
+        rewards = jax.vmap(game_fn)(keys)
 
         metrics = {'mean_reward': rewards.mean()}
 
-        return state.replace(key=key), metrics
+        return state, metrics
         

@@ -31,7 +31,10 @@ class ApproxEloTester(BaseTester):
         rating_optim_lr: Optional[float] = None,
         rating_optim_steps: int = 10,
         *args, **kwargs):
-        super().__init__(*args, **kwargs)
+        
+        num_keys = episodes_per_opponent * num_opponenets
+        super().__init__(*args, num_keys=num_keys, **kwargs)
+        
         self.total_epochs = total_epochs
         self.episodes_per_opponent = episodes_per_opponent
         self.num_opponents = num_opponenets
@@ -41,10 +44,10 @@ class ApproxEloTester(BaseTester):
         self.rating_optim_lr = rating_optim_lr if rating_optim_lr is not None else elo_exp_divisor        
         self.rating_optim_steps = rating_optim_steps
         self.optimizer = optax.sgd(learning_rate=self.rating_optim_lr)
-    
-    def init(self, key: jax.random.PRNGKey, params: chex.ArrayTree) -> chex.ArrayTree:
-        return ApproxEloTesterState(
-            key=key, 
+
+
+    def init(self, params: chex.ArrayTree) -> chex.ArrayTree:
+        return ApproxEloTesterState( 
             past_opponent_params=jax.tree_util.tree_map(
                 lambda x: jnp.stack([x] * self.num_opponents),
                 params
@@ -62,22 +65,20 @@ class ApproxEloTester(BaseTester):
         if self.episodes_per_opponent % num_devices != 0:
             raise ValueError(f"{self.__class__.__name__}: episodes_per_opponent ({self.episodes_per_opponent}) must be divisible by number of devices ({num_devices})")
 
-    @partial(jax.pmap, axis_name='d', static_broadcasted_argnums=(0, 1, 2, 3, 4, 5))
+
+    @partial(jax.pmap, axis_name='d', static_broadcasted_argnums=(0, 1, 2, 3, 4))
     def test(self,
         max_steps: int,
         env_step_fn: EnvStepFn,
         env_init_fn: EnvInitFn,
         evaluator: Evaluator,
-        num_partitions: int,
+        keys: chex.PRNGKey,
         state: TestState,
         params: chex.ArrayTree         
     ) -> Tuple[ApproxEloTesterState, Dict]:
         
+        num_partitions = self.num_keys // keys.shape[0]
         episodes_per_opponent = self.episodes_per_opponent // num_partitions
-        num_episodes = episodes_per_opponent * self.num_opponents
-
-        key, subkey = jax.random.split(state.key)
-        game_keys = jax.random.split(subkey, num_episodes)
         
         game_fn = partial(two_player_game,
             evaluator_1 = evaluator,
@@ -96,7 +97,7 @@ class ApproxEloTester(BaseTester):
         opp_ids = jnp.tile(state.past_opponent_ids, episodes_per_opponent)
         opp_mask = jnp.tile(state.past_opponent_mask, episodes_per_opponent)
 
-        results, frames = jax.vmap(game_fn)(game_keys, params_2=opponent_params)
+        results, frames = jax.vmap(game_fn)(keys, params_2=opponent_params)
         frames = jax.tree_map(lambda x: x[0], frames)
 
         wins = results[:, 0] > results[:, 1]
@@ -140,7 +141,6 @@ class ApproxEloTester(BaseTester):
         new_opponent_ids = state.past_opponent_ids.at[state.next_idx].set(state.generation)    
 
         return state.replace(
-            key=key,
             past_opponent_params = new_opponent_params,
             past_opponent_mask = state.past_opponent_mask.at[state.next_idx].set(1),
             next_idx = (state.next_idx + 1) % self.num_opponents,

@@ -21,8 +21,8 @@ class TwoPlayerTester(BaseTester):
         super().__init__(*args, **kwargs)
         self.num_episodes = num_episodes
 
-    def init(self, key: jax.random.PRNGKey, params: chex.ArrayTree, **kwargs) -> TwoPlayerTestState:
-        return TwoPlayerTestState(key=key, best_params=params)
+    def init(self, params: chex.ArrayTree, **kwargs) -> TwoPlayerTestState:
+        return TwoPlayerTestState(best_params=params)
     
     def check_size_compatibilities(self, num_devices: int) -> None:
         if self.num_episodes % num_devices != 0:
@@ -34,14 +34,10 @@ class TwoPlayerTester(BaseTester):
         env_step_fn: EnvStepFn,
         env_init_fn: EnvInitFn,
         evaluator: Evaluator,
-        num_partitions: int,
+        keys: chex.PRNGKey,
         state: TwoPlayerTestState,
         params: chex.ArrayTree
     ) -> Tuple[TwoPlayerTestState, Dict, chex.ArrayTree]:
-        
-        key, subkey = jax.random.split(state.key)
-        num_episodes = self.num_episodes // num_partitions
-        game_keys = jax.random.split(subkey, num_episodes)
 
         game_fn = partial(two_player_game,
             evaluator_1 = evaluator,
@@ -53,7 +49,7 @@ class TwoPlayerTester(BaseTester):
             max_steps = max_steps
         )
 
-        results, frames, p_ids = jax.vmap(game_fn)(game_keys)
+        results, frames, p_ids = jax.vmap(game_fn)(keys)
         frames = jax.tree_map(lambda x: x[0], frames)
         p_ids = p_ids[0]
         
@@ -70,4 +66,4 @@ class TwoPlayerTester(BaseTester):
             None
         )
 
-        return state.replace(key=key, best_params=best_params), metrics, frames, p_ids
+        return state.replace(best_params=best_params), metrics, frames, p_ids

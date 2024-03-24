@@ -16,7 +16,6 @@ class BaseExperience:
 
 @dataclass(frozen=True)
 class ReplayBufferState:
-    key: jax.random.PRNGKey
     next_idx: int
     episode_start_idx: int
     buffer: BaseExperience
@@ -83,18 +82,6 @@ class EpisodeReplayBuffer:
             )
         )
     
-    def init_batched_buffer(self,
-        key: jax.random.PRNGKey,
-        batch_size: int,
-        template_experience: chex.ArrayTree,
-    ) -> ReplayBufferState:
-        keys = jax.random.split(key, batch_size)
-        return jax.vmap(
-            _init, 
-            in_axes=(0, None, jax.tree_util.tree_map(
-                lambda _: None, template_experience))
-        )(keys, self.capacity, template_experience)
-    
     # assumes input is batched!! (dont vmap)
     def sample(self,
         state: ReplayBufferState,
@@ -129,19 +116,16 @@ class EpisodeReplayBuffer:
         )
 
         return sampled_buffer_items
-
-def _init(key: jax.random.PRNGKey, capacity: int, template_experience: BaseExperience) -> ReplayBufferState:
-    return ReplayBufferState(
-        key = key,
-        next_idx = 0,
-        episode_start_idx = 0,
-        buffer = jax.tree_util.tree_map(
-            lambda x: jnp.zeros((capacity, *x.shape), dtype=x.dtype),
-            template_experience
-        ),
-        populated = jnp.full((capacity,), fill_value=False, dtype=jnp.bool_),
-        has_reward = jnp.full((capacity,), fill_value=True, dtype=jnp.bool_),
-    )
-
-
-
+    
+    
+    def init(self, batch_size: int, template_experience: BaseExperience) -> ReplayBufferState:
+        return ReplayBufferState(
+            next_idx = jnp.zeros((batch_size,), dtype=jnp.int32),
+            episode_start_idx = jnp.zeros((batch_size,), dtype=jnp.int32),
+            buffer = jax.tree_util.tree_map(
+                lambda x: jnp.zeros((batch_size, self.capacity, *x.shape), dtype=x.dtype),
+                template_experience
+            ),
+            populated = jnp.full((batch_size, self.capacity,), fill_value=False, dtype=jnp.bool_),
+            has_reward = jnp.full((batch_size, self.capacity,), fill_value=True, dtype=jnp.bool_),
+        )

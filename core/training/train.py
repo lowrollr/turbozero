@@ -20,7 +20,6 @@ from flax.training import orbax_utils
 
 @dataclass(frozen=True)
 class CollectionState:
-    key: jax.random.PRNGKey
     eval_state: chex.ArrayTree
     env_state: chex.ArrayTree
     buffer_state: ReplayBufferState
@@ -203,13 +202,13 @@ class Trainer:
     
     
     def collect(self,
+        key: jax.random.PRNGKey,
         state: CollectionState,
         params: chex.ArrayTree
     ) -> CollectionState:
-        step_key, new_key = jax.random.split(state.key)
         eval_output, new_env_state, new_metadata, terminated, truncated, rewards = \
             self.step_train(
-                key = step_key,
+                key = key,
                 env_state = state.env_state,
                 env_state_metadata = state.metadata,
                 eval_state = state.eval_state,
@@ -242,25 +241,29 @@ class Trainer:
         )
 
         return state.replace(
-            key=new_key,
             eval_state=eval_output.eval_state,
             env_state=new_env_state,
             buffer_state=buffer_state,
             metadata=new_metadata
         )
 
-    @partial(jax.pmap, axis_name='d', static_broadcasted_argnums=(0, 3))
+    @partial(jax.pmap, axis_name='d', static_broadcasted_argnums=(0, 4))
     def collect_steps(self,
+        key: chex.PRNGKey,
         state: CollectionState,
         params: chex.ArrayTree,
         num_steps: int
     ) -> CollectionState:
-        collect = partial(self.collect, params=params)
-        return jax.lax.fori_loop(
-            0, num_steps, 
-            lambda _, s: collect(s), 
-            state
-        )
+        if num_steps > 0:
+            collect = partial(self.collect, params=params)
+            keys = jax.random.split(key, num_steps)
+            return jax.lax.fori_loop(
+                0, num_steps, 
+                lambda i, s: collect(keys[i], s), 
+                state
+            )
+        else:
+            return state
     
     @partial(jax.pmap, axis_name='d', static_broadcasted_argnums=(0,))
     def one_train_step(self, ts: TrainState, batch: BaseExperience) -> Tuple[TrainState, dict]:
@@ -277,20 +280,17 @@ class Trainer:
         return ts, metrics
     
     def train_steps(self,
+        key: chex.PRNGKey,
         collection_state: CollectionState,
         train_state: TrainState,
         num_steps: int
     ) -> Tuple[CollectionState, TrainState, dict]:
         buffer_state = collection_state.buffer_state
         
-        key, new_key = jax.random.split(collection_state.key[0,0], 2)
-        new_keys = collection_state.key.at[0,0].set(new_key)
-
         batch_metrics = []
         
         for _ in range(num_steps):
             step_key, key = jax.random.split(key)
-
             batch = self.memory_buffer.sample(buffer_state, step_key, self.train_batch_size)
             batch = jax.tree_map(lambda x: x.reshape((self.num_devices, -1, *x.shape[1:])), batch)
 
@@ -302,7 +302,7 @@ class Trainer:
             metrics = {k: jnp.stack([m[k] for m in batch_metrics]).mean() for k in batch_metrics[0].keys()}
         else:
             metrics = {}
-        return collection_state.replace(key=new_keys), train_state, metrics
+        return collection_state, train_state, metrics
     
     
     def log_metrics(self, metrics: dict, epoch: int, step: Optional[int] = None):
@@ -339,18 +339,15 @@ class Trainer:
     def init_collection_state(self, key: jax.random.PRNGKey, batch_size: int, template_experience: Optional[BaseExperience] = None):
         if template_experience is None:
             template_experience = self.make_template_experience()
-        buff_key, key = jax.random.split(key)
-        buffer_state = self.memory_buffer.init_batched_buffer(buff_key, batch_size, template_experience)
+        # init buffer state
+        buffer_state = self.memory_buffer.init(batch_size, template_experience)
+        # init env state
         env_init_key, key = jax.random.split(key)
         env_keys = jax.random.split(env_init_key, batch_size)
         env_state, metadata = jax.vmap(self.env_init_fn)(env_keys)
-        eval_key, key = jax.random.split(key)
-        eval_keys = jax.random.split(eval_key, batch_size)
-        evaluator_init = partial(self.evaluator_train.init, template_embedding=self.template_env_state)
-        eval_state = jax.vmap(evaluator_init)(eval_keys)
-        state_keys = jax.random.split(key, batch_size)
+        # init evaluator state
+        eval_state = self.evaluator_train.init_batched(batch_size, template_embedding=self.template_env_state)
         return CollectionState(
-            key=state_keys,
             eval_state=eval_state,
             env_state=env_state,
             buffer_state=buffer_state,
@@ -384,23 +381,27 @@ class Trainer:
             # initialize tester states
             tester_states = []
             for tester in self.testers:
-                tester_init_key, key = jax.random.split(key)
-                init_keys = jax.random.split(tester_init_key, self.num_devices)
-                state = jax.pmap(tester.init, axis_name='d')(init_keys, params=params)
+                state = jax.pmap(tester.init, axis_name='d')(params=params)
                 tester_states.append(state)
         
         # warmup
         # populate replay buffer with initial self-play games
-        collect = jax.vmap(self.collect_steps, in_axes=(1, None, None), out_axes=1)
+        collect = jax.vmap(self.collect_steps, in_axes=(1, 1, None, None), out_axes=1)
         params = self.extract_model_params_fn(train_state)
-        collection_state = collect(collection_state, params, self.warmup_steps)
+        
+        collect_key, key = jax.random.split(key)
+        collect_keys = partition(jax.random.split(collect_key, self.batch_size), self.num_devices)
+        collection_state = collect(collect_keys, collection_state, params, self.warmup_steps)
 
         # training loop
         while cur_epoch < num_epochs:
             # collect self-play games
-            collection_state = collect(collection_state, params, self.collection_steps_per_epoch)
+            collect_key, key = jax.random.split(key)
+            collect_keys = partition(jax.random.split(collect_key, self.batch_size), self.num_devices)
+            collection_state = collect(collect_keys, collection_state, params, self.collection_steps_per_epoch)
             # train
-            collection_state, train_state, metrics = self.train_steps(collection_state, train_state, self.train_steps_per_epoch)
+            train_key, key = jax.random.split(key)
+            collection_state, train_state, metrics = self.train_steps(train_key, collection_state, train_state, self.train_steps_per_epoch)
             # log metrics
             collection_steps = self.batch_size * (cur_epoch+1) * self.collection_steps_per_epoch
             self.log_metrics(metrics, cur_epoch, step=collection_steps)
@@ -409,9 +410,12 @@ class Trainer:
             if cur_epoch % eval_every == 0:
                 params = self.extract_model_params_fn(train_state)
                 for i, test_state in enumerate(tester_states):
+                    run_key, key = jax.random.split(key)
                     new_test_state, metrics, rendered = self.testers[i].run(
-                        cur_epoch, self.max_episode_steps, self.env_step_fn, self.env_init_fn,
-                        self.evaluator_test, self.num_devices,  test_state, params)
+                        key=run_key, epoch_num=cur_epoch, max_steps=self.max_episode_steps, num_devices=self.num_devices,
+                        env_step_fn=self.env_step_fn, env_init_fn=self.env_init_fn, evaluator=self.evaluator_test,
+                        state=test_state, params=params)
+                        
                     metrics = {k: v.mean() for k, v in metrics.items()}
                     self.log_metrics(metrics, cur_epoch, step=collection_steps)
                     if rendered and self.run is not None:

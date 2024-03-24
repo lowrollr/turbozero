@@ -6,7 +6,7 @@ from chex import dataclass
 import chex
 from core.evaluators.mcts.mcts import MCTS
 from core.evaluators.mcts.state import BackpropState, MCTSNode, MCTSTree
-from core.trees.tree import get_child_data, get_rng, update_node
+from core.trees.tree import get_rng, update_node
 from core.evaluators.mcts.action_selection import normalize_q_values
 import jax.numpy as jnp
 import jax
@@ -58,10 +58,10 @@ class WeightedMCTS(MCTS):
         def body_fn(state: BackpropState) -> Tuple[int, MCTSTree]:
             node_idx, tree = state.node_idx, state.tree
             # get node data
-            node = tree.at(node_idx)
+            node = tree.data_at(node_idx)
             # get q values, visit counts of children 
-            child_q_values = get_child_data(tree, tree.data.q, node_idx) * self.discount
-            child_n_values = get_child_data(tree, tree.data.n, node_idx)
+            child_q_values = tree.get_child_data('q', node_idx) * self.discount
+            child_n_values = tree.get_child_data('n', node_idx)
 
             # normalize q-values to [0, 1]
             normalized_q_values = normalize_q_values(child_q_values, child_n_values, node.q, self.epsilon)

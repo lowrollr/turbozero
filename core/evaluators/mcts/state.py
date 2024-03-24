@@ -1,4 +1,5 @@
 
+from typing import Optional
 import chex
 from chex import dataclass
 import jax.numpy as jnp
@@ -37,6 +38,7 @@ class BackpropState:
 @dataclass(frozen=True)
 class MCTSOutput(EvalOutput):
     eval_state: MCTSTree
+    policy_weights: chex.Array
 
 def tree_to_graph(tree, batch_id=0):
     graph = graphviz.Digraph()
