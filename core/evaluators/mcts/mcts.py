@@ -121,7 +121,7 @@ class MCTS(Evaluator):
     
 
     def update_root(self, key: chex.PRNGKey, tree: MCTSTree, root_embedding: chex.ArrayTree, 
-                    params: chex.ArrayTree, **kwargs) -> MCTSTree:
+                    params: chex.ArrayTree, **kwargs) -> MCTSTree: #pylint: disable=unused-argument
         """Populates the root node of an MCTSTree.
         
         Args:
