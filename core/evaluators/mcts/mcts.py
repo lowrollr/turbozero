@@ -165,6 +165,7 @@ class MCTS(Evaluator):
         new_embedding, metadata = env_step_fn(embedding, action)
         player_reward = metadata.rewards[metadata.cur_player_id]
         # evaluate leaf node
+        eval_key, key = jax.random.split(key)
         policy_logits, value = self.eval_fn(new_embedding, params, key)
         policy_logits = jnp.where(metadata.action_mask, policy_logits, jnp.finfo(policy_logits).min)
         policy = jax.nn.softmax(policy_logits)
@@ -185,7 +186,7 @@ class MCTS(Evaluator):
             lambda: tree.add_node(parent_index=parent, edge_index=action, data=node_data)
         )
         # backpropagate
-        return self.backpropagate(tree, parent, value)
+        return self.backpropagate(key, tree, parent, value)
 
 
     def traverse(self, tree: MCTSTree) -> TraversalState:
@@ -227,16 +228,17 @@ class MCTS(Evaluator):
         )
 
 
-    def backpropagate(self, tree: MCTSTree, parent: int, value: float) -> MCTSTree:
+    def backpropagate(self, key: chex.PRNGKey, tree: MCTSTree, parent: int, value: float) -> MCTSTree: #pylint: disable=unused-argument
         """Backpropagate the value estimate from the leaf node to the root node and update visit counts.
         
         Args:
+        - `key`: rng
         - `tree`: MCTSTree to evaluate
         - `parent`: index of the parent node (in most cases, this is the new node added to the tree this iteration)
         - `value`: value estimate of the leaf node
 
         Returns:
-        - (MCTSTree): updated MCTSTree
+        - (MCTSTree): updated search tree
         """
 
         def body_fn(state: BackpropState) -> Tuple[int, MCTSTree]:
