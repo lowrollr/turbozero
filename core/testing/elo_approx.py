@@ -25,12 +25,13 @@ class ApproxEloTester(BaseTester):
         total_epochs: int, 
         episodes_per_opponent: int,
         num_opponenets: int,
+        *args,
         elo_base: float = 10.0,
         elo_exp_divisor: float = 400.0,
         baseline_rating: float = 0.0,
         rating_optim_lr: Optional[float] = None,
         rating_optim_steps: int = 10,
-        *args, **kwargs):
+        **kwargs):
         
         num_keys = episodes_per_opponent * num_opponenets
         super().__init__(*args, num_keys=num_keys, **kwargs)

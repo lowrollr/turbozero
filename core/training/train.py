@@ -42,15 +42,6 @@ def extract_params(state: TrainState) -> chex.ArrayTree:
         return {'params': state.params, 'batch_stats': state.batch_stats}
     return {'params': state.params}
 
-def copy_for_devices(state: TrainState, num_devices: int) -> TrainState:
-    if hasattr(state, 'batch_stats'):
-        return state.replace(
-            params = jax.tree_map(lambda x: jnp.array([x] * num_devices), state.params),
-            batch_stats = jax.tree_map(lambda x: jnp.array([x] * num_devices), state.batch_stats)
-        )
-    return state.replace(
-        params = jax.tree_map(lambda x: jnp.array([x] * num_devices), state.params)
-    )
 
 class Trainer:
     def __init__(self,
