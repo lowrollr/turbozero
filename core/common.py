@@ -68,57 +68,6 @@ def step_env_and_evaluator(
     return output, env_state, env_state_metadata, terminated, truncated, rewards
 
 
-
-@dataclass(frozen=True) 
-class SinglePlayerGameState:
-    key: jax.random.PRNGKey
-    env_state: chex.ArrayTree
-    env_state_metadata: StepMetadata
-    eval_state: chex.ArrayTree
-    outcomes: chex.Array
-    completed: bool
-
-
-def single_player_game(
-    key: jax.random.PRNGKey,
-    evaluator: Evaluator,
-    params: chex.ArrayTree,
-    env_step_fn: EnvStepFn,
-    env_init_fn: EnvInitFn,
-) -> chex.Array:
-    # init rng
-    env_key, eval_key, key = jax.random.split(key, 3)
-    # init env state
-    env_state, metadata = env_init_fn(env_key)
-    # init evaluator state
-    eval_state = evaluator.init(eval_key, template_embedding=env_state)
-    # compile step function
-    step_fn = partial(step_env_and_evaluator,
-        env_step_fn=env_step_fn,
-        env_init_fn=env_init_fn,
-        evaluator=evaluator,
-        params=params,
-        reset=False
-    )
-
-    state = SinglePlayerGameState(
-        key = key,
-        env_state = env_state,
-        env_state_metadata = metadata,
-        eval_state = eval_state,
-        outcomes = jnp.zeros((metadata.num_players,), dtype=jnp.float32),
-        completed = jnp.zeros((), dtype=jnp.bool_)
-    )
-
-    state = jax.lax.while_loop(
-        lambda s: ~s.completed,
-        step_fn,
-        state
-    )
-
-    return state.outcomes
-
-
 @dataclass(frozen=True)
 class TwoPlayerGameState:
     key: jax.random.PRNGKey
