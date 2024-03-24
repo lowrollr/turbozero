@@ -1,14 +1,15 @@
 
-
-
 from typing import Dict, Tuple
-from chex import dataclass
+
 import chex
+from chex import dataclass
+import jax
+import jax.numpy as jnp
+
 from core.evaluators.mcts.mcts import MCTS
 from core.evaluators.mcts.state import BackpropState, MCTSNode, MCTSTree
 from core.evaluators.mcts.action_selection import normalize_q_values
-import jax.numpy as jnp
-import jax
+
 
 @dataclass(frozen=True)
 class WeightedMCTSNode(MCTSNode):
