@@ -22,7 +22,7 @@ class WeightedMCTS(MCTS):
     - https://twitter.com/ptrschmdtnlsn/status/1748800529608888362
     """
 
-    def __init__(self, *args, q_temperature: float = 1.0, **kwargs):
+    def __init__(self, q_temperature: float = 1.0, *args, **kwargs):
         """Initializes a WeightedMCTS evaluator.
         
         Args:

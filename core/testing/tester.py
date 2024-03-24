@@ -120,7 +120,7 @@ class BaseTester:
     
     @partial(jax.pmap, axis_name='d', static_broadcasted_argnums=(0, 1, 2, 3, 4))
     def test(self, max_steps: int, env_step_fn: EnvStepFn, env_init_fn: EnvInitFn, evaluator: Evaluator,
-        keys: chex.PRNGKey, state: TestState, params: chex.ArrayTree) -> Tuple[TestState, Dict, chex.ArrayTree]:
+        keys: chex.PRNGKey, state: TestState, params: chex.ArrayTree) -> Tuple[TestState, Dict, chex.ArrayTree, chex.Array]:
         """Run the test implemented by the Tester. Parallelized across devices.
 
         Implemented by subclasses.
@@ -135,9 +135,10 @@ class BaseTester:
         - `params`: nn parameters used by agent
 
         Returns:
-        - (TestState, Dict, chex.ArrayTree)
+        - (TestState, Dict, chex.ArrayTree, chex.Array)
             - updated internal state of the tester
             - metrics from the test
             - frames from the test (used to produce renderings)
+            - player ids from the test (used to produce renderings)
         """
         raise NotImplementedError()
