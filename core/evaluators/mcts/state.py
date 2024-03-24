@@ -1,16 +1,23 @@
 
-from typing import Optional
 import chex
 from chex import dataclass
-import jax.numpy as jnp
 import graphviz
 import jax
-from core.evaluators.evaluator import EvalOutput
+import jax.numpy as jnp
 
+from core.evaluators.evaluator import EvalOutput
 from core.trees.tree import Tree
+
 
 @dataclass(frozen=True)
 class MCTSNode:
+    """Base MCTS node data strucutre.
+    - `n`: visit count
+    - `p`: policy vector
+    - `q`: cumulative value estimate / visit count
+    - `terminated`: whether the environment state is terminal
+    - `embedding`: environment state
+    """
     n: jnp.number
     p: chex.Array
     q: jnp.number
@@ -19,28 +26,48 @@ class MCTSNode:
 
     @property
     def w(self) -> jnp.number:
+        """cumulative value estimate"""
         return self.q * self.n
 
 
+# an MCTSTree is a Tree containing MCTSNodes
 MCTSTree = Tree[MCTSNode] 
+
 
 @dataclass(frozen=True)
 class TraversalState:
+    """State used during traversal step of MCTS.
+    - `parent`: parent node index
+    - `action`: action taken from parent
+    """
     parent: int
     action: int
 
+
 @dataclass(frozen=True)
 class BackpropState:
+    """State used during backpropagation step of MCTS.
+    - `node_idx`: current node
+    - `value`: value to backpropagate
+    - `tree`: search tree
+    """
     node_idx: int
     value: float
     tree: MCTSTree
 
+
 @dataclass(frozen=True)
 class MCTSOutput(EvalOutput):
+    """Output of an MCTS evaluation. See EvalOutput.
+    - `eval_state`: The updated internal state of the Evaluator.
+    - `policy_weights`: The policy weights assigned to each action.
+    """
     eval_state: MCTSTree
     policy_weights: chex.Array
 
+
 def tree_to_graph(tree, batch_id=0):
+    """Converts a search tree to a graphviz graph."""
     graph = graphviz.Digraph()
 
     def get_child_visits_no_batch(tree, index):

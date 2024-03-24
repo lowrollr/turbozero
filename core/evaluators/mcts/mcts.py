@@ -166,7 +166,7 @@ class MCTS(Evaluator):
         player_reward = metadata.rewards[metadata.cur_player_id]
         # evaluate leaf node
         eval_key, key = jax.random.split(key)
-        policy_logits, value = self.eval_fn(new_embedding, params, key)
+        policy_logits, value = self.eval_fn(new_embedding, params, eval_key)
         policy_logits = jnp.where(metadata.action_mask, policy_logits, jnp.finfo(policy_logits).min)
         policy = jax.nn.softmax(policy_logits)
         value = jnp.where(metadata.terminated, player_reward, value)
@@ -252,8 +252,9 @@ class MCTS(Evaluator):
             # go to parent 
             return BackpropState(node_idx=tree.parents[node_idx], value=value, tree=tree)
         
-        # backpropagate while the parent node is a valid node
-        # the root has no parent, so the loop will terminate when the parent of the root is visited
+        # backpropagate while the node is a valid node
+        # the root has no parent, so the loop will terminate 
+        # when the parent of the root is visited
         state = jax.lax.while_loop(
             lambda s: s.node_idx != s.tree.NULL_INDEX, body_fn, 
             BackpropState(node_idx=parent, value=value, tree=tree)
