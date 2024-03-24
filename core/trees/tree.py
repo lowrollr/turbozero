@@ -1,8 +1,8 @@
 
 from __future__ import annotations
 from typing import Tuple, TypeVar, Generic, ClassVar
-from chex import dataclass
 import chex
+from chex import dataclass
 import jax
 import jax.numpy as jnp
 
@@ -10,6 +10,7 @@ NodeType = TypeVar('NodeType')
 
 @dataclass(frozen=True)
 class Tree(Generic[NodeType]):
+    """A generic DAG tree data structure that holds arbitrary structured data within nodes."""
     # N -> max nodes
     # F -> branching Factor
     next_free_idx: chex.Array # ()
