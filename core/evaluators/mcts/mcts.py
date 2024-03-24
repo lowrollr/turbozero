@@ -99,7 +99,8 @@ class MCTS(Evaluator):
         iterate_keys = jax.random.split(key, self.num_iterations)
         eval_state, _ = jax.lax.scan(lambda state, k: (iterate(k, state), None), eval_state, iterate_keys)
         # sample action based on root visit counts
-        eval_state, action, policy_weights = self.sample_root_action(key, eval_state)
+        # (also get normalized policy weights for training purposes)
+        action, policy_weights = self.sample_root_action(key, eval_state)
         return MCTSOutput(
             eval_state=eval_state,
             action=action,
@@ -121,9 +122,21 @@ class MCTS(Evaluator):
 
     def update_root(self, key: chex.PRNGKey, tree: MCTSTree, root_embedding: chex.ArrayTree, 
                     params: chex.ArrayTree, **kwargs) -> MCTSTree:
-        """Populates the root node of an MCTSTree."""
+        """Populates the root node of an MCTSTree.
+        
+        Args:
+        - `key`: rng
+        - `tree`: MCTSTree to update
+        - `root_embedding`: root environment state
+        - `params`: nn parameters
+
+        Returns:
+        - (MCTSTree): updated MCTSTree
+        """
+        # evaluate root state
         root_policy_logits, root_value = self.eval_fn(root_embedding, params, key)
         root_policy = jax.nn.softmax(root_policy_logits)
+        # update root node
         root_node = tree.data_at(tree.ROOT_INDEX)
         root_node = self.update_root_node(root_node, root_policy, root_value, root_embedding)
         return tree.set_root(root_node)
@@ -174,19 +187,22 @@ class MCTS(Evaluator):
         # backpropagate
         return self.backpropagate(tree, parent, value)
 
-    
-    def choose_root_action(self, tree: MCTSTree) -> int:
-        """ Choose an action to take from the root node of the search tree using `self.action_selector`
-
-        Args:
-        - `tree`: MCTSTree to evaluate
-
-        Returns:
-        - (int): action to take from the root node
-        """
-        return self.action_selector(tree, tree.ROOT_INDEX, self.discount)
 
     def traverse(self, tree: MCTSTree) -> TraversalState:
+        """ Traverse from the root node until an unvisited leaf node is reached.
+        
+        Args:
+        - `tree`: MCTSTree to evaluate
+        
+        Returns:
+        - (TraversalState): state of the traversal
+            - `parent`: index of the parent node
+            - `action`: action to take from the parent node
+        """
+
+        # continue while:
+        # - there is an existing edge corresponding to the chosen action
+        # - AND the child node connected to that edge is not terminal
         def cond_fn(state: TraversalState) -> bool:
             return jnp.logical_and(
                 tree.is_edge(state.parent, state.action),
@@ -194,48 +210,89 @@ class MCTS(Evaluator):
                 # TODO: maximum depth
             )
         
+        # each iterration:
+        # - get the index of the child node connected to the chosen action
+        # - choose the action to take from the child node
         def body_fn(state: TraversalState) -> TraversalState:
             node_idx = tree.edge_map[state.parent, state.action]
             action = self.action_selector(tree, node_idx, self.discount)
             return TraversalState(parent=node_idx, action=action)
         
-        root_action = self.choose_root_action(tree)
+        # choose the action to take from the root
+        root_action = self.action_selector(tree, tree.ROOT_INDEX, self.discount)
+        # traverse from root to leaf
         return jax.lax.while_loop(
             cond_fn, body_fn, 
             TraversalState(parent=tree.ROOT_INDEX, action=root_action)
         )
-    
+
+
     def backpropagate(self, tree: MCTSTree, parent: int, value: float) -> MCTSTree:
+        """Backpropagate the value estimate from the leaf node to the root node and update visit counts.
+        
+        Args:
+        - `tree`: MCTSTree to evaluate
+        - `parent`: index of the parent node (in most cases, this is the new node added to the tree this iteration)
+        - `value`: value estimate of the leaf node
+
+        Returns:
+        - (MCTSTree): updated MCTSTree
+        """
+
         def body_fn(state: BackpropState) -> Tuple[int, MCTSTree]:
             node_idx, value, tree = state.node_idx, state.value, state.tree
+            # apply discount to value estimate
             value *= self.discount
             node = tree.data_at(node_idx)
+            # increment visit count and update value estimate
             new_node = self.visit_node(node, value)
             tree = tree.update_node(node_idx, new_node)
+            # go to parent 
             return BackpropState(node_idx=tree.parents[node_idx], value=value, tree=tree)
         
+        # backpropagate while the parent node is a valid node
+        # the root has no parent, so the loop will terminate when the parent of the root is visited
         state = jax.lax.while_loop(
             lambda s: s.node_idx != s.tree.NULL_INDEX, body_fn, 
             BackpropState(node_idx=parent, value=value, tree=tree)
         )
         return state.tree
 
-    def sample_root_action(self, key: chex.PRNGKey, tree: MCTSTree) -> Tuple[MCTSTree, int, chex.Array]:
+
+    def sample_root_action(self, key: chex.PRNGKey, tree: MCTSTree) -> Tuple[int, chex.Array]:
+        """Sample an action based on the root visit counts.
+        
+        Args:
+        - `key`: rng
+        - `tree`: MCTSTree to evaluate
+        
+        Returns:
+        - (Tuple[int, chex.Array]): sampled action, normalized policy weights
+        """
+        # get root visit counts
         action_visits = tree.get_child_data('n', tree.ROOT_INDEX)
+        # normalize visit counts to get policy weights
         total_visits = action_visits.sum(axis=-1)
         policy_weights = action_visits / jnp.maximum(total_visits, 1)
         policy_weights = jnp.where(total_visits > 0, policy_weights, 1 / self.branching_factor)
 
+        # zero temperature == argmax
         if self.temperature == 0:
+            # break ties by adding small amount of noise
             noise = jax.random.uniform(key, shape=policy_weights.shape, maxval=self.tiebreak_noise)
             noisy_policy_weights = policy_weights + noise
-            return tree, jnp.argmax(noisy_policy_weights), policy_weights
+            return jnp.argmax(noisy_policy_weights), policy_weights
         
+        # apply temperature 
         policy_weights_t = policy_weights ** (1/self.temperature)
+        # re-normalize 
         policy_weights_t /= policy_weights_t.sum()
+        # sample action
         action = jax.random.choice(key, policy_weights_t.shape[-1], p=policy_weights_t)
-        return tree, action, policy_weights
-    
+        # return original policy weights (we train on the policy before temperature is applied)
+        return action, policy_weights
+
+
     @staticmethod
     def visit_node(
         node: MCTSNode,
@@ -244,8 +301,23 @@ class MCTS(Evaluator):
         terminated: Optional[bool] = None,
         embedding: Optional[chex.ArrayTree] = None
     ) -> MCTSNode:
-        
+        """ Update the visit counts and value estimate of a node.
+
+        Args:
+        - `node`: MCTSNode to update
+        - `value`: value estimate to update the node with
+
+        ( we could optionally overwrite the following: )
+        - `p`: policy weights to update the node with
+        - `terminated`: whether the node is terminal
+        - `embedding`: embedding to update the node with
+
+        Returns:
+        - (MCTSNode): updated MCTSNode
+        """
+        # update running value estimate
         q_value = ((node.q * node.n) + value) / (node.n + 1)
+        # update other node attributes
         if p is None:
             p = node.p
         if terminated is None:
@@ -253,44 +325,102 @@ class MCTS(Evaluator):
         if embedding is None:
             embedding = node.embedding
         return node.replace(
-            n=node.n + 1,
+            n=node.n + 1, # increment visit count
             q=q_value,
             p=p,
             terminated=terminated,
             embedding=embedding
         )
     
+
     @staticmethod
     def new_node(policy: chex.Array, value: float, embedding: chex.ArrayTree, terminated: bool) -> MCTSNode:
+        """Create a new MCTSNode.
+        
+        Args:
+        - `policy`: policy weights
+        - `value`: value estimate
+        - `embedding`: environment state embedding
+            - 'embedding' because in some MCTS use-cases, e.g. MuZero, we store an embedding of the state 
+               rather than the state itself. In AlphaZero, this is just the entire environment state.
+        - `terminated`: whether the state is terminal
+
+        Returns:
+        - (MCTSNode): initialized MCTSNode
+        """
         return MCTSNode(
-            n=jnp.array(1, dtype=jnp.int32),
+            n=jnp.array(1, dtype=jnp.int32), # init visit count to 1
             p=policy,
             q=jnp.array(value, dtype=jnp.float32),
             terminated=jnp.array(terminated, dtype=jnp.bool_),
             embedding=embedding
         )
     
+
     @staticmethod
     def update_root_node(root_node: MCTSNode, root_policy: chex.Array, root_value: float, root_embedding: chex.ArrayTree) -> MCTSNode:
+        """Update the root node of the search tree.
+        
+        Args:
+        - `root_node`: node to update
+        - `root_policy`: policy weights
+        - `root_value`: value estimate
+        - `root_embedding`: environment state embedding
+        
+        Returns:
+        - (MCTSNode): updated root node
+        """
         visited = root_node.n > 0
         return root_node.replace(
             p=root_policy,
-            q=jnp.where(visited, root_node.q, root_value),
-            n=jnp.where(visited, root_node.n, 1),
+            # keep old value estimate if the node has already been visited
+            q=jnp.where(visited, root_node.q, root_value), 
+            # keep old visit count if the node has already been visited
+            n=jnp.where(visited, root_node.n, 1), 
             embedding=root_embedding
         )
+    
 
     def reset(self, state: MCTSTree) -> MCTSTree:
+        """Resets the internal state of MCTS.
+        
+        Args:
+        - `state`: evaluator state
+
+        Returns:
+        - (MCTSTree): reset evaluator state
+        """
         return state.reset()
 
 
     def step(self, state: MCTSTree, action: int) -> MCTSTree:
+        """Update the internal state of MCTS after taking an action in the environment.
+        
+        Args:
+        - `state`: evaluator state
+        - `action`: action taken in the environment
+        
+        Returns:
+        - (MCTSTree): updated evaluator state
+        """
+        
         if self.persist_tree:
+            # get subtree corresponding to action taken if persist_tree is True
             return state.get_subtree(action)
+        # just reset to an empty tree if persist_tree is False
         return state.reset()
 
 
     def init(self, template_embedding: chex.ArrayTree, *args, **kwargs) -> MCTSTree: #pylint: disable=arguments-differ
+        """Initializes the internal state of the MCTS evaluator.
+        
+        Args:
+        - `template_embedding`: template environment state embedding
+            - not stored, just used to initialize data structures to the correct shape
+
+        Returns:
+        - (MCTSTree): initialized MCTSTree
+        """
         return init_tree(self.max_nodes, self.branching_factor, self.new_node(
             policy=jnp.zeros((self.branching_factor,)),
             value=0.0,
