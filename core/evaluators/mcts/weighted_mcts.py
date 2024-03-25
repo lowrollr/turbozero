@@ -1,39 +1,58 @@
 
-
-
 from typing import Dict, Tuple
-from chex import dataclass
+
 import chex
+from chex import dataclass
+import jax
+import jax.numpy as jnp
+
 from core.evaluators.mcts.mcts import MCTS
 from core.evaluators.mcts.state import BackpropState, MCTSNode, MCTSTree
-from core.trees.tree import get_child_data, get_rng, update_node
 from core.evaluators.mcts.action_selection import normalize_q_values
-import jax.numpy as jnp
-import jax
+
 
 @dataclass(frozen=True)
 class WeightedMCTSNode(MCTSNode):
-    r: float # raw value returned at leaf evaluation
+    # Weighted MCTS needs access to the original raw value returned by the leaf evaluation
+    r: float # raw value 
+
 
 class WeightedMCTS(MCTS):
-    def __init__(self,
-        q_temperature: float = 1.0,
-        epsilon: float = 1e-8,
-        *args, **kwargs
-    ):
+    """Weighted MCTS implementation: 
+    - https://twitter.com/ptrschmdtnlsn/status/1748800529608888362
+    """
+
+    def __init__(self, q_temperature: float = 1.0, *args, **kwargs):
+        """Initializes a WeightedMCTS evaluator.
+        
+        Args:
+        - `q_temperature`: temperature to apply to child q-values when backpropagating
+        """
         super().__init__(*args, **kwargs)
         self.q_temperature = q_temperature
-        self.epsilon = epsilon
-    
+
+
     def get_config(self) -> Dict:
+        """Returns the configuration of the WeightedMCTS evaluator. Used for logging."""
         return {
             "q_temperature": self.q_temperature,
-            "epsilon": self.epsilon,
             **super().get_config()
         }
 
+
     @staticmethod
     def new_node(policy: chex.Array, value: float, embedding: chex.ArrayTree, terminated: bool) -> WeightedMCTSNode:
+        """Create a new WeightedMCTSNode.
+        
+        Args:
+        - `policy`: policy vector
+        - `value`: value estimate
+        - `embedding`: environment state
+        - `terminated`: whether the environment state is terminal
+        
+        Returns:
+        - (WeightedMCTSNode): new node
+        """
         return WeightedMCTSNode(
             n=jnp.array(1, dtype=jnp.int32),
             p=policy,
@@ -42,9 +61,22 @@ class WeightedMCTS(MCTS):
             terminated=jnp.array(terminated, dtype=jnp.bool_),
             embedding=embedding
         )
-    
+
+
     @staticmethod
     def update_root_node(root_node: MCTSNode, root_policy: chex.Array, root_value: float, root_embedding: chex.ArrayTree) -> WeightedMCTSNode:
+        """ Updates the root node
+        - if the tree is empty, create a new node
+        - otherwise, update the existing root node
+        
+        Args:
+        - `root_node`: root node
+        - `root_policy`: root policy
+        - `root_value`: root value
+        - `root_embedding`: root environment state
+        
+        Returns:
+        - (WeightedMCTSNode): updated root node"""
         visited = root_node.n > 0
         return root_node.replace(
             p=root_policy,
@@ -54,17 +86,29 @@ class WeightedMCTS(MCTS):
             embedding=root_embedding
         )
 
-    def backpropagate(self, tree: MCTSTree, parent: int, value: float) -> MCTSTree:
+
+    def backpropagate(self, key: chex.PRNGKey, tree: MCTSTree, parent: int, value: float) -> MCTSTree:
+        """Backpropagate weighted sums of child q-values and update visit counts.
+
+        Args:
+        - `key`: rng
+        - `tree`: The search tree.
+        - `parent`: index of the parent node (in most cases, this is the new node added to the tree this iteration)
+        - `value`: expanded node value estimate
+
+        Returns:
+        - `tree`: updated search tree
+        """
         def body_fn(state: BackpropState) -> Tuple[int, MCTSTree]:
             node_idx, tree = state.node_idx, state.tree
             # get node data
-            node = tree.at(node_idx)
+            node = tree.data_at(node_idx)
             # get q values, visit counts of children 
-            child_q_values = get_child_data(tree, tree.data.q, node_idx) * self.discount
-            child_n_values = get_child_data(tree, tree.data.n, node_idx)
+            child_q_values = tree.get_child_data('q', node_idx) * self.discount
+            child_n_values = tree.get_child_data('n', node_idx)
 
             # normalize q-values to [0, 1]
-            normalized_q_values = normalize_q_values(child_q_values, child_n_values, node.q, self.epsilon)
+            normalized_q_values = normalize_q_values(child_q_values, child_n_values, node.q, jnp.finfo(node.q).eps)
             
             if self.q_temperature > 0:
                 # if temperature > 0, apply temperature to q-values
@@ -75,9 +119,8 @@ class WeightedMCTS(MCTS):
                 )
             else:
                 # if temperature == 0, select max q-value
-                rand_key, tree = get_rng(tree)
                 # apply random noise to break ties amongst nodes w/ same number of visits
-                noise = jax.random.uniform(rand_key, shape=normalized_q_values.shape, maxval=self.tiebreak_noise)
+                noise = jax.random.uniform(key, shape=normalized_q_values.shape, maxval=self.tiebreak_noise)
                 noisy_q_values = normalized_q_values + noise
 
                 # mask out all values except for max value index
@@ -98,7 +141,7 @@ class WeightedMCTS(MCTS):
             # and increment visit count
             node = self.visit_node(node, node.r)
             # update search tree
-            tree = update_node(tree, node_idx, node)
+            tree = tree.update_node(node_idx, node)
             # backprop to parent node
             return BackpropState(node_idx=tree.parents[node_idx], value=value, tree=tree)
         

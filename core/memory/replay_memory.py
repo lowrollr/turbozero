@@ -1,22 +1,39 @@
 
-from functools import partial
-from typing import Tuple
-from chex import dataclass
 import chex
+from chex import dataclass
 import jax
 import jax.numpy as jnp
 
+
 @dataclass(frozen=True)
 class BaseExperience:
+    """Experience data structure. Stores a training sample.
+    - `reward`: reward for each player in the episode this sample belongs to
+    - `policy_weights`: policy weights
+    - `policy_mask`: mask for policy weights (mask out invalid/illegal actions)
+    - `observation_nn`: observation for neural network input
+    - `cur_player_id`: current player id
+    """
     reward: chex.Array
     policy_weights: chex.Array
     policy_mask: chex.Array
     observation_nn: chex.Array
     cur_player_id: chex.Array
 
+
 @dataclass(frozen=True)
 class ReplayBufferState:
-    key: jax.random.PRNGKey
+    """State of the replay buffer. Stores objects stored in the buffer 
+    and metadata used to determine where to store the next object, as well as 
+    which objects are valid to sample from.
+    - `next_idx`: index where the next experience will be stored
+    - `episode_start_idx`: index where the current episode started, samples are placed in order
+    - `buffer`: buffer of experiences
+    - `populated`: mask for populated buffer indices
+    - `has_reward`: mask for buffer indices that have been assigned a reward
+        - we store samples from in-progress episodes, but don't want to be able to sample them 
+        until the episode is complete
+    """
     next_idx: int
     episode_start_idx: int
     buffer: BaseExperience
@@ -25,20 +42,36 @@ class ReplayBufferState:
 
 
 class EpisodeReplayBuffer:
+    """Replay buffer, stores trajectories from episodes for training.
+    
+    Compatible with `jax.jit`, `jax.vmap`, and `jax.pmap`."""
+
     def __init__(self,
         capacity: int,
     ):
+        """
+        Args:
+        - `capacity`: number of experiences to store in the buffer
+        """
         self.capacity = capacity
 
+
     def get_config(self):
+        """Returns the configuration of the replay buffer. Used for logging."""
         return {
             'capacity': self.capacity,
         }
 
-    def add_experience(self,
-        state: ReplayBufferState,
-        experience: BaseExperience
-    ) -> ReplayBufferState:
+
+    def add_experience(self, state: ReplayBufferState, experience: BaseExperience) -> ReplayBufferState:
+        """Adds an experience to the replay buffer.
+        
+        Args:
+        - `state`: replay buffer state
+        - `experience`: experience to add
+        
+        Returns:
+        - (ReplayBufferState): updated replay buffer state"""
         return state.replace(
             buffer = jax.tree_util.tree_map(
                 lambda x, y: x.at[state.next_idx].set(y),
@@ -50,10 +83,17 @@ class EpisodeReplayBuffer:
             has_reward = state.has_reward.at[state.next_idx].set(False)
         )
     
-    def assign_rewards(self,
-        state: ReplayBufferState,
-        reward: chex.Array
-    ) -> ReplayBufferState:
+
+    def assign_rewards(self, state: ReplayBufferState, reward: chex.Array) -> ReplayBufferState:
+        """ Assign rewards to the current episode.
+        
+        Args:
+        - `state`: replay buffer state
+        - `reward`: rewards to assign (for each player)
+
+        Returns:
+        - (ReplayBufferState): updated replay buffer state
+        """
         return state.replace(
             episode_start_idx = state.next_idx,
             has_reward = jnp.full_like(state.has_reward, True),
@@ -66,9 +106,19 @@ class EpisodeReplayBuffer:
             )
         )
     
+
     def truncate(self,
         state: ReplayBufferState,
     ) -> ReplayBufferState:
+        """Truncates the replay buffer, removing all experiences from the current episode.
+        Use this if we want to discard all experiences from the current episode.
+        
+        Args:
+        - `state`: replay buffer state
+        
+        Returns:
+        - (ReplayBufferState): updated replay buffer state
+        """
         # un-assigned trajectory indices have populated set to False
         # so their buffer contents will be overwritten (eventually)
         # and cannot be sampled
@@ -83,27 +133,29 @@ class EpisodeReplayBuffer:
             )
         )
     
-    def init_batched_buffer(self,
-        key: jax.random.PRNGKey,
-        batch_size: int,
-        template_experience: chex.ArrayTree,
-    ) -> ReplayBufferState:
-        keys = jax.random.split(key, batch_size)
-        return jax.vmap(
-            _init, 
-            in_axes=(0, None, jax.tree_util.tree_map(
-                lambda _: None, template_experience))
-        )(keys, self.capacity, template_experience)
-    
-    # assumes input is batched!! (dont vmap)
+    # assumes input is batched!! (dont vmap/pmap)
     def sample(self,
         state: ReplayBufferState,
         key: jax.random.PRNGKey,
         sample_size: int
     ) -> chex.ArrayTree:
+        """Samples experiences from the replay buffer.
 
+        Assumes the buffer has two batch dimensions, so shape = (devices, batch_size, capacity, ...)
+        Perhaps there is a dimension-agnostic way to do this?
+
+        Samples across all batch dimensions, not per-batch/device.
+        
+        Args:
+        - `state`: replay buffer state
+        - `key`: rng
+        - `sample_size`: size of minibatch to sample
+
+        Returns:
+        - (chex.ArrayTree): minibatch of size (sample_size, ...)
+        """
         masked_weights = jnp.logical_and(
-            state.populated, 
+            state.populated,
             state.has_reward
         ).reshape(-1)
 
@@ -129,19 +181,26 @@ class EpisodeReplayBuffer:
         )
 
         return sampled_buffer_items
+    
+    
+    def init(self, batch_size: int, template_experience: BaseExperience) -> ReplayBufferState:
+        """Initializes the replay buffer state.
+        
+        Args:
+        - `batch_size`: number of parallel environments
+        - `template_experience`: template experience data structure
+            - just used to determine the shape of the replay buffer data
 
-def _init(key: jax.random.PRNGKey, capacity: int, template_experience: BaseExperience) -> ReplayBufferState:
-    return ReplayBufferState(
-        key = key,
-        next_idx = 0,
-        episode_start_idx = 0,
-        buffer = jax.tree_util.tree_map(
-            lambda x: jnp.zeros((capacity, *x.shape), dtype=x.dtype),
-            template_experience
-        ),
-        populated = jnp.full((capacity,), fill_value=False, dtype=jnp.bool_),
-        has_reward = jnp.full((capacity,), fill_value=True, dtype=jnp.bool_),
-    )
-
-
-
+        Returns:
+        - (ReplayBufferState): initialized replay buffer state
+        """
+        return ReplayBufferState(
+            next_idx = jnp.zeros((batch_size,), dtype=jnp.int32),
+            episode_start_idx = jnp.zeros((batch_size,), dtype=jnp.int32),
+            buffer = jax.tree_util.tree_map(
+                lambda x: jnp.zeros((batch_size, self.capacity, *x.shape), dtype=x.dtype),
+                template_experience
+            ),
+            populated = jnp.full((batch_size, self.capacity,), fill_value=False, dtype=jnp.bool_),
+            has_reward = jnp.full((batch_size, self.capacity,), fill_value=True, dtype=jnp.bool_),
+        )
