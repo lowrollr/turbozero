@@ -108,7 +108,7 @@ class WeightedMCTS(MCTS):
             child_n_values = tree.get_child_data('n', node_idx)
 
             # normalize q-values to [0, 1]
-            normalized_q_values = normalize_q_values(child_q_values, child_n_values, node.q, jax.finfo(node.q).eps)
+            normalized_q_values = normalize_q_values(child_q_values, child_n_values, node.q, jnp.finfo(node.q).eps)
             
             if self.q_temperature > 0:
                 # if temperature > 0, apply temperature to q-values

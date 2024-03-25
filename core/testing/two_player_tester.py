@@ -28,7 +28,7 @@ class TwoPlayerTester(BaseTester):
         Args:
         - `num_episodes`: number of episodes to play in each test
         """
-        super().__init__(*args, **kwargs)
+        super().__init__(*args, num_keys=num_episodes, **kwargs)
         self.num_episodes = num_episodes
 
 
@@ -72,7 +72,7 @@ class TwoPlayerTester(BaseTester):
             - frames from the test (used for rendering)
             - player ids from the test (used for rendering)
         """
-        
+
         game_fn = partial(two_player_game,
             evaluator_1 = evaluator,
             evaluator_2 = evaluator,

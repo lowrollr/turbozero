@@ -184,7 +184,7 @@ class Trainer:
         self.check_size_compatibilities()
 
 
-    def init_wandb(self, project_name: str, extra_wandb_config: Optional[dict]) -> wandb.run.Run:
+    def init_wandb(self, project_name: str, extra_wandb_config: Optional[dict]):
         """Initializes wandb run.
         Args: 
         - `project_name`: name of wandb project
