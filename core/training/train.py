@@ -19,7 +19,7 @@ from core.common import partition, step_env_and_evaluator
 from core.evaluators.evaluator import Evaluator
 from core.memory.replay_memory import BaseExperience, EpisodeReplayBuffer, ReplayBufferState
 from core.testing.tester import BaseTester, TestState
-from core.types import EnvInitFn, EnvStepFn, ExtractModelParamsFn, LossFn, StateToNNInputFn, StepMetadata
+from core.types import DataTransformFn, EnvInitFn, EnvStepFn, ExtractModelParamsFn, LossFn, StateToNNInputFn, StepMetadata
 
 
 @dataclass(frozen=True)
@@ -91,6 +91,7 @@ class Trainer:
         state_to_nn_input_fn: StateToNNInputFn,
         testers: List[BaseTester],
         evaluator_test: Optional[Evaluator] = None,
+        data_transform_fns: List[DataTransformFn] = [],
         extract_model_params_fn: Optional[ExtractModelParamsFn] = extract_params,
         wandb_project_name: str = "",
         ckpt_dir: str = "/tmp/turbozero_checkpoints",
@@ -118,6 +119,7 @@ class Trainer:
         - `state_to_nn_input_fn`: function to convert environment state to neural network input
         - `testers`: list of testers to evaluate the agent against (see core.testing.tester)
         - `evaluator_test`: (optional) evaluator to use during testing. If not provided, `evaluator` is used.
+        - `data_transform_fns`: (optional) list of data transform functions to apply to self-play experiences (e.g. rotation, reflection, etc.)
         - `extract_model_params_fn`: (optional) function to extract model parameters from TrainState
         - `wandb_project_name`: (optional) name of wandb project to log to
         - `ckpt_dir`: directory to save checkpoints
@@ -144,6 +146,7 @@ class Trainer:
         self.collection_steps_per_epoch = collection_steps_per_epoch
         self.memory_buffer = memory_buffer
         self.evaluator_train = evaluator
+        self.transform_fns = data_transform_fns
         self.step_train = partial(step_env_and_evaluator,
             evaluator=self.evaluator_train,
             env_step_fn=self.env_step_fn,
@@ -307,6 +310,23 @@ class Trainer:
                 cur_player_id=state.metadata.cur_player_id
             )
         )
+        # apply transforms 
+        for transform_fn in self.transform_fns:
+            t_policy_mask, t_policy_weights, t_env_state = transform_fn(
+                state.metadata.action_mask,
+                eval_output.policy_weights,
+                state.env_state
+            )
+            buffer_state = self.memory_buffer.add_experience(
+                state = buffer_state,
+                experience = BaseExperience(
+                    observation_nn=self.state_to_nn_input_fn(t_env_state),
+                    policy_mask=t_policy_mask,
+                    policy_weights=t_policy_weights,
+                    reward=jnp.empty_like(state.metadata.rewards),
+                    cur_player_id=state.metadata.cur_player_id
+                )
+            )
         # assign rewards to buffer if episode is terminated
         buffer_state = jax.lax.cond(
             terminated,
