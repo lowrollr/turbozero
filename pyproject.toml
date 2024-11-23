@@ -13,13 +13,19 @@ packages = [
 name = "PyPI"
 priority = "primary"
 
+
+[[tool.poetry.source]]
+name = "jax"
+url = "https://storage.googleapis.com/jax-releases/jax_cuda_releases.html"
+priority = "primary"
+
 [tool.poetry.dependencies]
 python = "^3.10"
 graphviz = "^0.20.1"
-wandb = "0.16.2"
-jax = "0.4.24"
-jaxlib = "0.4.24"
-flax = "^0.7.5"
+wandb = "^0.18.6"
+jax = "0.4.35"
+jaxlib = "^0.4.34"
+flax = "^0.8.4"
 optax = "^0.1.8"
 orbax = "^0.1.9"
 chex = "^0.1.85"
