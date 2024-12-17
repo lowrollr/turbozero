@@ -99,7 +99,7 @@ class SinglePlayerTester(BaseTester):
         }
 
         best_params = jax.lax.cond(
-            avg > 1.0,
+            new > best,
             lambda _: params,
             lambda _: state.best_params,
             None
