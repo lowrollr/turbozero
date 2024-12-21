@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "turbozero"
-version = "0.1.0"
+version = "0.1.1"
 description = "vectorized alphazero/mcts in JAX"
 authors = ["lowrollr <92640744+lowrollr@users.noreply.github.com>"]
 license = "Apache-2.0"
@@ -27,7 +27,7 @@ jax = "0.4.35"
 jaxlib = "^0.4.34"
 flax = "^0.8.4"
 optax = "^0.1.8"
-orbax = "^0.1.9"
+orbax-checkpoint = "^0.10.1"
 chex = "^0.1.85"
 pgx = "^2.0.1"
 dm-haiku = "^0.0.12"
