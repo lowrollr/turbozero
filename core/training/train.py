@@ -12,7 +12,7 @@ from flax.training import orbax_utils
 import jax
 import jax.numpy as jnp
 import optax
-import orbax
+import orbax.checkpoint as ocp
 import wandb
 
 from core.common import partition, step_env_and_evaluator
@@ -167,12 +167,9 @@ class Trainer:
         )
         # checkpoints
         self.ckpt_dir = ckpt_dir
-        if os.path.exists(ckpt_dir):
-            shutil.rmtree(ckpt_dir)
-        orbax_checkpointer = orbax.checkpoint.PyTreeCheckpointer()
-        options = orbax.checkpoint.CheckpointManagerOptions(max_to_keep=max_checkpoints, create=True)
-        self.checkpoint_manager = orbax.checkpoint.CheckpointManager(
-            ckpt_dir, orbax_checkpointer, options)
+        options = ocp.CheckpointManagerOptions(max_to_keep=max_checkpoints, create=True)
+        self.checkpoint_manager = ocp.CheckpointManager(
+            ocp.test_utils.erase_and_create_empty(ckpt_dir), options=options)
         # wandb
         self.wandb_project_name = wandb_project_name
         self.use_wandb = wandb_project_name != ""
@@ -468,31 +465,45 @@ class Trainer:
             wandb.log(metrics, step)
 
 
-    def save_checkpoint(self, train_state: TrainState, epoch: int, **kwargs) -> None:
+    def save_checkpoint(self, train_state: TrainState, epoch: int) -> None:
         """Saves an orbax checkpoint of the training state.
         
         Args:
         - `train_state`: current training state
         - `epoch`: current epoch
         """
-        # get params from single device, because
-        # params are copied to all devices
-        ckpt = {'train_state': jax.tree_map(lambda x: x[0], train_state)}
-        # save checkpoint
-        save_args = orbax_utils.save_args_from_target(ckpt)
-        self.checkpoint_manager.save(epoch, ckpt, save_kwargs={'save_args': save_args})
+        # convert pmap-sharded train_state to a single-device one
+        ckpt = jax.tree_map(lambda x: jax.device_get(x), train_state)
+        # save checkpoint (async)
+        self.checkpoint_manager.save(epoch, args=ocp.args.StandardSave(ckpt))
 
-    def load_train_state_from_checkpoint(self, path_to_checkpoint: str) -> TrainState:
+
+    def load_train_state_from_checkpoint(self, path_to_checkpoint: str, epoch: int) -> TrainState:
         """Loads a training state from a checkpoint.
         
         Args:
         - `path_to_checkpoint`: path to checkpoint
+        - `epoch`: epoch to load
         
         Returns:
         - (TrainState): loaded training state
         """
-        ckpt = self.checkpoint_manager.restore(path_to_checkpoint)
-        return ckpt['train_state']
+        # create dummy TrainState
+        key = jax.random.PRNGKey(0)
+        init_key, key = jax.random.split(key)
+        init_keys = jnp.tile(init_key[None], (self.num_devices, 1))
+        dummy_state = self.init_train_state(init_keys)
+        # load checkpoint
+        train_state = self.checkpoint_manager.restore(
+                epoch, 
+                items=dummy_state, 
+                directory=path_to_checkpoint,
+                # allowing for saved checkpoints on different number of jax devices (unsafe)
+                restore_kwargs={
+                    'strict': False,
+                    }
+                )
+        return train_state
     
 
     def make_template_env_state(self) -> chex.ArrayTree:
@@ -634,10 +645,14 @@ class Trainer:
                         self.run.log({f'{self.testers[i].name}_game': wandb.Video(rendered)}, step=collection_steps)
                     tester_states[i] = new_test_state
             # save checkpoint
+            # make sure previous save task has finished 
+            self.checkpoint_manager.wait_until_finished()
             self.save_checkpoint(train_state, cur_epoch)
             # next epoch
             cur_epoch += 1
             
+        # make sure last save task has finished
+        self.checkpoint_manager.wait_until_finished() #
         # return state so that training can be continued!
         return TrainLoopOutput(
             collection_state=collection_state,
