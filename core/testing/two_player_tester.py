@@ -6,7 +6,7 @@ import chex
 from chex import dataclass
 import jax
 
-from core.common import two_player_game
+from core.common import n_player_game
 from core.evaluators.evaluator import Evaluator
 from core.testing.tester import BaseTester, TestState
 from core.types import EnvInitFn, EnvStepFn
@@ -73,11 +73,9 @@ class TwoPlayerTester(BaseTester):
             - player ids from the test (used for rendering)
         """
 
-        game_fn = partial(two_player_game,
-            evaluator_1 = evaluator,
-            evaluator_2 = evaluator,
-            params_1 = params,
-            params_2 = state.best_params,
+        game_fn = partial(n_player_game,
+            evaluators = (evaluator, evaluator),
+            params = (params, state.best_params),
             env_step_fn = env_step_fn,
             env_init_fn = env_init_fn,
             max_steps = max_steps
@@ -85,8 +83,8 @@ class TwoPlayerTester(BaseTester):
 
         results, frames, p_ids = jax.vmap(game_fn)(keys)
         frames = jax.tree_map(lambda x: x[0], frames)
-        p_ids = p_ids[0]
         
+        # get average outcome for the evaluator being tested
         avg = results[:, 0].mean()
 
         metrics = {
@@ -99,5 +97,4 @@ class TwoPlayerTester(BaseTester):
             lambda _: state.best_params,
             None
         )
-
-        return state.replace(best_params=best_params), metrics, frames, p_ids
+        return state.replace(best_params=best_params), metrics, frames, p_ids[0]

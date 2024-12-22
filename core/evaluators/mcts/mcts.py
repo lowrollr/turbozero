@@ -1,14 +1,23 @@
 
 from functools import partial
 from typing import Dict, Optional, Tuple
-import jax
+
 import chex
+import jax
 import jax.numpy as jnp
+
 from core.evaluators.evaluator import Evaluator
 from core.evaluators.mcts.action_selection import MCTSActionSelector
-from core.evaluators.mcts.state import BackpropState, MCTSNode, MCTSTree, TraversalState, MCTSOutput
+from core.evaluators.mcts.state import (
+    BackpropState,
+    MCTSNode,
+    MCTSOutput,
+    MCTSTree,
+    TraversalState,
+)
 from core.trees.tree import init_tree
 from core.types import EnvStepFn, EvalFn, StepMetadata
+
 
 class MCTS(Evaluator):
     """Batched implementation of Monte Carlo Tree Search (MCTS).
@@ -211,7 +220,7 @@ class MCTS(Evaluator):
                 # TODO: maximum depth
             )
         
-        # each iterration:
+        # each iteration:
         # - get the index of the child node connected to the chosen action
         # - choose the action to take from the child node
         def body_fn(state: TraversalState) -> TraversalState:

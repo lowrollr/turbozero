@@ -1,25 +1,34 @@
 
 from functools import partial
-import os
-import shutil
 from typing import Any, List, Optional, Tuple
 
 import chex
-from chex import dataclass
 import flax
-from flax.training.train_state import TrainState
-from flax.training import orbax_utils
 import jax
 import jax.numpy as jnp
 import optax
 import orbax.checkpoint as ocp
 import wandb
+from chex import dataclass
+from flax.training.train_state import TrainState
 
 from core.common import partition, step_env_and_evaluator
 from core.evaluators.evaluator import Evaluator
-from core.memory.replay_memory import BaseExperience, EpisodeReplayBuffer, ReplayBufferState
+from core.memory.replay_memory import (
+    BaseExperience,
+    EpisodeReplayBuffer,
+    ReplayBufferState,
+)
 from core.testing.tester import BaseTester, TestState
-from core.types import DataTransformFn, EnvInitFn, EnvStepFn, ExtractModelParamsFn, LossFn, StateToNNInputFn, StepMetadata
+from core.types import (
+    DataTransformFn,
+    EnvInitFn,
+    EnvStepFn,
+    ExtractModelParamsFn,
+    LossFn,
+    StateToNNInputFn,
+    StepMetadata,
+)
 
 
 @dataclass(frozen=True)
@@ -159,12 +168,6 @@ class Trainer:
         # testing
         self.testers = testers
         self.evaluator_test = evaluator_test if evaluator_test is not None else evaluator
-        self.step_test = partial(step_env_and_evaluator,
-            evaluator=self.evaluator_test,
-            env_step_fn=self.env_step_fn,
-            env_init_fn=self.env_init_fn,
-            max_steps=self.max_episode_steps
-        )
         # checkpoints
         self.ckpt_dir = ckpt_dir
         options = ocp.CheckpointManagerOptions(max_to_keep=max_checkpoints, create=True)
@@ -287,7 +290,7 @@ class Trainer:
         - (CollectionState): updated collection state
         """
         # step environment and evaluator
-        eval_output, new_env_state, new_metadata, terminated, truncated, rewards = \
+        eval_output, new_env_state, new_metadata, terminated, truncated, rewards, _ = \
             self.step_train(
                 key = key,
                 env_state = state.env_state,

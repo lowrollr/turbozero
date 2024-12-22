@@ -1,9 +1,10 @@
 
 import os
-
 import xml.etree.ElementTree as ET
+
 import cairosvg
 from PIL import Image
+
 
 def render_pgx_2p(frames, p_ids, title, frame_dir, p1_label='Black', p2_label='White', duration=900):
     """really messy render function for rendering frames from a 2-player game
@@ -52,9 +53,9 @@ def render_pgx_2p(frames, p_ids, title, frame_dir, p1_label='Black', p2_label='W
         p1_text = ET.Element('ns0:text', x=str(0.01 * original_width), y=str(original_height * 1.05), fill='white', style='font-family: Arial;')
         p2_text = ET.Element('ns0:text', x=str(0.01 * original_width), y=str(original_height * 1.15), fill='white', style='font-family: Arial;')
         emoji = "[W]" if agent_win else "[L]" if opp_win else "[D]" if draw else ""
-        agent_text = f"{emoji} Trained Agent ({trained_agent_color}): {'+' if frame.p1_value_estimate > 0 else ''}{frame.p1_value_estimate:.4f}"
+        agent_text = f"{emoji} Trained Agent ({trained_agent_color}): {'+' if frame.value_estimates[p_ids[0]] > 0 else ''}{frame.value_estimates[p_ids[0]]:.4f}"
         emoji = "[W]" if opp_win else "[L]" if agent_win else "[D]" if draw else ""
-        opp_text = f"{emoji} Opponent ({opponent_color}): {'+' if frame.p2_value_estimate > 0 else ''}{frame.p2_value_estimate:.4f}"
+        opp_text = f"{emoji} Opponent ({opponent_color}): {'+' if frame.value_estimates[p_ids[1]] > 0 else ''}{frame.value_estimates[p_ids[1]]:.4f}"
         p1_text.text = agent_text
         p2_text.text = opp_text
 

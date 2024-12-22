@@ -8,7 +8,7 @@ from typing import Dict, Optional, Tuple
 import chex
 import jax
 import jax.numpy as jnp
-from core.common import GameFrame, two_player_game
+from core.common import GameFrame, n_player_game
 from core.evaluators.evaluator import Evaluator
 from core.testing.tester import BaseTester, TestState
 from core.types import EnvInitFn, EnvStepFn
@@ -65,11 +65,9 @@ class TwoPlayerBaseline(BaseTester):
             - player ids from the first episode of the test
         """
 
-        game_fn = partial(two_player_game,
-            evaluator_1 = evaluator,
-            evaluator_2 = self.baseline_evaluator,
-            params_1 = params,
-            params_2 = self.baseline_params,
+        game_fn = partial(n_player_game,
+            evaluators = (evaluator, self.baseline_evaluator),
+            params = (params, self.baseline_params),
             env_step_fn = env_step_fn,
             env_init_fn = env_init_fn,
             max_steps = max_steps
@@ -77,12 +75,11 @@ class TwoPlayerBaseline(BaseTester):
 
         results, frames, p_ids = jax.vmap(game_fn)(keys)
         frames = jax.tree_map(lambda x: x[0], frames)
-        p_ids = p_ids[0]
-        
+        # get average outcome for the evaluator being tested
         avg = results[:, 0].mean()
 
         metrics = {
             f"{self.name}_avg_outcome": avg
         }
 
-        return state, metrics, frames, p_ids
+        return state, metrics, frames, p_ids[0]
