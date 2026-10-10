@@ -264,6 +264,7 @@ class Trainer:
         testers: Sequence[BaseTester],
         nn_state: eqx.nn.State | None = None,
         replay_window: int | Schedule[int] | None = None,
+        grad_accum_steps: int = 1,
         evaluator_test: Evaluator | None = None,
         test_env_init_fn: EnvInitFn | None = None,
         selfplay_exploration: SelfPlayExploration | None = None,
@@ -305,6 +306,17 @@ class Trainer:
                 from, at most `memory_buffer.capacity`, or a `Schedule` of it by epoch, e.g. to sample only recent
                 data early on, while the network changes quickly, and more later. Changing it doesn't recompile.
                 If not provided, the whole buffer.
+            grad_accum_steps: (optional) split each training minibatch into this many micro-batches, and
+                apply one optimizer update with their gradients' mean (gradient accumulation): training
+                holds one micro-batch's activations at a time, so takes less memory, for the same
+                compute. It must divide `train_batch_size`. Micro-batch i takes samples i, i + n, i + 2n,
+                ... of the minibatch (for n micro-batches), so that each holds its share of tree positions
+                (see `tree_positions`). The update is the minibatch's, up to float rounding, except for
+                layers that compute statistics across the batch: BatchNorm normalizes each micro-batch
+                with its own statistics, and its running statistics are updated once per step, with the
+                mean of the micro-batches' updates (for BatchNorm's running mean, that's the
+                minibatch's; its running variance misses the variance between micro-batches' means).
+                Default 1: no accumulation.
             evaluator_test: (optional) evaluator to use during testing. If not provided, `evaluator` is used
                 (required with a schedule of several evaluators).
             test_env_init_fn: (optional) environment initialization function for test episodes, e.g. to test from
@@ -393,6 +405,12 @@ class Trainer:
         # training
         self.train_steps_per_epoch = train_steps_per_epoch
         self.train_batch_size = train_batch_size
+        if grad_accum_steps < 1 or train_batch_size % grad_accum_steps:
+            raise ValueError(
+                f"grad_accum_steps must be positive and divide train_batch_size, "
+                f"{train_batch_size}, got {grad_accum_steps}"
+            )
+        self.grad_accum_steps = grad_accum_steps
         # testing
         self.testers = testers
         if evaluator_test is None:
@@ -451,6 +469,11 @@ class Trainer:
             "warmup_steps": self.warmup_steps,
             "collection_steps_per_epoch": self.collection_steps_per_epoch,
             "train_steps_per_epoch": self.train_steps_per_epoch,
+            **(
+                {"grad_accum_steps": self.grad_accum_steps}
+                if self.grad_accum_steps > 1
+                else {}
+            ),
             "evaluator_train": evaluator_train.__class__.__name__,
             "evaluator_train_config": evaluator_train.get_config(),
             **(
@@ -710,7 +733,12 @@ class Trainer:
         # calculate loss, get gradients
         nn = eqx.combine(ts.params, self.nn_static)
         grad_fn = eqx.filter_value_and_grad(self.loss_fn, has_aux=True)
-        (loss, (metrics, nn_state)), grads = grad_fn(nn, ts.nn_state, batch)
+        if self.grad_accum_steps == 1:
+            (loss, (metrics, nn_state)), grads = grad_fn(nn, ts.nn_state, batch)
+        else:
+            loss, metrics, nn_state, grads = self.accumulate_grads(
+                grad_fn, nn, ts.params, ts.nn_state, batch
+            )
         # apply gradients
         updates, opt_state = self.optimizer.update(grads, ts.opt_state, ts.params)
         ts = replace(
@@ -723,6 +751,57 @@ class Trainer:
         # return updated train state and metrics
         metrics = {**metrics, "loss": loss}
         return ts, metrics
+
+    def accumulate_grads(
+        self,
+        grad_fn: Callable,
+        nn: eqx.Module,
+        params: Any,
+        nn_state: eqx.nn.State | None,
+        batch: BaseExperience,
+    ) -> tuple[jax.Array, dict, eqx.nn.State | None, Any]:
+        """Computes the loss and gradients of a minibatch in `grad_accum_steps` micro-batches, one after
+        another in a `jax.lax.scan` (see `grad_accum_steps` in `__init__`).
+
+        Args:
+            grad_fn: `loss_fn`'s value and gradient function
+            nn: the neural network
+            params: its parameters, which its gradients have the structure of
+            nn_state: state of the neural network, which each micro-batch starts from
+            batch: minibatch of experiences
+
+        Returns:
+            Tuple[jax.Array, dict, Optional[eqx.nn.State], Any]: the micro-batches' mean loss, mean
+                metrics, mean state (taking the last of non-float leaves, e.g. step counters), and
+                mean gradients
+        """
+        n = self.grad_accum_steps
+        # micro-batch i is samples i, i + n, i + 2n, ...
+        micro_batches = jax.tree.map(
+            lambda x: x.reshape(x.shape[0] // n, n, *x.shape[1:]).swapaxes(0, 1),
+            batch,
+        )
+
+        def micro_step(grads: Any, micro_batch: BaseExperience) -> tuple[Any, tuple]:
+            (loss, (metrics, new_state)), micro_grads = grad_fn(
+                nn, nn_state, micro_batch
+            )
+            grads = jax.tree.map(jnp.add, grads, micro_grads)
+            return grads, (loss, metrics, new_state)
+
+        grads, (losses, metrics, states) = jax.lax.scan(
+            micro_step, jax.tree.map(jnp.zeros_like, params), micro_batches
+        )
+        nn_state = jax.tree.map(
+            lambda x: x.mean(axis=0) if jnp.issubdtype(x.dtype, jnp.inexact) else x[-1],
+            states,
+        )
+        return (
+            losses.mean(),
+            jax.tree.map(jnp.mean, metrics),
+            nn_state,
+            jax.tree.map(lambda g: g / n, grads),
+        )
 
     @partial(jax.jit, static_argnums=(0, 4))
     def train_epoch(

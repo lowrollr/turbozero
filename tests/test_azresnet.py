@@ -10,7 +10,7 @@ from core.networks.utils import apply_nn
 INPUT_SHAPE = (4, 4, 2)
 
 
-def make_net(inference_dtype="float32"):
+def make_net(inference_dtype="float32", remat=False):
     """A small AZResnet whose BatchNorm layers have seen a few training batches, so their
     running statistics aren't the identity."""
     config = AZResnetConfig(
@@ -18,6 +18,7 @@ def make_net(inference_dtype="float32"):
         num_blocks=2,
         num_channels=8,
         inference_dtype=inference_dtype,
+        remat=remat,
     )
     net, state = eqx.nn.make_with_state(AZResnet)(
         config, INPUT_SHAPE, key=jax.random.PRNGKey(0)
@@ -71,4 +72,32 @@ def test_inference_dtype_does_not_change_training():
     np.testing.assert_array_equal(policy32, policy16)
     np.testing.assert_array_equal(value32, value16)
     for a, b in zip(jax.tree.leaves(state32), jax.tree.leaves(state16)):
+        np.testing.assert_array_equal(a, b)
+
+
+def test_remat_gives_the_same_gradients():
+    def loss(net, state, x):
+        (policy, value), state = apply_nn(net, state, x)
+        return (policy**2).mean() + (value**2).mean(), state
+
+    x = observations(jax.random.PRNGKey(10))
+    results = [
+        eqx.filter_jit(eqx.filter_value_and_grad(loss, has_aux=True))(
+            *make_net(remat=remat), x
+        )
+        for remat in (False, True)
+    ]
+
+    for a, b in zip(*(jax.tree.leaves(r) for r in results), strict=True):
+        np.testing.assert_allclose(a, b, rtol=1e-5, atol=1e-7)
+
+
+def test_remat_does_not_change_inference():
+    x = observations(jax.random.PRNGKey(10))
+    outputs = [
+        apply_nn(eqx.nn.inference_mode(net), state, x)
+        for net, state in (make_net(remat=False), make_net(remat=True))
+    ]
+
+    for a, b in zip(*(jax.tree.leaves(o) for o in outputs), strict=True):
         np.testing.assert_array_equal(a, b)

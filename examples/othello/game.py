@@ -116,17 +116,20 @@ def make_network(
     num_channels: int,
     seed: int = 0,
     inference_dtype: str = "float32",
+    remat: bool = False,
 ):
     """The residual network from the AlphaZero paper; any equinox module works (see
     core.networks.utils.apply_nn). It uses BatchNorm, so it's created along with its
     state: returns (network, state). It computes in `inference_dtype` when it isn't
-    training, e.g. in self-play."""
+    training, e.g. in self-play. With `remat`, training computes each residual block's
+    activations again in the backward pass instead of keeping them (see AZResnetConfig)."""
     return eqx.nn.make_with_state(AZResnet)(
         AZResnetConfig(
             policy_head_out_size=env.num_actions,
             num_blocks=num_blocks,
             num_channels=num_channels,
             inference_dtype=inference_dtype,
+            remat=remat,
         ),
         # pgx types observation_shape as Tuple[int, ...]; for board games it's (height, width, channels)
         cast(tuple[int, int, int], env.observation_shape),

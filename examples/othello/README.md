@@ -70,6 +70,44 @@ computes in bfloat16 in self-play and test games (it still trains in float32), a
 epoch takes about 36 seconds; searching with the same checkpoint, bfloat16 and float32
 play evenly.
 
+### Training memory
+
+Most of training's GPU memory goes to the activations its backward pass keeps, which grow
+with the network and the batch: a 10-block, 128-channel network fits on a 16 GB card at
+the default batch of 4096 (about 12 GB at its peak, replay memory included), but 15 × 128
+and 10 × 192 run out of memory. Halving `--train-batch` (and doubling `--train-steps`)
+fits, but it changes training too. Two options cut the memory and keep the batch:
+
+- `--remat` keeps only each residual block's input for the backward pass, and computes
+  the activations inside the block again from it (gradient checkpointing). It costs an
+  extra forward pass through the blocks, roughly a third more training compute, and
+  gives the same training, up to float rounding.
+- `--grad-accum M` splits each batch into M micro-batches, computes their gradients one
+  after another, and makes one update with their mean: activations take 1/M the memory,
+  for the same compute (if smaller convolutions keep the GPU as busy). The update is the
+  whole batch's, up to float rounding, except for BatchNorm: each micro-batch is
+  normalized by its own mean and variance, as if training on batches of 4096 / M.
+  BatchNorm's running statistics, which self-play uses, are updated once per step, by
+  the mean of the micro-batches' updates: their running mean follows the whole batch's
+  mean, and their running variance the micro-batches' mean variance (a little smaller
+  than the whole batch's). Micro-batch i takes samples i, i + M, i + 2M, ... of the
+  batch, so each holds its share of tree positions (`--tree-positions`). M must divide
+  `--train-batch`.
+
+Both apply to training alone (self-play and test games are unchanged), and can be
+combined. Compiled for the CPU, a training step at batch 4096 needs this much temporary
+memory (`memory_analysis()` of the compiled step; the GPU's numbers differ, but scale
+alike):
+
+| Network | Neither | `--remat` | `--grad-accum 2` | `--grad-accum 4` | `--remat --grad-accum 2` |
+|---|---|---|---|---|---|
+| 10 × 128 | 10.8 GiB | 3.1 GiB | 5.4 GiB | 2.7 GiB | 1.5 GiB |
+| 15 × 128 | 15.8 GiB | 4.4 GiB | 7.9 GiB | 3.9 GiB | 2.1 GiB |
+| 10 × 192 | 16.1 GiB | 4.7 GiB | 8.1 GiB | 4.0 GiB | 2.3 GiB |
+
+Try `--remat` first, since it doesn't change training; `--grad-accum` is for
+networks too big even with it.
+
 ### Value targets from the search
 
 By default the network learns each played position's value from the game's outcome z.

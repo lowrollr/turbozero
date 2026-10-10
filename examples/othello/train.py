@@ -119,11 +119,29 @@ def main():
         "--train-batch",
         type=int,
         default=4096,
-        help="samples per training step; with a big network, halve it (and double "
-        "--train-steps) if training runs out of memory",
+        help="samples per training step; if training runs out of memory with a big "
+        "network, see --remat and --grad-accum, which keep the batch",
     )
     parser.add_argument(
         "--train-steps", type=int, default=128, help="training steps per epoch"
+    )
+    parser.add_argument(
+        "--remat",
+        action="store_true",
+        help="train with much less memory, for roughly a third more training compute: "
+        "keep only each residual block's input for the backward pass, and compute its "
+        "activations again (gradient checkpointing). Training is the same, up to float "
+        "rounding",
+    )
+    parser.add_argument(
+        "--grad-accum",
+        type=int,
+        default=1,
+        metavar="M",
+        help="split each training batch into M micro-batches, one after another, and make "
+        "one update with their mean gradient: activations take 1/M the memory. BatchNorm "
+        "normalizes each micro-batch by its own statistics, so training differs a little "
+        "from whole batches (see README.md). Must divide --train-batch",
     )
     buffer = parser.add_mutually_exclusive_group()
     buffer.add_argument(
@@ -303,7 +321,11 @@ def main():
 
     # the residual network from the AlphaZero paper (see game.py), with its BatchNorm state
     resnet, resnet_state = make_network(
-        args.blocks, args.channels, seed=args.seed, inference_dtype=args.inference_dtype
+        args.blocks,
+        args.channels,
+        seed=args.seed,
+        inference_dtype=args.inference_dtype,
+        remat=args.remat,
     )
 
     # AlphaZero takes an arbitrary search backend, here classic MCTS. Temperature 1.0
@@ -371,6 +393,7 @@ def main():
         warmup_steps=0,
         collection_steps_per_epoch=128,
         train_steps_per_epoch=args.train_steps,
+        grad_accum_steps=args.grad_accum,
         nn=resnet,
         nn_state=resnet_state,
         loss_fn=partial(
@@ -414,7 +437,10 @@ def main():
         keep_every=args.keep_every,
         save_state_at=args.save_state_at,
         save_state_every=args.save_state_every,
-        extra_config={"value_target_q": args.value_target_q},
+        extra_config={
+            "value_target_q": args.value_target_q,
+            **({"remat": True} if args.remat else {}),
+        },
     )
     trainer.train_loop(
         seed=args.seed,

@@ -17,12 +17,17 @@ class AZResnetConfig:
         num_channels: number of channels in each residual block
         inference_dtype: dtype the network computes in, in inference mode (see `eqx.nn.inference_mode`),
             e.g. "bfloat16" for faster self-play; it trains in float32 either way
+        remat: in training, keep only each residual block's input for the backward pass, and compute
+            the activations inside the block again from it (gradient checkpointing, see `jax.checkpoint`):
+            training takes much less memory, for about one more forward pass of compute. The
+            results are the same up to float rounding. Inference is unchanged.
     """
 
     policy_head_out_size: int
     num_blocks: int
     num_channels: int
     inference_dtype: str = "float32"
+    remat: bool = False
 
 
 def conv(
@@ -91,6 +96,22 @@ class ResidualBlock(eqx.Module):
         return jax.nn.relu(x + y), state
 
 
+def checkpointed(
+    block: ResidualBlock, x: jax.Array, state: eqx.nn.State
+) -> tuple[jax.Array, eqx.nn.State]:
+    """Applies `block` under `jax.checkpoint`: differentiating it saves only its inputs, and computes
+    its activations again in the backward pass."""
+    params, static = eqx.partition(block, eqx.is_array)
+
+    @jax.checkpoint
+    def apply(
+        params: ResidualBlock, x: jax.Array, state: eqx.nn.State
+    ) -> tuple[jax.Array, eqx.nn.State]:
+        return eqx.combine(params, static)(x, state)
+
+    return apply(params, x, state)
+
+
 class AZResnet(eqx.Module):
     """Implements the AlphaZero ResNet model.
 
@@ -107,6 +128,7 @@ class AZResnet(eqx.Module):
     value_bn: eqx.nn.BatchNorm
     value_linear: eqx.nn.Linear
     inference_dtype: str = eqx.field(static=True)
+    remat: bool = eqx.field(static=True)
 
     def __init__(
         self,
@@ -139,6 +161,7 @@ class AZResnet(eqx.Module):
         self.value_bn = batch_norm(1)
         self.value_linear = eqx.nn.Linear(height * width, 1, key=keys[4])
         self.inference_dtype = config.inference_dtype
+        self.remat = config.remat
 
     def __call__(
         self, x: jax.Array, state: eqx.nn.State
@@ -157,7 +180,10 @@ class AZResnet(eqx.Module):
 
         # residual blocks
         for block in self.blocks:
-            x, state = block(x, state)
+            if self.remat and not self.stem_bn.inference:
+                x, state = checkpointed(block, x, state)
+            else:
+                x, state = block(x, state)
 
         # policy head
         policy, state = conv_bn(self.policy_conv, self.policy_bn, x, state, dtype)
