@@ -24,10 +24,11 @@ from core.evaluators.evaluation_fns import make_nn_eval_fn
 from core.evaluators.evaluator import EvalOutput, Evaluator
 from core.evaluators.mcts.action_selection import PUCTSelector
 from core.evaluators.mcts.mcts import MCTS
-from core.memory.replay_memory import EpisodeReplayBuffer
+from core.memory.replay_memory import BaseExperience, EpisodeReplayBuffer
 from core.monitor import Monitor
 from core.monitor.renderers import pgx_two_player_episode
 from core.networks.azresnet import AZResnet, AZResnetConfig
+from core.networks.utils import apply_nn
 from core.testing.two_player_tester import TwoPlayerTester
 from core.training.loss_fns import az_default_loss_fn
 from core.training.schedule import EvaluatorSchedule, Schedule
@@ -71,16 +72,13 @@ class RootVisitCounter(AlphaZero(MCTS)):
         return output
 
 
-def make_trainer(ttt, ckpt_dir, schedule=None, root_visits_added=None, **kwargs):
+def make_trainer(
+    ttt, ckpt_dir, schedule=None, root_visits_added=None, network=None, **kwargs
+):
     """A Trainer for tic-tac-toe. With `schedule`, (first epoch, num_iterations, max_nodes)
     triples, self-play follows a schedule of `RootVisitCounter`s that record to
-    `root_visits_added`."""
-    config = AZResnetConfig(
-        policy_head_out_size=ttt.num_actions, num_blocks=1, num_channels=4
-    )
-    net, nn_state = eqx.nn.make_with_state(AZResnet)(
-        config, ttt.env.observation_shape, key=jax.random.PRNGKey(0)
-    )
+    `root_visits_added`. `network` is (network, state), a small AZResnet by default."""
+    net, nn_state = network if network is not None else make_resnet(ttt)
     evaluator_kwargs = {
         "eval_fn": make_nn_eval_fn(net, ttt.state_to_nn_input),
         "branching_factor": ttt.num_actions,
@@ -112,10 +110,10 @@ def make_trainer(ttt, ckpt_dir, schedule=None, root_visits_added=None, **kwargs)
         "memory_buffer": EpisodeReplayBuffer(capacity=32),
         "evaluator_test": make_evaluator(temperature=0.0),
         "optimizer": optax.adam(1e-3),
+        "train_batch_size": 4,
         **kwargs,
     }
     return Trainer(
-        train_batch_size=4,
         warmup_steps=STEPS_PER_EPOCH,
         collection_steps_per_epoch=STEPS_PER_EPOCH,
         train_steps_per_epoch=1,
@@ -130,6 +128,20 @@ def make_trainer(ttt, ckpt_dir, schedule=None, root_visits_added=None, **kwargs)
         testers=[TwoPlayerTester(num_episodes=2)],
         ckpt_dir=str(ckpt_dir),
         **kwargs,
+    )
+
+
+def make_resnet(ttt, num_blocks=1, num_channels=4, **config):
+    """A small AZResnet for tic-tac-toe, with its state."""
+    return eqx.nn.make_with_state(AZResnet)(
+        AZResnetConfig(
+            policy_head_out_size=ttt.num_actions,
+            num_blocks=num_blocks,
+            num_channels=num_channels,
+            **config,
+        ),
+        ttt.env.observation_shape,
+        key=jax.random.PRNGKey(0),
     )
 
 
@@ -1386,3 +1398,162 @@ def test_loaded_states_are_donated_to_self_play(ttt, trunk, tmp_path, monkeypatc
     assert all(x.is_deleted() for x in jax.tree.leaves(resumed.collection_state))
     assert given[0] is resumed.collection_state
     assert all(x.is_deleted() for x in jax.tree.leaves(given[first_resumed]))
+
+
+class MLP(eqx.Module):
+    """A small network without BatchNorm: its outputs for a batch don't depend on the batch's
+    other samples."""
+
+    hidden: eqx.nn.Linear
+    policy: eqx.nn.Linear
+    value: eqx.nn.Linear
+
+    def __init__(self, in_size: int, num_actions: int, *, key: jax.Array):
+        keys = jax.random.split(key, 3)
+        self.hidden = eqx.nn.Linear(in_size, 16, key=keys[0])
+        self.policy = eqx.nn.Linear(16, num_actions, key=keys[1])
+        self.value = eqx.nn.Linear(16, 1, key=keys[2])
+
+    def __call__(self, x: jax.Array) -> tuple[jax.Array, jax.Array]:
+        h = jax.nn.relu(self.hidden(x.reshape(-1).astype(jnp.float32)))
+        return self.policy(h), jnp.tanh(self.value(h))
+
+
+def random_batch(ttt, key, size=8):
+    """A minibatch of random tic-tac-toe experiences."""
+    keys = jax.random.split(key, 5)
+    num_actions = ttt.num_actions
+    # the first action is always legal, and illegal ones have no weight
+    mask = jax.random.bernoulli(keys[2], 0.8, (size, num_actions)).at[:, 0].set(True)
+    logits = jax.random.normal(keys[1], (size, num_actions))
+    return BaseExperience(
+        reward=jax.random.uniform(keys[0], (size, 2), minval=-1, maxval=1),
+        policy_weights=jax.nn.softmax(jnp.where(mask, logits, -jnp.inf)),
+        policy_mask=mask,
+        observation_nn=jax.random.bernoulli(
+            keys[3], shape=(size, *ttt.env.observation_shape)
+        ),
+        cur_player_id=jax.random.randint(keys[4], (size,), 0, 2),
+        search_value=jnp.zeros(size),
+    )
+
+
+def train_steps_on(trainer, batches):
+    """The train state and metrics after a training step on each of `batches`, from the start."""
+    train_step = jax.jit(trainer.train_step)
+    ts = trainer.init_train_state()
+    metrics = []
+    for batch in batches:
+        ts, step_metrics = train_step(ts, batch)
+        metrics.append(step_metrics)
+    return ts, metrics
+
+
+def assert_trees_close(a, b, rtol=1e-5, atol=1e-6):
+    for x, y in zip(jax.tree.leaves(a), jax.tree.leaves(b), strict=True):
+        np.testing.assert_allclose(x, y, rtol=rtol, atol=atol)
+
+
+def batches(ttt, count=3):
+    return [random_batch(ttt, jax.random.PRNGKey(i)) for i in range(count)]
+
+
+@pytest.mark.parametrize("grad_accum_steps", [2, 4])
+def test_grad_accum_matches_one_minibatch_without_batch_norm(
+    ttt, tmp_path, grad_accum_steps
+):
+    mlp = MLP(9 * 2, ttt.num_actions, key=jax.random.PRNGKey(0))
+
+    def make(**kwargs):
+        return make_trainer(
+            ttt,
+            tmp_path,
+            network=(mlp, None),
+            train_batch_size=8,
+            optimizer=optax.sgd(0.1),
+            **kwargs,
+        )
+
+    whole, whole_metrics = train_steps_on(make(), batches(ttt))
+    accumulated, accumulated_metrics = train_steps_on(
+        make(grad_accum_steps=grad_accum_steps), batches(ttt)
+    )
+
+    assert not leaves_equal(whole.params, make().init_train_state().params)
+    assert_trees_close(accumulated, whole)
+    assert_trees_close(accumulated_metrics, whole_metrics)
+
+
+def test_grad_accum_updates_batch_norm_statistics_once_per_step(ttt, tmp_path):
+    trainer = make_trainer(
+        ttt, tmp_path, network=make_resnet(ttt), train_batch_size=8, grad_accum_steps=2
+    )
+    ts = trainer.init_train_state()
+    batch = random_batch(ttt, jax.random.PRNGKey(0))
+
+    new_ts, _ = jax.jit(trainer.train_step)(ts, batch)
+
+    # micro-batch i is samples i, i + 2, ..., each from the step's starting statistics
+    nn = eqx.combine(ts.params, trainer.nn_static)
+    states = [
+        apply_nn(nn, ts.nn_state, batch.observation_nn[i::2])[1] for i in range(2)
+    ]
+    expected = jax.tree.map(
+        lambda a, b, old: (a + b) / 2 if jnp.issubdtype(old.dtype, jnp.inexact) else a,
+        *states,
+        ts.nn_state,
+    )
+    assert_trees_close(new_ts.nn_state, expected)
+    # BatchNorm counts one update
+    counters = [
+        (x, old)
+        for x, old in zip(
+            jax.tree.leaves(new_ts.nn_state), jax.tree.leaves(ts.nn_state)
+        )
+        if not jnp.issubdtype(x.dtype, jnp.inexact)
+    ]
+    assert counters and all(np.array_equal(x, old + 1) for x, old in counters)
+
+
+@pytest.mark.parametrize("grad_accum_steps", [0, 3])
+def test_grad_accum_must_divide_the_minibatch(ttt, tmp_path, grad_accum_steps):
+    with pytest.raises(ValueError, match="must be positive and divide"):
+        make_trainer(
+            ttt, tmp_path, train_batch_size=4, grad_accum_steps=grad_accum_steps
+        )
+
+
+def test_remat_matches_training_without_it(ttt, tmp_path):
+    def train(remat):
+        trainer = make_trainer(
+            ttt,
+            tmp_path,
+            network=make_resnet(ttt, num_blocks=2, remat=remat),
+            train_batch_size=8,
+        )
+        return train_steps_on(trainer, batches(ttt))
+
+    with_remat, with_remat_metrics = train(remat=True)
+    without, without_metrics = train(remat=False)
+
+    assert_trees_close(with_remat, without)
+    assert_trees_close(with_remat_metrics, without_metrics)
+
+
+def test_train_loop_with_remat_and_grad_accum(ttt, tmp_path, monkeypatch):
+    trainer = make_trainer(
+        ttt,
+        tmp_path,
+        network=make_resnet(ttt, remat=True),
+        train_batch_size=8,
+        grad_accum_steps=2,
+        tree_positions=TREE_POSITIONS,
+    )
+    monkeypatch.setattr(trainer, "save_checkpoint", lambda *args, **kwargs: None)
+
+    output = trainer.train_loop(seed=0, num_epochs=2)
+
+    assert int(output.train_state.step) == 2
+    assert all(np.isfinite(x).all() for x in jax.tree.leaves(output.train_state.params))
+    assert trainer.get_config()["grad_accum_steps"] == 2
+    assert "grad_accum_steps" not in make_trainer(ttt, tmp_path).get_config()
