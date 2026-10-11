@@ -39,7 +39,42 @@ def conv(
 
 
 def batch_norm(channels: int) -> eqx.nn.BatchNorm:
-    return eqx.nn.BatchNorm(channels, axis_name=BATCH_AXIS, mode="batch")
+    """BatchNorm whose running averages of the batch statistics both start at 0.
+
+    Equinox (0.13) starts the running variance at 1, but divides both running averages by
+    1 - momentum^steps, as if they started at 0 (the zero-debiasing of Adam's moments): in inference
+    the variance was too large by momentum^steps / (1 - momentum^steps), 99 times after one training
+    step, a third too large after 128, and only negligibly so after about 1000.
+    """
+    bn = eqx.nn.BatchNorm(channels, axis_name=BATCH_AXIS, mode="batch")
+    zeros = jnp.zeros((channels,))
+    return eqx.tree_at(
+        lambda bn: bn.batch_state_index, bn, eqx.nn.StateIndex((zeros, zeros))
+    )
+
+
+def inference_affine(
+    bn: eqx.nn.BatchNorm, state: eqx.nn.State
+) -> tuple[jax.Array, jax.Array]:
+    """The per-channel affine map, x * scale + offset, BatchNorm (see `batch_norm`) applies in
+    inference mode: normalization by the averages of the batch statistics it has seen in training,
+    or before it has seen any, by mean 0 and variance 1 (where its running averages, still 0, would
+    divide by the square root of its epsilon).
+
+    Returns:
+        tuple[jax.Array, jax.Array]: scale and offset, each (channels,)
+    """
+    assert bn.batch_counter is not None and bn.batch_state_index is not None
+    steps = state.get(bn.batch_counter)
+    running_mean, running_var = state.get(bn.batch_state_index)
+    # the running averages start at 0, so they fall short by a factor of 1 - momentum^steps
+    debias = jnp.where(steps == 0, 1, 1 - bn.momentum**steps)
+    mean = running_mean / debias
+    var = jnp.where(steps == 0, 1, running_var / debias)
+    scale = jax.lax.rsqrt(var + bn.eps)
+    if bn.weight is not None and bn.bias is not None:
+        return scale * bn.weight, bn.bias - mean * scale * bn.weight
+    return scale, -mean * scale
 
 
 def conv_bn(
@@ -51,20 +86,16 @@ def conv_bn(
 ) -> tuple[jax.Array, eqx.nn.State]:
     """A convolution followed by BatchNorm.
 
-    In inference mode BatchNorm is a fixed per-channel affine map, so it's folded into the convolution's
-    weights and a bias: one pass over the activations instead of two (or more). The folded convolution
-    computes in `dtype`.
+    In inference mode BatchNorm is a fixed per-channel affine map (see `inference_affine`), so it's
+    folded into the convolution's weights and a bias: one pass over the activations instead of two (or
+    more). The folded convolution computes in `dtype`.
     """
     if not bn.inference:
         return bn(conv(x), state)
-    # the map's offset and scale are its value and slope at 0
-    zeros = jnp.zeros((conv.out_channels, 1, 1), conv.weight.dtype)
-    offset, scale = jax.jvp(
-        lambda y: bn(y, state)[0], (zeros,), (jnp.ones_like(zeros),)
-    )
+    scale, offset = inference_affine(bn, state)
     weight = conv.weight * scale.reshape(-1, 1, 1, 1)
     folded = eqx.tree_at(lambda c: c.weight, conv, weight.astype(dtype))
-    return folded(x.astype(dtype)) + offset.astype(dtype), state
+    return folded(x.astype(dtype)) + offset.reshape(-1, 1, 1).astype(dtype), state
 
 
 class ResidualBlock(eqx.Module):

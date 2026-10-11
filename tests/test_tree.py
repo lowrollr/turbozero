@@ -94,6 +94,54 @@ def test_set_child_under_vmap_matches_each_tree_alone():
         )
 
 
+def full_tree():
+    """A full tree: the root with children on edges 0 and 1, and a grandchild under edge 0's."""
+    tree = empty_tree(max_nodes=4).set_root(node(1.0))
+    tree = tree.add_node(0, 0, node(2.0)).add_node(1, 0, node(3.0))
+    return tree.add_node(0, 1, node(4.0))
+
+
+def test_set_child_evicts_a_leaf_for_a_missing_child_of_a_full_tree():
+    tree = full_tree()
+
+    after = tree.set_child(0, 2, node(9.0), evict=2)
+
+    # node 2 (the grandchild) is cut from its parent, and its slot holds the new child
+    assert after.next_free_idx == tree.capacity
+    assert after.edge_map[1, 0] == Tree.NULL_INDEX
+    assert after.edge_map[0, 2] == 2
+    assert after.parents[2] == 0
+    assert_trees_equal(after.data_at(2), node(9.0))
+    # nothing else changes
+    np.testing.assert_array_equal(after.edge_map[0, :2], tree.edge_map[0, :2])
+    assert_trees_equal(
+        after.data_at(np.array([0, 1, 3])), tree.data_at(np.array([0, 1, 3]))
+    )
+
+
+def test_set_child_ignores_evict_unless_the_tree_is_full():
+    # room left: the child goes in the next free slot, as without `evict`
+    tree = empty_tree().set_root(node(1.0)).add_node(0, 0, node(2.0))
+    assert_trees_equal(
+        tree.set_child(0, 1, node(9.0), evict=1), tree.set_child(0, 1, node(9.0))
+    )
+    # an existing child of a full tree is updated in place
+    tree = full_tree()
+    assert_trees_equal(
+        tree.set_child(0, 1, node(9.0), evict=2), tree.update_node(3, node(9.0))
+    )
+    # nothing to evict: a no-op, as without `evict`
+    assert_trees_equal(tree.set_child(0, 2, node(9.0), evict=Tree.NULL_INDEX), tree)
+
+
+def test_leaves():
+    tree = full_tree()
+    np.testing.assert_array_equal(tree.leaves(), [False, False, True, True])
+    # unused slots aren't leaves; a lone root is
+    tree = empty_tree().set_root(node(1.0))
+    np.testing.assert_array_equal(tree.leaves(), [True, False, False, False])
+
+
 def test_get_child_data_fills_missing_children_with_null_value():
     tree = empty_tree().set_root(node(1.0))
     tree = tree.add_node(0, 0, node(2.0))
@@ -157,17 +205,17 @@ def grow(rng: random.Random, parents, edge_map, values, idx):
 
 def reference_subtree(parents, edge_map, values, action):
     """Plain-Python get_subtree: keeps the subtree under the root's child along `action`,
-    renumbering nodes by their old index so the new root lands at 0."""
+    renumbering the new root to 0 and the other nodes after it by their old index."""
     max_nodes, branching = len(parents), len(edge_map[0])
     child = edge_map[0][action]
     kept = []
     if child != Tree.NULL_INDEX:
-        stack = [child]
+        stack = [c for c in edge_map[child] if c != Tree.NULL_INDEX]
         while stack:
             idx = stack.pop()
             kept.append(idx)
             stack.extend(c for c in edge_map[idx] if c != Tree.NULL_INDEX)
-    kept.sort()
+        kept = [child] + sorted(kept)
     new_idx = {old: new for new, old in enumerate(kept)}
 
     new_parents = [Tree.NULL_INDEX] * max_nodes
@@ -311,6 +359,45 @@ def test_get_subtree_reused_over_several_steps(get_subtree, seed):
         assert_trees_equal(tree, build_tree(num_nodes, parents, edge_map, values))
 
 
+def evict_and_regrow(rng: random.Random, parents, edge_map, values):
+    """Moves a random leaf (not the root) to a random free edge of another node, as `set_child`
+    does when it evicts the leaf for a new child of a full tree. Returns (parent, edge, value, leaf)."""
+    has_child = {p for p in parents if p != Tree.NULL_INDEX}
+    leaf = rng.choice([i for i in range(1, len(parents)) if i not in has_child])
+    old_parent = parents[leaf]
+    edge_map[old_parent][edge_map[old_parent].index(leaf)] = Tree.NULL_INDEX
+    p, e = rng.choice(
+        [
+            (p, e)
+            for p in range(len(parents))
+            for e in range(len(edge_map[0]))
+            if p != leaf and edge_map[p][e] == Tree.NULL_INDEX
+        ]
+    )
+    parents[leaf] = p
+    edge_map[p][e] = leaf
+    values[leaf] = rng.uniform(1, 2)
+    return p, e, values[leaf], leaf
+
+
+@pytest.mark.parametrize("seed", range(20))
+def test_get_subtree_after_evictions_matches_reference(get_subtree, seed):
+    # evicted slots hold nodes added later, so a node's parent or the new root can come after it
+    rng = random.Random(seed)
+    max_nodes = rng.choice([4, 12, 33])
+    num_nodes, parents, edge_map, values = random_tree(
+        rng, max_nodes, BRANCHING, num_nodes=max_nodes
+    )
+    tree = build_tree(num_nodes, parents, edge_map, values)
+    set_child = jax.jit(lambda tree, p, e, v, leaf: tree.set_child(p, e, node(v), leaf))
+    for _ in range(rng.randint(1, 3 * max_nodes)):
+        p, e, v, leaf = evict_and_regrow(rng, parents, edge_map, values)
+        tree = set_child(tree, p, e, v, leaf)
+    assert_trees_equal(tree, build_tree(num_nodes, parents, edge_map, values))
+
+    assert_subtree_matches_reference(get_subtree, num_nodes, parents, edge_map, values)
+
+
 # path_to_root vs. following parents one at a time
 
 
@@ -342,4 +429,11 @@ def test_path_to_root_of_deep_chain(max_nodes):
     tree = build_tree(max_nodes, parents, edge_map, [0.0] * max_nodes)
     np.testing.assert_array_equal(
         tree.path_to_root(max_nodes - 1), list(range(max_nodes - 1, -1, -1))
+    )
+
+
+def test_path_to_root_of_null_index_is_empty():
+    tree = build_tree(*random_tree(random.Random(0), num_nodes=MAX_NODES))
+    np.testing.assert_array_equal(
+        tree.path_to_root(Tree.NULL_INDEX), [Tree.NULL_INDEX] * MAX_NODES
     )

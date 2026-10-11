@@ -101,3 +101,48 @@ def test_remat_does_not_change_inference():
 
     for a, b in zip(*(jax.tree.leaves(o) for o in outputs), strict=True):
         np.testing.assert_array_equal(a, b)
+
+
+@pytest.mark.parametrize("steps", [1, 2, 10])
+def test_inference_matches_training_on_the_batches_it_trained_on(steps):
+    # training on the same batch every step, the running averages of the batch statistics are that
+    # batch's statistics from the first step on, so inference gives the outputs training mode does
+    config = AZResnetConfig(policy_head_out_size=17, num_blocks=2, num_channels=8)
+    net, state = eqx.nn.make_with_state(AZResnet)(
+        config, INPUT_SHAPE, key=jax.random.PRNGKey(0)
+    )
+    x = observations(jax.random.PRNGKey(10), batch_size=64)
+    training, state = apply_nn(net, state, x)
+    for _ in range(steps - 1):
+        training, state = apply_nn(net, state, x)
+
+    inference, _ = apply_nn(eqx.nn.inference_mode(net), state, x)
+
+    for a, b in zip(inference, training, strict=True):
+        np.testing.assert_allclose(a, b, rtol=1e-4, atol=1e-5)
+
+
+def test_inference_before_any_training_leaves_batch_norm_inputs_as_they_are():
+    # without statistics yet, inference normalizes by mean 0 and variance 1
+    config = AZResnetConfig(policy_head_out_size=17, num_blocks=2, num_channels=8)
+    net, state = eqx.nn.make_with_state(AZResnet)(
+        config, INPUT_SHAPE, key=jax.random.PRNGKey(0)
+    )
+    x = observations(jax.random.PRNGKey(10))
+
+    (policy, value), _ = apply_nn(eqx.nn.inference_mode(net), state, x)
+
+    def identity(y, state, inference):
+        return y / jnp.sqrt(1 + net.stem_bn.eps), state
+
+    no_norm = eqx.tree_at(
+        lambda net: (
+            [net.stem_bn, net.policy_bn, net.value_bn]
+            + [bn for b in net.blocks for bn in (b.bn1, b.bn2)]
+        ),
+        net,
+        replace_fn=lambda bn: identity,
+    )
+    expected_policy, expected_value = jax.vmap(lambda x: unfolded(no_norm, state, x))(x)
+    np.testing.assert_allclose(policy, expected_policy, rtol=1e-5, atol=1e-6)
+    np.testing.assert_allclose(value, expected_value, rtol=1e-5, atol=1e-6)
