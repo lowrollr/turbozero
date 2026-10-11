@@ -1,13 +1,14 @@
 """Plays a checkpoint from `train.py` against a strong Othello engine, Edax or Egaroucid,
-at a series of fixed search depths.
+at a series of levels.
 
     examples/othello/setup_edax.sh         # once: builds Edax
     uv run examples/othello/vs_engine.py CHECKPOINT --engine edax --levels 2 4 6 8 --sims 400
 
 Games start from XOT openings (see `xot.py`), each played twice with the colors
 swapped, so that two deterministic players give varied, balanced games. The same
-`--seed` always draws the same openings, so checkpoints play the same games. The engine searches
-to the given depth ("level", in its own terms) with its opening book off; our agent runs
+`--seed` always draws the same openings, so checkpoints play the same games. The engine plays
+at the given level with its opening book off: at level L (up to 10) it searches L moves ahead,
+and solves the game exactly once 2L or fewer squares are empty. Our agent runs
 `--sims` MCTS iterations a move at temperature 0, keeping its search tree between moves,
 without the root noise used in self-play. This is how OLIVAW was compared with Edax
 (https://arxiv.org/abs/2103.17228).
@@ -160,7 +161,7 @@ def max_parallel_games(engine: type[GTPEngine], limit: int = 128) -> int:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Plays a train.py checkpoint against Edax or Egaroucid at fixed search depths."
+        description="Plays a train.py checkpoint against Edax or Egaroucid at fixed levels."
     )
     parser.add_argument("checkpoint", help="a checkpoint saved by train.py")
     parser.add_argument("--engine", choices=sorted(ENGINES), default="edax")
@@ -188,6 +189,14 @@ def main():
         default=None,
         help="games at a time (default: as many as fit in a quarter of the available "
         "memory, up to 128)",
+    )
+    parser.add_argument(
+        "--skip-levels",
+        type=int,
+        nargs="+",
+        default=[],
+        help="levels of --levels not to play (e.g. done already), whose openings are still "
+        "drawn, so that the other levels play the same games as without it",
     )
     parser.add_argument(
         "--stop-below",
@@ -251,6 +260,8 @@ def main():
             openings = np.repeat(
                 xot[rng.choice(len(xot), size=args.openings, replace=False)], 2, axis=0
             )
+            if level in args.skip_levels:
+                continue
             we_black = np.arange(num_games) % 2 == 0
             results = np.zeros(num_games, dtype=np.int32)
             for begin in range(0, num_games, parallel):

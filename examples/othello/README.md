@@ -9,7 +9,7 @@ Othello model and against two strong open-source Othello engines,
 |---|---|
 | `train.py` | Trains a network by self-play, testing it on a ladder of opponents as it goes |
 | `eval_pgx.py` | Plays a checkpoint against pgx's pretrained model at several search budgets |
-| `vs_engine.py` | Plays a checkpoint against Edax or Egaroucid at several search depths, from XOT openings |
+| `vs_engine.py` | Plays a checkpoint against Edax or Egaroucid at several levels, from XOT openings |
 | `engines.py` | Edax and Egaroucid, each driven over GTP |
 | `setup_edax.sh`, `setup_egaroucid.sh` | Build the engines for `vs_engine.py` |
 | `game.py` | What the scripts share: the environment, board symmetries, network, evaluators |
@@ -210,9 +210,10 @@ uv run examples/othello/vs_engine.py runs/othello/199.eqx --engine edax --sims 4
 uv run examples/othello/vs_engine.py runs/othello/199.eqx --engine egaroucid --levels 2 4 6
 ```
 
-`vs_engine.py` plays the engine with its opening book off, at a fixed search depth
-("level") and one thread per game, with many games at once: each has its own engine
-process (an Edax process takes about 170 MB and an Egaroucid one about 1.3 GB, so it
+`vs_engine.py` plays the engine with its opening book off and one thread per game, at a
+fixed level: at level L (up to 10) both engines search L moves ahead, and solve the game
+exactly once 2L or fewer squares are empty. It plays many games at once, each with its own
+engine process (an Edax process takes about 170 MB and an Egaroucid one about 1.3 GB, so it
 runs as many as fit in a quarter of the available memory, up to 128).
 The engines and our agent (at temperature 0, without root noise) are all deterministic,
 so games start from **XOT openings**: a list of 10,784 eight-move openings that each end
@@ -221,10 +222,10 @@ same `--seed`). Each opening is played twice, with the colors swapped. This is h
 OLIVAW, an AlphaZero-style Othello program, was compared with Edax
 ([Norelli & Panconesi, 2022](https://arxiv.org/abs/2103.17228)).
 
-The run above scored, out of 256 games against each depth (128 openings), searching
+The run above scored, out of 256 games against each level (128 openings), searching
 400 MCTS iterations a move:
 
-| Edax depth | 4 | 6 | 8 | 10 |
+| Edax level | 4 | 6 | 8 | 10 |
 |---|---|---|---|---|
 | Score | 0.79 | 0.49 | 0.23 | 0.07 |
 
@@ -240,10 +241,11 @@ uv run examples/othello/watch.py runs/othello --pid $! --levels 4 6 8
 ```
 
 Results go to `runs/othello/vs_engine.jsonl`, and with `--monitor URL --run ID` (the id
-in the run's monitor link) to the run's monitor page. Our agent searches on the GPU next
-to training, taking only the memory it needs: with a 10-block network, 256 games against
-each of 3 levels take about 2 minutes and slow training's epochs by about half while
-they run.
+in the run's monitor link) to the run's monitor page, as `edax_level4_sims64` and so on.
+Restarted, it evaluates only the levels a checkpoint has no result for yet, at these `--sims`
+and `--openings`. Our agent searches on the GPU next to training, taking only the memory it
+needs: with a 10-block network, 256 games against each of 3 levels take about 2 minutes and
+slow training's epochs by about half while they run.
 
 ## Credits
 

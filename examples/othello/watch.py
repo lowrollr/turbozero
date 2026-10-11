@@ -6,10 +6,16 @@ long run's strength shows before it ends.
 
 Runs `vs_engine.py` on every checkpoint whose epoch is a multiple of --every (keep them
 with train.py's --keep-every, since it deletes all but the newest 2), and on the newest
-one once the training process --pid has exited. Results are appended to
-`vs_engine.jsonl` in the checkpoint directory, a line per level, and with --monitor
-logged to the training run's page as `edax_level4` and so on. Without --pid it
-evaluates the checkpoints already there and exits.
+one once the training process --pid has exited. `N.eqx` is the network after N + 1 epochs.
+Results are appended to `vs_engine.jsonl` in the checkpoint directory, a line per level,
+and with --monitor logged to the training run's page as `edax_level4_sims64` and so on
+(`{engine}_level{L}_sims{S}`). Without --pid it evaluates the checkpoints already there and
+exits.
+
+A checkpoint is done once `vs_engine.jsonl` has a result for each of --levels at --sims
+and --openings. One evaluated at other levels or with other openings, or whose evaluation
+stopped partway, is evaluated at its missing levels (with the openings they'd have had in
+a full evaluation, see vs_engine.py's --skip-levels).
 
 Our agent's search runs on the accelerator next to training, but it only takes what it
 needs (XLA_PYTHON_CLIENT_PREALLOCATE=false); --cpu keeps it off the accelerator.
@@ -21,6 +27,7 @@ import os
 import subprocess
 import sys
 import time
+from collections import defaultdict
 from pathlib import Path
 
 from core.monitor import DEFAULT_URL, Monitor
@@ -39,17 +46,23 @@ def alive(pid: int) -> bool:
     return True
 
 
-def done_checkpoints(results: Path, sims: int, engine: str) -> set[str]:
-    """Checkpoints already in `results` at these settings."""
+def done_levels(
+    results: Path, sims: int, engine: str, games: int
+) -> defaultdict[str, set[int]]:
+    """The levels each checkpoint has a result for in `results`, at these settings."""
+    done = defaultdict(set)
     if not results.exists():
-        return set()
+        return done
     with open(results) as f:
         records = [json.loads(line) for line in f if line.strip()]
-    return {
-        r["checkpoint"]
-        for r in records
-        if r["sims"] == sims and r["engine"].lower() == engine
-    }
+    for r in records:
+        if (
+            r["sims"] == sims
+            and r["engine"].lower() == engine
+            and r.get("games") == games
+        ):
+            done[r["checkpoint"]].add(r["level"])
+    return done
 
 
 def main():
@@ -98,9 +111,13 @@ def main():
         monitor = Monitor(args.monitor, project="othello")
         monitor.run_id = args.run
 
-    def evaluate(epoch: int) -> None:
+    def evaluate(epoch: int, skip: list[int]) -> None:
         path = checkpoint_path(str(args.ckpt_dir), epoch)
-        print(f"epoch {epoch}: evaluating {path}", flush=True)
+        print(
+            f"epoch {epoch}: evaluating {path}"
+            + (f" (levels {skip} are done)" if skip else ""),
+            flush=True,
+        )
         start = time.perf_counter()
         # vs_engine.py appends its results to `results`; read back the new lines
         seen = results.stat().st_size if results.exists() else 0
@@ -110,7 +127,8 @@ def main():
             + ["--channels", str(args.channels), "--sims", str(args.sims)]
             + ["--openings", str(args.openings), "--stop-below", "-1"]
             + ["--results", str(results), "--levels"]
-            + [str(level) for level in args.levels],
+            + [str(level) for level in args.levels]
+            + (["--skip-levels"] + [str(level) for level in skip] if skip else []),
             env=env,
             check=True,
         )
@@ -133,22 +151,29 @@ def main():
         # just before it exited is seen
         training = args.pid is not None and alive(args.pid)
         epochs = checkpoint_epochs(str(args.ckpt_dir))
-        done = done_checkpoints(results, args.sims, args.engine)
+        done = done_levels(results, args.sims, args.engine, 2 * args.openings)
+        # the levels asked for that each checkpoint has a result for
+        done_at = {
+            e: [
+                level
+                for level in args.levels
+                if level in done[checkpoint_path(str(args.ckpt_dir), e)]
+            ]
+            for e in epochs
+        }
         todo = [
             e
             for e in epochs
-            # epoch 0 is the untrained network
-            if e > 0
-            and e % args.every == 0
-            and checkpoint_path(str(args.ckpt_dir), e) not in done
+            # 0.eqx, after a single epoch, is too early to be worth evaluating
+            if e > 0 and e % args.every == 0 and len(done_at[e]) < len(args.levels)
         ]
         if not training and epochs:
-            last = checkpoint_path(str(args.ckpt_dir), epochs[-1])
-            if last not in done and epochs[-1] not in todo:
-                todo.append(epochs[-1])
+            last = epochs[-1]
+            if len(done_at[last]) < len(args.levels) and last not in todo:
+                todo.append(last)
         if todo:
             # the newest first: it says most about the run now
-            evaluate(todo[-1])
+            evaluate(todo[-1], done_at[todo[-1]])
             continue
         if not training:
             return

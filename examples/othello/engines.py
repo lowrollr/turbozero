@@ -4,7 +4,8 @@ Protocol, which both speak for Othello). One process plays one game.
 - Edax (https://github.com/abulmo/edax-reversi): build it with `setup_edax.sh`
 - Egaroucid (https://github.com/Nyanyan/Egaroucid): build it with `setup_egaroucid.sh`
 
-Both search to a fixed depth set by their "level", with their opening books off.
+Both play at a "level" L, with their opening books off: up to level 10, they search L moves
+ahead, and solve the game exactly once 2L or fewer squares are empty.
 """
 
 import os
