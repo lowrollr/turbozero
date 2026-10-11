@@ -66,6 +66,7 @@ from core.memory.replay_memory import EpisodeReplayBuffer
 from core.monitor import DEFAULT_URL, Monitor
 from core.monitor.renderers import pgx_two_player_episode
 from core.testing.ladder import LadderTester, Rung
+from core.training.exploration import SelfPlayExploration
 from core.training.loss_fns import az_default_loss_fn
 from core.training.schedule import EvaluatorSchedule, Schedule, parse_schedule
 from core.training.train import Trainer
@@ -114,6 +115,23 @@ def main():
         help="MCTS iterations per self-play move by epoch instead, e.g. 0:32,50:64,150:128 "
         "for 32 from epoch 0, 64 from epoch 50 and 128 from epoch 150. Each change "
         "compiles self-play again, so keep them few",
+    )
+    parser.add_argument(
+        "--tree-factor",
+        type=float,
+        default=2.0,
+        help="self-play search tree capacity, in nodes per MCTS iteration (the tree is "
+        "kept between moves, so it needs room for the reused subtree too)",
+    )
+    parser.add_argument(
+        "--sampling-moves",
+        type=int,
+        default=None,
+        metavar="N",
+        help="self-play samples moves in proportion to visit counts for the first N "
+        "moves of a game, then plays the most-visited move, as AlphaZero (30) and "
+        "OLIVAW (20) did. N counts from the standard start, so it includes an XOT "
+        "opening's 8 moves. By default every move is sampled",
     )
     parser.add_argument(
         "--train-batch",
@@ -340,7 +358,7 @@ def main():
                 AlphaZero(MCTS)(
                     eval_fn=selfplay_eval_fn,
                     num_iterations=sims,
-                    max_nodes=2 * sims,
+                    max_nodes=int(args.tree_factor * sims),
                     branching_factor=env.num_actions,
                     action_selector=PUCTSelector(),
                     temperature=1.0,
@@ -435,6 +453,9 @@ def main():
         else None,
         ckpt_dir=args.ckpt_dir or tempfile.mkdtemp(prefix="turbozero-othello-"),
         keep_every=args.keep_every,
+        selfplay_exploration=SelfPlayExploration(num_sampling_moves=args.sampling_moves)
+        if args.sampling_moves is not None
+        else None,
         save_state_at=args.save_state_at,
         save_state_every=args.save_state_every,
         extra_config={
