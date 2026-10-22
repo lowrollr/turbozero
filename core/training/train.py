@@ -53,7 +53,6 @@ class CollectionState:
         buffer_state: state of the replay buffer
         metadata: metadata of the current environment state
         episodes: number of episodes that have terminated so far (not counting truncated ones)
-        draws: how many of those ended with every player's reward 0
         tree_positions: number of search tree positions stored so far (not counting transformed copies,
             see `Trainer`'s `tree_positions`)
         tree_visits: their visit counts, summed
@@ -68,7 +67,6 @@ class CollectionState:
     buffer_state: ReplayBufferState
     metadata: StepMetadata
     episodes: jax.Array
-    draws: jax.Array
     tree_positions: jax.Array
     tree_visits: jax.Array
     moves: jax.Array
@@ -77,29 +75,26 @@ class CollectionState:
 
 
 @dataclass(frozen=True)
-class SelfplayCounters:
-    """The counts of a collection state that `Trainer.selfplay_metrics` compares across an epoch's
-    self-play (see `CollectionState`).
+class CollectionStats:
+    """The stats of a collection state that `Trainer.collection_metrics` compares across an
+    epoch's data collection (see `CollectionState`).
 
     Attributes:
         episodes: number of episodes that have terminated so far, per environment
-        draws: how many of those were draws
         tree_positions: number of search tree positions stored so far
         tree_visits: their visit counts, summed
     """
 
     episodes: jax.Array
-    draws: jax.Array
     tree_positions: jax.Array
     tree_visits: jax.Array
 
     @classmethod
-    def of(cls, state: CollectionState) -> "SelfplayCounters":
-        """Copies the counts out of `state`, so that they outlive it when it is donated to
+    def of(cls, state: CollectionState) -> "CollectionStats":
+        """Copies the stats out of `state`, so that they outlive it when it is donated to
         `Trainer.collect_steps`."""
         return cls(
             episodes=jnp.copy(state.episodes),
-            draws=jnp.copy(state.draws),
             tree_positions=jnp.copy(state.tree_positions),
             tree_visits=jnp.copy(state.tree_visits),
         )
@@ -116,7 +111,7 @@ class TrainLoopOutput:
         collection_state: state of self-play episode collection.
         train_state: TrainState, holds model params and state, optimizer state
         test_states: states of testers
-        cur_epoch: current epoch num: the number of epochs done
+        cur_epoch: current epoch num
         key: (optional) the training loop's rng, for the next epoch. With it, a run continued
             from this state carries on exactly as if it hadn't stopped (see `Trainer.train_loop`).
     """
@@ -382,7 +377,7 @@ class Trainer:
                 f"{memory_buffer.capacity}, got {self.replay_window.get_config()}"
             )
         # a single evaluator is a schedule with one stage
-        self.selfplay_schedule = (
+        self.collection_schedule = (
             evaluator
             if isinstance(evaluator, EvaluatorSchedule)
             else EvaluatorSchedule([(0, evaluator)])
@@ -390,7 +385,7 @@ class Trainer:
         self.transform_fns = data_transform_fns
         self.selfplay_exploration = selfplay_exploration
         if tree_positions is not None and not all(
-            isinstance(e, MCTS) for _, e in self.selfplay_schedule.stages
+            isinstance(e, MCTS) for _, e in self.collection_schedule.stages
         ):
             raise ValueError("tree_positions needs MCTS self-play evaluators")
         self.tree_positions = tree_positions
@@ -414,11 +409,11 @@ class Trainer:
         # testing
         self.testers = testers
         if evaluator_test is None:
-            if len(self.selfplay_schedule.stages) > 1:
+            if len(self.collection_schedule.stages) > 1:
                 raise ValueError(
                     "pass an evaluator_test with a schedule of self-play evaluators"
                 )
-            evaluator_test = self.selfplay_schedule.at(0)
+            evaluator_test = self.collection_schedule.at(0)
         self.evaluator_test = evaluator_test
         self.step_test = partial(
             step_env_and_evaluator,
@@ -459,10 +454,10 @@ class Trainer:
         """Returns a dictionary of the configuration of the trainer. Used for logging to the monitor.
 
         With a schedule of several self-play evaluators, `evaluator_train` is the first, and
-        `selfplay_schedule` lists them all.
+        `collection_schedule` lists them all.
         """
-        evaluator_train = self.selfplay_schedule.at(0)
-        schedule = self.selfplay_schedule
+        evaluator_train = self.collection_schedule.at(0)
+        schedule = self.collection_schedule
         return {
             "batch_size": self.batch_size,
             "train_batch_size": self.train_batch_size,
@@ -477,7 +472,7 @@ class Trainer:
             "evaluator_train": evaluator_train.__class__.__name__,
             "evaluator_train_config": evaluator_train.get_config(),
             **(
-                {"selfplay_schedule": schedule.get_config()}
+                {"collection_schedule": schedule.get_config()}
                 if len(schedule.stages) > 1
                 else {}
             ),
@@ -517,7 +512,7 @@ class Trainer:
             CollectionState: updated collection state
         """
         if evaluator is None:
-            evaluator = self.selfplay_schedule.at(0)
+            evaluator = self.collection_schedule.at(0)
         tree_key = None
         if self.tree_positions is not None:
             key, tree_key = jax.random.split(key)
@@ -606,7 +601,6 @@ class Trainer:
             buffer_state=buffer_state,
             metadata=new_metadata,
             episodes=state.episodes + terminated,
-            draws=state.draws + (terminated & (rewards == 0).all()),
             moves=state.moves + 1,
         )
 
@@ -1009,21 +1003,19 @@ class Trainer:
         }
         return collection_state, train_state, metrics
 
-    def selfplay_metrics(
-        self, before: SelfplayCounters, after: CollectionState, epoch: int = 0
+    def collection_metrics(
+        self, before: CollectionStats, after: CollectionState, epoch: int = 0
     ) -> dict:
-        """Measures how varied self-play is, to spot it collapsing into the same few games.
+        """Measures how varied the collected data is, to spot it collapsing into the same few games.
 
         Args:
-            before: the collection state's counts before this epoch's self-play
+            before: the collection state's stats before this epoch's data collection
             after: collection state after it
             epoch: the epoch, which sets the replay window
 
         Returns:
             dict: metrics
                 - `selfplay_episodes`: episodes that terminated in between
-                - `selfplay_draw_fraction`: fraction of them that ended with every reward 0
-                  (draws, in two-player zero-sum games), omitted if none terminated
                 - `replay_window`: entries per environment training samples from (see `replay_window`)
                 - `buffer_samples`: experiences in the replay window training can sample
                 - `buffer_distinct_positions`: distinct observations among them (data
@@ -1033,7 +1025,6 @@ class Trainer:
                   copies), `tree_positions_per_move`, and their `tree_mean_visits`
         """
         episodes = (after.episodes - before.episodes).sum()
-        draws = (after.draws - before.draws).sum()
         window = self.replay_window.at(epoch)
         distinct, total = self.count_distinct_observations(
             after.buffer_state, jnp.array(window, dtype=jnp.int32)
@@ -1045,8 +1036,6 @@ class Trainer:
             "buffer_distinct_positions": distinct,
             "buffer_distinct_fraction": distinct / jnp.maximum(total, 1),
         }
-        if episodes > 0:
-            metrics["selfplay_draw_fraction"] = draws / episodes
         if self.tree_positions is not None:
             positions = (after.tree_positions - before.tree_positions).sum()
             visits = (after.tree_visits - before.tree_visits).sum()
@@ -1226,7 +1215,7 @@ class Trainer:
             self._check_sizes(path, meta, resizable=False)
             epoch = meta["epoch"]
             # the evaluator whose states the collection state holds
-            evaluator = self.selfplay_schedule.at(max(epoch - 1, 0))
+            evaluator = self.collection_schedule.at(max(epoch - 1, 0))
             train_template = jax.eval_shape(self.init_train_state)
             train_state = self._load_part(saved, meta, "train_state", train_template)
             collection_state = self._load_part(
@@ -1351,11 +1340,10 @@ class Trainer:
                     raise ValueError(f"{path} has no collection state{leaf_path}")
                 return saved[f"collection_state.{index[leaf_path]}"]
 
-            counters = {
+            stats = {
                 name: _to_device(get(f".{name}"))
                 for name in (
                     "episodes",
-                    "draws",
                     "tree_positions",
                     "tree_visits",
                     "moves",
@@ -1383,7 +1371,7 @@ class Trainer:
                         (self.batch_size, self.tree_buffer.capacity), dtype=jnp.int32
                     )
         env_state, metadata, eval_state = self.init_games(
-            key, self.batch_size, self.selfplay_schedule.at(0)
+            key, self.batch_size, self.collection_schedule.at(0)
         )
         collection_state = CollectionState(
             eval_state=eval_state,
@@ -1392,7 +1380,7 @@ class Trainer:
             metadata=metadata,
             tree_buffer_state=tree_buffer_state,
             tree_written_at=tree_written_at,
-            **counters,
+            **stats,
         )
         return collection_state, train_state
 
@@ -1553,7 +1541,7 @@ class Trainer:
             CollectionState: initialized collection state
         """
         if evaluator is None:
-            evaluator = self.selfplay_schedule.at(0)
+            evaluator = self.collection_schedule.at(0)
         # make template experience
         template_experience = self.make_template_experience()
         # init buffer state
@@ -1571,7 +1559,6 @@ class Trainer:
             buffer_state=buffer_state,
             metadata=metadata,
             episodes=jnp.zeros((batch_size,), dtype=jnp.int32),
-            draws=jnp.zeros((batch_size,), dtype=jnp.int32),
             tree_positions=jnp.zeros((batch_size,), dtype=jnp.int32),
             tree_visits=jnp.zeros((batch_size,), dtype=jnp.int32),
             moves=jnp.zeros((batch_size,), dtype=jnp.int32),
@@ -1623,7 +1610,7 @@ class Trainer:
             Tuple[Evaluator, CollectionState]: the evaluator for `epoch`, and the collection
                 state with its states
         """
-        scheduled = self.selfplay_schedule.at(epoch)
+        scheduled = self.collection_schedule.at(epoch)
         if scheduled is evaluator:
             return evaluator, collection_state
         self.set_activity(
@@ -1749,10 +1736,10 @@ class Trainer:
                 # don't replay the keys the original run used from epoch 0
                 key = jax.random.fold_in(key, cur_epoch)
             # the evaluator whose states the collection state holds
-            evaluator = self.selfplay_schedule.at(max(cur_epoch - 1, 0))
+            evaluator = self.collection_schedule.at(max(cur_epoch - 1, 0))
         else:
             cur_epoch = 0
-            evaluator = self.selfplay_schedule.at(0)
+            evaluator = self.collection_schedule.at(0)
             init_key, key = jax.random.split(key)
             if fork_from is None:
                 # initialize collection state
@@ -1799,7 +1786,7 @@ class Trainer:
             collect_keys = jax.random.split(collect_key, self.batch_size)
             # only the counts outlive the state donated to self-play: keeping the whole state
             # would keep a second copy of the replay buffers
-            before = SelfplayCounters.of(collection_state)
+            before = CollectionStats.of(collection_state)
             self.set_activity(f"epoch {cur_epoch}: self-play")
             collection_state = self.collect_steps(
                 collect_keys,
@@ -1808,11 +1795,11 @@ class Trainer:
                 self.collection_steps_per_epoch,
                 evaluator=evaluator,
             )
-            selfplay_metrics = self.selfplay_metrics(
+            collection_metrics = self.collection_metrics(
                 before, collection_state, cur_epoch
             )
             if isinstance(evaluator, MCTS):
-                selfplay_metrics["selfplay_iterations"] = jnp.asarray(
+                collection_metrics["selfplay_iterations"] = jnp.asarray(
                     evaluator.num_iterations
                 )
             # train
@@ -1827,7 +1814,7 @@ class Trainer:
             )
             params = self.extract_model_params_fn(train_state)
             # log metrics
-            self.log_metrics({**metrics, **selfplay_metrics}, cur_epoch)
+            self.log_metrics({**metrics, **collection_metrics}, cur_epoch)
 
             # test
             if cur_epoch % eval_every == 0:

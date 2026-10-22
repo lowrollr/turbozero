@@ -33,7 +33,7 @@ from core.testing.two_player_tester import TwoPlayerTester
 from core.training.loss_fns import az_default_loss_fn
 from core.training.schedule import EvaluatorSchedule, Schedule
 from core.training.train import (
-    SelfplayCounters,
+    CollectionStats,
     Trainer,
     checkpoint_epochs,
     extract_params,
@@ -260,7 +260,7 @@ def test_self_play_updates_the_collection_state_in_place(trainer):
     state = trainer.init_collection_state(jax.random.PRNGKey(0), trainer.batch_size)
     keys = jax.random.split(jax.random.PRNGKey(1), trainer.batch_size)
     params = extract_params(trainer.init_train_state())
-    evaluator = trainer.selfplay_schedule.at(0)
+    evaluator = trainer.collection_schedule.at(0)
     state_bytes = sum(x.nbytes for x in jax.tree.leaves(state))
 
     for num_steps in (0, 1):
@@ -275,13 +275,13 @@ def test_self_play_updates_the_collection_state_in_place(trainer):
         assert analysis is not None
         assert analysis.alias_size_in_bytes == state_bytes
 
-    counters = SelfplayCounters.of(state)
+    stats = CollectionStats.of(state)
     new_state = trainer.collect_steps(keys, state, params, 1)
 
     assert all(x.is_deleted() for x in jax.tree.leaves(state))
     assert not any(x.is_deleted() for x in jax.tree.leaves(new_state))
     # the copied counts outlive the donated state
-    assert not any(x.is_deleted() for x in vars(counters).values())
+    assert not any(x.is_deleted() for x in vars(stats).values())
 
 
 def test_train_loop_keeps_one_copy_of_the_replay_buffers(ttt, tmp_path, monkeypatch):
@@ -433,15 +433,15 @@ def test_crashed_train_loop_marks_run_crashed(trainer, monitor_server, monkeypat
 
 
 @pytest.mark.parametrize(
-    "rewards, max_episode_steps, episodes, draws",
+    "rewards, max_episode_steps, episodes",
     [
-        ((1.0, -1.0), 3, 2, 0),
-        ((0.0, 0.0), 3, 2, 2),
+        ((1.0, -1.0), 3, 2),
+        ((0.0, 0.0), 3, 2),
         # truncated episodes aren't counted
-        ((0.0, 0.0), 2, 0, 0),
+        ((0.0, 0.0), 2, 0),
     ],
 )
-def test_collect_counts_terminated_episodes_and_draws(
+def test_collect_counts_terminated_episodes(
     fixed_length_env,
     scripted,
     make_collector,
@@ -449,29 +449,23 @@ def test_collect_counts_terminated_episodes_and_draws(
     rewards,
     max_episode_steps,
     episodes,
-    draws,
 ):
     env = fixed_length_env(length=3, rewards=rewards)
     collect = make_collector(env, scripted.first_legal, max_episode_steps, tmp_path)
 
     state = collect(num_steps=7)
 
-    assert (int(state.episodes[0]), int(state.draws[0])) == (episodes, draws)
+    assert int(state.episodes[0]) == episodes
 
 
-def test_selfplay_metrics_cover_the_epochs_episodes(trainer, trained):
+def test_collection_metrics_cover_the_epochs_episodes(trainer, trained):
     after = trained.collection_state
-    before = replace(
-        SelfplayCounters.of(after),
-        episodes=after.episodes - 1,
-        draws=after.draws - (after.draws > 0),
-    )
+    before = replace(CollectionStats.of(after), episodes=after.episodes - 1)
 
-    metrics = trainer.selfplay_metrics(before, after)
+    metrics = trainer.collection_metrics(before, after)
 
     num_envs = after.episodes.size
     assert metrics["selfplay_episodes"] == num_envs
-    assert metrics["selfplay_draw_fraction"] == (after.draws > 0).sum() / num_envs
     buffer_state = after.buffer_state
     sampleable = (buffer_state.populated & buffer_state.has_reward).sum()
     assert 0 < metrics["buffer_distinct_positions"] <= sampleable
@@ -787,7 +781,7 @@ def test_schedule_logs_iterations_and_config(scheduled, monkeypatch):
             stage["config"]["num_iterations"],
             stage["config"]["max_nodes"],
         )
-        for stage in config["selfplay_schedule"]
+        for stage in config["collection_schedule"]
     ] == [(0, 2, 32), (1, 6, 64)]
 
 
@@ -1124,7 +1118,7 @@ def test_fork_starts_from_the_saved_network_optimizer_and_buffers(ttt, trunk, tm
         )
     # new games, and search trees for the fork's evaluator
     env_state, metadata, eval_state = fork.init_games(
-        key, fork.batch_size, fork.selfplay_schedule.at(0)
+        key, fork.batch_size, fork.collection_schedule.at(0)
     )
     assert leaves_equal(
         (
