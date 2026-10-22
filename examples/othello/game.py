@@ -75,6 +75,12 @@ def greedy_eval(obs):
     return jnp.ones((1, env.num_actions)), jnp.array([value])
 
 
+def episode_metrics(rewards):
+    """What train.py tracks about each finished self-play game (the Trainer's
+    `episode_metrics_fn`): whether it was a draw, logged as its fraction `episode_draw`."""
+    return {"draw": (rewards == 0).all()}
+
+
 def make_symmetry_transform_fn(quarter_turns: int, transpose: bool):
     """A DataTransformFn that maps the board through one of its symmetries (an optional
     transpose, then `quarter_turns` quarter turns), to generate an extra training sample
@@ -116,17 +122,20 @@ def make_network(
     num_channels: int,
     seed: int = 0,
     inference_dtype: str = "float32",
+    remat: bool = False,
 ):
     """The residual network from the AlphaZero paper; any equinox module works (see
     core.networks.utils.apply_nn). It uses BatchNorm, so it's created along with its
     state: returns (network, state). It computes in `inference_dtype` when it isn't
-    training, e.g. in self-play."""
+    training, e.g. in self-play. With `remat`, training computes each residual block's
+    activations again in the backward pass instead of keeping them (see AZResnetConfig)."""
     return eqx.nn.make_with_state(AZResnet)(
         AZResnetConfig(
             policy_head_out_size=env.num_actions,
             num_blocks=num_blocks,
             num_channels=num_channels,
             inference_dtype=inference_dtype,
+            remat=remat,
         ),
         # pgx types observation_shape as Tuple[int, ...]; for board games it's (height, width, channels)
         cast(tuple[int, int, int], env.observation_shape),
@@ -134,11 +143,15 @@ def make_network(
     )
 
 
-def make_optimizer(total_steps: int) -> optax.GradientTransformation:
-    """Adam, with the learning rate decaying from 1e-3 to a tenth of that over
-    `total_steps` training steps."""
+def make_optimizer(
+    total_steps: int, lr: float = 1e-3, lr_final: float = 1e-4
+) -> optax.GradientTransformation:
+    """Adam, with the learning rate decaying from `lr` to `lr_final` over
+    `total_steps` training steps, along a cosine."""
     return optax.adam(
-        optax.cosine_decay_schedule(1e-3, decay_steps=max(total_steps, 1), alpha=0.1)
+        optax.cosine_decay_schedule(
+            lr, decay_steps=max(total_steps, 1), alpha=lr_final / lr
+        )
     )
 
 
