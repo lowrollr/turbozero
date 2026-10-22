@@ -75,6 +75,12 @@ def greedy_eval(obs):
     return jnp.ones((1, env.num_actions)), jnp.array([value])
 
 
+def episode_metrics(rewards):
+    """What train.py tracks about each finished self-play game (the Trainer's
+    `episode_metrics_fn`): whether it was a draw, logged as its fraction `episode_draw`."""
+    return {"draw": (rewards == 0).all()}
+
+
 def make_symmetry_transform_fn(quarter_turns: int, transpose: bool):
     """A DataTransformFn that maps the board through one of its symmetries (an optional
     transpose, then `quarter_turns` quarter turns), to generate an extra training sample

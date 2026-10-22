@@ -23,7 +23,7 @@ from core.memory.replay_memory import (
 )
 from core.monitor import Monitor
 from core.testing.tester import BaseTester, TestState
-from core.training.exploration import SelfPlayExploration
+from core.training.exploration import Exploration
 from core.training.schedule import EvaluatorSchedule, Schedule, describe
 from core.training.tree_positions import (
     TreePositions,
@@ -57,6 +57,8 @@ class CollectionState:
             see `Trainer`'s `tree_positions`)
         tree_visits: their visit counts, summed
         moves: number of self-play moves made so far
+        episode_metrics: sums over the terminated episodes of each metric `Trainer`'s
+            `episode_metrics_fn` returns (empty without it)
         tree_buffer_state: state of the replay buffer of search tree positions, None without them
         tree_written_at: for each entry of the tree position replay buffer, the number of moves made
             before it was written (see `Trainer.tree_sample_mask`), None without tree positions
@@ -70,6 +72,7 @@ class CollectionState:
     tree_positions: jax.Array
     tree_visits: jax.Array
     moves: jax.Array
+    episode_metrics: dict[str, jax.Array]
     tree_buffer_state: ReplayBufferState | None = None
     tree_written_at: jax.Array | None = None
 
@@ -83,11 +86,13 @@ class CollectionStats:
         episodes: number of episodes that have terminated so far, per environment
         tree_positions: number of search tree positions stored so far
         tree_visits: their visit counts, summed
+        episode_metrics: sums over the terminated episodes of each episode metric
     """
 
     episodes: jax.Array
     tree_positions: jax.Array
     tree_visits: jax.Array
+    episode_metrics: dict[str, jax.Array]
 
     @classmethod
     def of(cls, state: CollectionState) -> "CollectionStats":
@@ -97,6 +102,7 @@ class CollectionStats:
             episodes=jnp.copy(state.episodes),
             tree_positions=jnp.copy(state.tree_positions),
             tree_visits=jnp.copy(state.tree_visits),
+            episode_metrics={k: jnp.copy(v) for k, v in state.episode_metrics.items()},
         )
 
 
@@ -262,7 +268,8 @@ class Trainer:
         grad_accum_steps: int = 1,
         evaluator_test: Evaluator | None = None,
         test_env_init_fn: EnvInitFn | None = None,
-        selfplay_exploration: SelfPlayExploration | None = None,
+        exploration: Exploration | None = None,
+        episode_metrics_fn: Callable[[jax.Array], dict[str, jax.Array]] | None = None,
         data_transform_fns: Sequence[DataTransformFn] = (),
         tree_positions: TreePositions | None = None,
         extract_model_params_fn: ExtractModelParamsFn = extract_params,
@@ -316,9 +323,13 @@ class Trainer:
                 (required with a schedule of several evaluators).
             test_env_init_fn: (optional) environment initialization function for test episodes, e.g. to test from
                 the standard start while self-play starts from varied positions. If not provided, `env_init_fn` is used.
-            selfplay_exploration: (optional) chooses the move self-play plays from the evaluator's output,
+            exploration: (optional) chooses the move data collection plays from the evaluator's output,
                 e.g. to play random moves some of the time (see core.training.exploration). The evaluator's
-                policy weights stay the training target. If not provided, self-play plays the evaluator's move.
+                policy weights stay the training target. If not provided, collection plays the evaluator's move.
+            episode_metrics_fn: (optional) metrics of a finished episode to track, from its final rewards (one per
+                player) to a dict of scalars, e.g. `lambda rewards: {"draw": (rewards == 0).all()}`. Each is logged
+                every epoch as `episode_<name>`, its mean over the episodes that terminated that epoch (truncated
+                ones aren't counted). Must be compatible with `jax.jit`.
             data_transform_fns: (optional) list of data transform functions to apply to self-play experiences (e.g. rotation, reflection, etc.)
             tree_positions: (optional) also train on positions from self-play's search trees, as OLIVAW did
                 (see core.training.tree_positions). They're kept in a replay buffer of their own, and make up
@@ -355,7 +366,7 @@ class Trainer:
         self.loss_fn = loss_fn
         self.optimizer = optimizer
         self.extract_model_params_fn = extract_model_params_fn
-        # selfplay
+        # data collection
         self.batch_size = batch_size
         self.warmup_steps = warmup_steps
         self.collection_steps_per_epoch = collection_steps_per_epoch
@@ -383,7 +394,8 @@ class Trainer:
             else EvaluatorSchedule([(0, evaluator)])
         )
         self.transform_fns = data_transform_fns
-        self.selfplay_exploration = selfplay_exploration
+        self.exploration = exploration
+        self.episode_metrics_fn = episode_metrics_fn
         if tree_positions is not None and not all(
             isinstance(e, MCTS) for _, e in self.collection_schedule.stages
         ):
@@ -478,8 +490,11 @@ class Trainer:
             ),
             "evaluator_test": self.evaluator_test.__class__.__name__,
             "evaluator_test_config": self.evaluator_test.get_config(),
-            "selfplay_exploration_config": self.selfplay_exploration.get_config()
-            if self.selfplay_exploration is not None
+            "exploration_config": self.exploration.get_config()
+            if self.exploration is not None
+            else None,
+            "episode_metrics_fn": getattr(self.episode_metrics_fn, "__name__", None)
+            if self.episode_metrics_fn is not None
             else None,
             "memory_buffer": self.memory_buffer.__class__.__name__,
             "memory_buffer_config": self.memory_buffer.get_config(),
@@ -535,8 +550,8 @@ class Trainer:
             env_step_fn=self.env_step_fn,
             env_init_fn=self.env_init_fn,
             max_steps=self.max_episode_steps,
-            choose_action=self.selfplay_exploration.choose_action
-            if self.selfplay_exploration is not None
+            choose_action=self.exploration.choose_action
+            if self.exploration is not None
             else None,
         )
         search_value = evaluator.get_value(searched_eval_state)
@@ -602,6 +617,9 @@ class Trainer:
             metadata=new_metadata,
             episodes=state.episodes + terminated,
             moves=state.moves + 1,
+            episode_metrics=self.add_episode_metrics(
+                state.episode_metrics, rewards, terminated
+            ),
         )
 
     def store_tree_positions(
@@ -1015,7 +1033,9 @@ class Trainer:
 
         Returns:
             dict: metrics
-                - `selfplay_episodes`: episodes that terminated in between
+                - `episodes`: episodes that terminated in between
+                - with `episode_metrics_fn`: `episode_<name>`, each metric's mean over those
+                  episodes, omitted if none terminated
                 - `replay_window`: entries per environment training samples from (see `replay_window`)
                 - `buffer_samples`: experiences in the replay window training can sample
                 - `buffer_distinct_positions`: distinct observations among them (data
@@ -1030,12 +1050,16 @@ class Trainer:
             after.buffer_state, jnp.array(window, dtype=jnp.int32)
         )
         metrics = {
-            "selfplay_episodes": episodes,
+            "episodes": episodes,
             "replay_window": jnp.array(window),
             "buffer_samples": total,
             "buffer_distinct_positions": distinct,
             "buffer_distinct_fraction": distinct / jnp.maximum(total, 1),
         }
+        if episodes > 0:
+            for name, total_after in after.episode_metrics.items():
+                change = (total_after - before.episode_metrics[name]).sum()
+                metrics[f"episode_{name}"] = change / episodes
         if self.tree_positions is not None:
             positions = (after.tree_positions - before.tree_positions).sum()
             visits = (after.tree_visits - before.tree_visits).sum()
@@ -1380,6 +1404,10 @@ class Trainer:
             metadata=metadata,
             tree_buffer_state=tree_buffer_state,
             tree_written_at=tree_written_at,
+            # metrics are compared within an epoch, so their sums can start again
+            episode_metrics=self.init_episode_metrics(
+                self.batch_size, metadata.rewards[0]
+            ),
             **stats,
         )
         return collection_state, train_state
@@ -1526,6 +1554,36 @@ class Trainer:
             batch_size, template_embedding=self.template_env_state
         )
 
+    def init_episode_metrics(
+        self, batch_size: int, rewards: jax.Array
+    ) -> dict[str, jax.Array]:
+        """Zeroed sums of each metric `episode_metrics_fn` returns, one per environment.
+
+        Args:
+            batch_size: number of parallel environments
+            rewards: an environment's rewards (one per player), for their shape and dtype
+
+        Returns:
+            dict: name -> zeros of shape (batch_size,); empty without `episode_metrics_fn`
+        """
+        if self.episode_metrics_fn is None:
+            return {}
+        shapes = jax.eval_shape(self.episode_metrics_fn, rewards)
+        return {name: jnp.zeros((batch_size,), dtype=jnp.float32) for name in shapes}
+
+    def add_episode_metrics(
+        self, sums: dict[str, jax.Array], rewards: jax.Array, terminated: jax.Array
+    ) -> dict[str, jax.Array]:
+        """Adds a step's episode metrics to `sums` if its episode terminated (one environment)."""
+        if self.episode_metrics_fn is None:
+            return sums
+        metrics = self.episode_metrics_fn(rewards)
+        return {
+            name: sums[name]
+            + jnp.where(terminated, metrics[name], 0).astype(jnp.float32)
+            for name in sums
+        }
+
     def init_collection_state(
         self, key: jax.Array, batch_size: int, evaluator: Evaluator | None = None
     ) -> CollectionState:
@@ -1562,6 +1620,7 @@ class Trainer:
             tree_positions=jnp.zeros((batch_size,), dtype=jnp.int32),
             tree_visits=jnp.zeros((batch_size,), dtype=jnp.int32),
             moves=jnp.zeros((batch_size,), dtype=jnp.int32),
+            episode_metrics=self.init_episode_metrics(batch_size, metadata.rewards[0]),
             tree_buffer_state=tree_buffer_state,
             tree_written_at=jnp.zeros(
                 (batch_size, self.tree_buffer.capacity), dtype=jnp.int32
@@ -1799,7 +1858,7 @@ class Trainer:
                 before, collection_state, cur_epoch
             )
             if isinstance(evaluator, MCTS):
-                collection_metrics["selfplay_iterations"] = jnp.asarray(
+                collection_metrics["search_iterations"] = jnp.asarray(
                     evaluator.num_iterations
                 )
             # train

@@ -45,6 +45,7 @@ import pgx
 from game import (
     SYMMETRY_TRANSFORM_FNS,
     env,
+    episode_metrics,
     greedy_eval,
     make_network,
     make_optimizer,
@@ -66,7 +67,7 @@ from core.memory.replay_memory import EpisodeReplayBuffer
 from core.monitor import DEFAULT_URL, Monitor
 from core.monitor.renderers import pgx_two_player_episode
 from core.testing.ladder import LadderTester, Rung
-from core.training.exploration import SelfPlayExploration
+from core.training.exploration import Exploration
 from core.training.loss_fns import az_default_loss_fn
 from core.training.schedule import EvaluatorSchedule, Schedule, parse_schedule
 from core.training.train import Trainer
@@ -453,7 +454,9 @@ def main():
         else None,
         ckpt_dir=args.ckpt_dir or tempfile.mkdtemp(prefix="turbozero-othello-"),
         keep_every=args.keep_every,
-        selfplay_exploration=SelfPlayExploration(num_sampling_moves=args.sampling_moves)
+        # how often self-play games are drawn
+        episode_metrics_fn=episode_metrics,
+        exploration=Exploration(num_sampling_moves=args.sampling_moves)
         if args.sampling_moves is not None
         else None,
         save_state_at=args.save_state_at,

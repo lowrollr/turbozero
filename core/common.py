@@ -47,7 +47,7 @@ def step_env_and_evaluator(
             `max_steps` steps without terminating is truncated, so no episode runs longer than `max_steps` steps.
         reset: Whether to reset the environment and evaluator state if the episode is terminated or truncated.
         choose_action: (optional) chooses the action to play from the evaluator's output instead,
-            e.g. `core.training.exploration.SelfPlayExploration.choose_action`. The environment and
+            e.g. `core.training.exploration.Exploration.choose_action`. The environment and
             evaluator step with the action it returns; the policy weights are left as they are.
 
     Returns:

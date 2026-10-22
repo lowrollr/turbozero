@@ -219,7 +219,7 @@ def test_save_checkpoint_refuses_existing_epoch(trainer, trained):
     assert leaves_equal(extract_params(restored), extract_params(trained.train_state))
 
 
-def test_self_play_uses_latest_params(trainer, monkeypatch):
+def test_collection_uses_latest_params(trainer, monkeypatch):
     monkeypatch.setattr(trainer, "save_checkpoint", lambda *args, **kwargs: None)
     # record the params each self-play collection uses, and the params after each epoch's training
     collected, trained_params = [], []
@@ -256,7 +256,7 @@ def test_train_loop_with_tester_skipping_epochs(trainer, monkeypatch):
     assert out.cur_epoch == 2
 
 
-def test_self_play_updates_the_collection_state_in_place(trainer):
+def test_collection_updates_the_collection_state_in_place(trainer):
     state = trainer.init_collection_state(jax.random.PRNGKey(0), trainer.batch_size)
     keys = jax.random.split(jax.random.PRNGKey(1), trainer.batch_size)
     params = extract_params(trainer.init_train_state())
@@ -280,8 +280,8 @@ def test_self_play_updates_the_collection_state_in_place(trainer):
 
     assert all(x.is_deleted() for x in jax.tree.leaves(state))
     assert not any(x.is_deleted() for x in jax.tree.leaves(new_state))
-    # the copied counts outlive the donated state
-    assert not any(x.is_deleted() for x in vars(stats).values())
+    # the copied stats outlive the donated state
+    assert not any(x.is_deleted() for x in jax.tree.leaves(vars(stats)))
 
 
 def test_train_loop_keeps_one_copy_of_the_replay_buffers(ttt, tmp_path, monkeypatch):
@@ -354,8 +354,8 @@ def test_train_loop_logs_to_monitor(trainer, monitor_server, monkeypatch):
             "policy_loss",
             "value_loss",
             "TwoPlayerTester_avg_outcome",
-            "selfplay_episodes",
-            "selfplay_iterations",
+            "episodes",
+            "search_iterations",
             "replay_window",
             "buffer_samples",
             "buffer_distinct_positions",
@@ -458,6 +458,67 @@ def test_collect_counts_terminated_episodes(
     assert int(state.episodes[0]) == episodes
 
 
+@pytest.mark.parametrize(
+    "rewards, max_episode_steps, draws, first_player",
+    [
+        ((1.0, -1.0), 3, 0.0, 2.0),
+        ((0.0, 0.0), 3, 2.0, 0.0),
+        # truncated episodes aren't counted
+        ((0.0, 0.0), 2, 0.0, 0.0),
+    ],
+)
+def test_collect_sums_episode_metrics_of_terminated_episodes(
+    fixed_length_env,
+    scripted,
+    make_collector,
+    tmp_path,
+    rewards,
+    max_episode_steps,
+    draws,
+    first_player,
+):
+    env = fixed_length_env(length=3, rewards=rewards)
+    collect = make_collector(
+        env,
+        scripted.first_legal,
+        max_episode_steps,
+        tmp_path,
+        episode_metrics_fn=lambda r: {"draw": (r == 0).all(), "first": r[0]},
+    )
+
+    state = collect(num_steps=7)
+
+    assert float(state.episode_metrics["draw"][0]) == draws
+    assert float(state.episode_metrics["first"][0]) == first_player
+
+
+def test_without_episode_metrics_fn_nothing_is_tracked(
+    fixed_length_env, scripted, make_collector, tmp_path
+):
+    env = fixed_length_env(length=3, rewards=(0.0, 0.0))
+    collect = make_collector(env, scripted.first_legal, 3, tmp_path)
+
+    assert collect(num_steps=7).episode_metrics == {}
+
+
+def test_collection_metrics_report_episode_metric_means(trainer, trained):
+    after = replace(
+        trained.collection_state,
+        episode_metrics={"draw": jnp.ones_like(trained.collection_state.episodes)},
+    )
+    before = replace(
+        CollectionStats.of(after),
+        episodes=after.episodes - 2,
+        episode_metrics={"draw": jnp.zeros_like(after.episodes)},
+    )
+
+    metrics = trainer.collection_metrics(before, after)
+
+    # every environment finished 2 episodes, 1 of them a draw
+    assert metrics["episodes"] == 2 * after.episodes.size
+    assert metrics["episode_draw"] == pytest.approx(0.5)
+
+
 def test_collection_metrics_cover_the_epochs_episodes(trainer, trained):
     after = trained.collection_state
     before = replace(CollectionStats.of(after), episodes=after.episodes - 1)
@@ -465,7 +526,7 @@ def test_collection_metrics_cover_the_epochs_episodes(trainer, trained):
     metrics = trainer.collection_metrics(before, after)
 
     num_envs = after.episodes.size
-    assert metrics["selfplay_episodes"] == num_envs
+    assert metrics["episodes"] == num_envs
     buffer_state = after.buffer_state
     sampleable = (buffer_state.populated & buffer_state.has_reward).sum()
     assert 0 < metrics["buffer_distinct_positions"] <= sampleable
@@ -613,7 +674,7 @@ def test_tree_position_sampler_fills_the_first_places(tree_trainer):
     assert jax.tree.all(jax.tree.map(np.array_equal, mixed, batch))
 
 
-def test_tree_positions_follow_the_replay_windows_span_of_self_play(
+def test_tree_positions_follow_the_replay_windows_span_of_collection(
     tree_trainer, monkeypatch
 ):
     trainer = tree_trainer
@@ -768,7 +829,7 @@ def test_schedule_logs_iterations_and_config(scheduled, monkeypatch):
 
     trainer.train_loop(seed=0, num_epochs=2)
 
-    assert [int(logged[epoch]["selfplay_iterations"]) for epoch in (0, 1)] == [2, 6]
+    assert [int(logged[epoch]["search_iterations"]) for epoch in (0, 1)] == [2, 6]
     assert (
         "epoch 1: self-play switches to RootVisitCounter, 6 iterations a move "
         "(compiling)" in activities
@@ -1168,7 +1229,7 @@ def test_fork_trains_on_its_own_schedules(ttt, trunk, tmp_path, monkeypatch):
     np.testing.assert_array_equal(sampled[0], window_mask(first, 8))
     assert window_mask(first, 8).sum() < window_mask(first, 32).sum()
     assert [int(logged[e]["replay_window"]) for e in (0, 1)] == [8, 32]
-    assert [int(logged[e]["selfplay_iterations"]) for e in (0, 1)] == [2, 6]
+    assert [int(logged[e]["search_iterations"]) for e in (0, 1)] == [2, 6]
     # the learning rate schedule went on from 0: one step a epoch
     assert int(optimizer_states(output.train_state)[1].count) == 2
     assert checkpoint_epochs(fork.ckpt_dir) == [0, 1]
@@ -1366,7 +1427,7 @@ def test_fork_rejects_a_different_configuration(ttt, trunk, tmp_path, kwargs, ma
         trainer.fork_state(trunk.path, jax.random.PRNGKey(0))
 
 
-def test_loaded_states_are_donated_to_self_play(ttt, trunk, tmp_path, monkeypatch):
+def test_loaded_states_are_donated_to_collection(ttt, trunk, tmp_path, monkeypatch):
     trainer = make_trainer(
         ttt, tmp_path, tree_positions=TREE_POSITIONS, optimizer=schedule_optimizer()
     )

@@ -31,8 +31,10 @@ greedy tile counter, then pgx's pretrained model searching 1, 4, 16, 64 and 256
 iterations a move against our 64. It moves up past each rung it scores at least 0.55
 against (a draw counts half). A 10-block network passes every rung within about 60
 epochs; past that, play it against Edax instead (`--eval-every 0` turns the ladder
-off, and `watch.py`, below, plays an engine as it trains). See `--help` for the
-network size, search budget and number of epochs.
+off, and `watch.py`, below, plays an engine as it trains). The monitor also plots
+`episode_draw`, the fraction of self-play games drawn, which `game.py`'s
+`episode_metrics` reports through the Trainer's `episode_metrics_fn`. See `--help` for
+the network size, search budget and number of epochs.
 
 The self-play search budget can grow over a run: `--sims-schedule 0:32,50:64,150:128`
 searches 32 iterations a move from epoch 0, 64 from epoch 50 and 128 from epoch 150,
@@ -43,7 +45,7 @@ Cheap searches are enough while the network learns the basics, and deeper ones r
 its policy later. Each change compiles self-play again, as the first epoch does, so
 keep changes few; games in progress carry on, searching from new, empty trees. Test
 games, `eval_pgx.py`, `vs_engine.py` and `watch.py` keep their own budgets. The
-monitor plots the budget as `selfplay_iterations`.
+monitor plots the budget as `search_iterations`.
 
 So can the replay window, how far back in replay memory training samples:
 `--buffer-schedule 0:1000,20:3000,35:6000` samples from each environment's newest 1000

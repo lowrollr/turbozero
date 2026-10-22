@@ -41,7 +41,7 @@ from core.monitor import DEFAULT_URL, Monitor
 from core.monitor.renderers import pgx_two_player_episode
 from core.networks.azresnet import AZResnet, AZResnetConfig
 from core.testing.two_player_baseline import TwoPlayerBaseline
-from core.training.exploration import SelfPlayExploration
+from core.training.exploration import Exploration
 from core.training.loss_fns import az_default_loss_fn
 from core.training.train import Trainer
 from core.types import StepMetadata
@@ -155,9 +155,7 @@ def main():
         evaluator=evaluator,
         evaluator_test=evaluator_test,
         # the search's visit counts stay the policy target; only the move played changes
-        selfplay_exploration=SelfPlayExploration(
-            random_move_prob=args.random_move_prob
-        ),
+        exploration=Exploration(random_move_prob=args.random_move_prob),
         memory_buffer=EpisodeReplayBuffer(capacity=64),
         max_episode_steps=MAX_STEPS,
         env_step_fn=step_fn,

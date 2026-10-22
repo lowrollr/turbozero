@@ -10,7 +10,7 @@ import pytest
 
 from core.common import step_env_and_evaluator
 from core.evaluators.evaluator import EvalOutput
-from core.training.exploration import SelfPlayExploration
+from core.training.exploration import Exploration
 from core.types import StepMetadata
 
 NUM_SAMPLES = 4000
@@ -46,7 +46,7 @@ def choose(exploration, output, metadata, num_samples=NUM_SAMPLES):
 def test_default_plays_the_evaluators_move():
     output = eval_output(2, [0.1, 0.6, 0.3])
 
-    actions = choose(SelfPlayExploration(), output, step_metadata([1, 1, 1], step=50))
+    actions = choose(Exploration(), output, step_metadata([1, 1, 1], step=50))
 
     assert (actions == 2).all()
 
@@ -55,9 +55,7 @@ def test_random_move_prob_one_plays_uniformly_random_legal_moves():
     mask = [True, False, True, False, False, True]
     output = eval_output(0, [1.0, 0, 0, 0, 0, 0])
 
-    actions = choose(
-        SelfPlayExploration(random_move_prob=1.0), output, step_metadata(mask)
-    )
+    actions = choose(Exploration(random_move_prob=1.0), output, step_metadata(mask))
 
     counts = np.bincount(actions, minlength=len(mask))
     assert (counts[~np.array(mask)] == 0).all()
@@ -69,7 +67,7 @@ def test_random_move_prob_replaces_that_fraction_of_moves():
     output = eval_output(1, [0.0, 1.0, 0.0, 0.0])
 
     actions = choose(
-        SelfPlayExploration(random_move_prob=0.2), output, step_metadata([1, 1, 1, 1])
+        Exploration(random_move_prob=0.2), output, step_metadata([1, 1, 1, 1])
     )
 
     assert (actions != 1).mean() == pytest.approx(0.2 * 3 / 4, abs=0.03)
@@ -81,7 +79,7 @@ def test_num_sampling_moves_plays_the_evaluators_move_then_the_best(step, expect
     output = eval_output(0, [0.2, 0.5, 0.3])
 
     actions = choose(
-        SelfPlayExploration(num_sampling_moves=3),
+        Exploration(num_sampling_moves=3),
         output,
         step_metadata([1, 1, 1], step=step),
     )
@@ -94,7 +92,7 @@ def test_greedy_moves_break_ties_at_random_among_legal_moves():
     output = eval_output(1, [0.4, 0.1, 0.4, 0.9])
 
     actions = choose(
-        SelfPlayExploration(num_sampling_moves=0),
+        Exploration(num_sampling_moves=0),
         output,
         step_metadata([1, 1, 1, 0], step=5),
     )
@@ -140,7 +138,7 @@ def test_collect_stores_the_evaluators_policy_not_the_move_played(
         scripted.first_legal,
         max_episode_steps=4,
         ckpt_dir=tmp_path,
-        selfplay_exploration=SelfPlayExploration(random_move_prob=1.0),
+        exploration=Exploration(random_move_prob=1.0),
     )
 
     buffer = collect(num_steps=4).buffer_state.buffer

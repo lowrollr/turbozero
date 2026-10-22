@@ -8,14 +8,14 @@ from core.types import StepMetadata
 
 
 @dataclass(frozen=True)
-class SelfPlayExploration:
-    """Chooses the move self-play actually plays, given the evaluator's output.
+class Exploration:
+    """Chooses the move data collection actually plays, given the evaluator's output.
 
     The evaluator's `policy_weights` (for MCTS, the root visit distribution) stay the
     policy training target either way: only the move played changes, so these settings
-    change which positions self-play reaches, not the targets it trains on there.
+    change which positions collection reaches, not the targets it trains on there.
 
-    Applied by the `Trainer` to self-play only; test games play the evaluator's own move.
+    Applied by the `Trainer` to data collection only; test games play the evaluator's own move.
 
     Attributes:
         num_sampling_moves: play the evaluator's move for the first `num_sampling_moves`
@@ -28,13 +28,13 @@ class SelfPlayExploration:
             throughout.
         random_move_prob: probability of playing a uniformly random legal move instead,
             on every move. Not part of AlphaZero, whose only other source of variety is root
-            Dirichlet noise: this is epsilon-greedy exploration on top. Keeps self-play visiting
+            Dirichlet noise: this is epsilon-greedy exploration on top. Keeps collection visiting
             positions a sharpened policy never reaches on its own (e.g. after an opponent's
             blunder), at the cost of value targets that partly reflect the random moves.
 
     Both are applied with traced arithmetic, so a schedule or adaptive controller can later
     pass them in as traced values. Changing the attributes of a `Trainer`'s instance between
-    epochs has no effect: its self-play is compiled once, with these values baked in.
+    epochs has no effect: its data collection is compiled once, with these values baked in.
     """
 
     num_sampling_moves: int | None = None
