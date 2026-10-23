@@ -46,8 +46,8 @@ class EvaluatorSchedule(Schedule[Evaluator]):
 
         EvaluatorSchedule([(0, search_32), (50, search_64), (150, search_128)])
 
-    (OLIVAW's self-play searched 100 iterations a move, then 200 from about generation 4
-    and 400 from about generation 11, of 20: arXiv 2103.17228.)
+    Cheap searches are enough while the network learns the basics; deeper ones refine its
+    policy later.
 
     Pass one to `Trainer` as its `evaluator`. Each evaluator plays every epoch from its own
     up to the next one's. Self-play is compiled for each evaluator the first time it plays,

@@ -41,7 +41,6 @@ def test_schedule_checks_its_epochs(epochs, match):
 def test_parse_schedule():
     assert parse_schedule("0:32,50:64,150:128") == [(0, 32), (50, 64), (150, 128)]
     assert parse_schedule("0:64") == [(0, 64)]
-    # OLIVAW's
     assert parse_schedule("0:100,4:200,11:400") == [(0, 100), (4, 200), (11, 400)]
 
 

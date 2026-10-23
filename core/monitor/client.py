@@ -1,6 +1,6 @@
 """Push metrics and media from a training run to the monitor server.
 
-    monitor = Monitor("http://localhost:8008", project="othello")
+    monitor = Monitor("http://localhost:8008", project="my-game")
     monitor.start(config=trainer.get_config())
     monitor.activity("self-play (epoch 3)")
     monitor.log(epoch, {"loss": 0.41, "greedy_game": Episode("pgx_two_player", ...)})
@@ -181,7 +181,7 @@ class Monitor:
         self._post_json(f"/api/runs/{run_id}/activity", {"activity": activity})
 
     def activity(self, text: str | None) -> None:
-        """Say what the run is doing now, e.g. "testing: ladder vs pgx1024". The dashboard
+        """Say what the run is doing now, e.g. "epoch 3: training". The dashboard
         shows it with how long it has been going; None clears it."""
         self._activity = text
         if self.run_id is None:

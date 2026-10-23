@@ -408,7 +408,7 @@ def init_tree[NodeType](
             (max_nodes, branching_factor), fill_value=Tree.NULL_INDEX, dtype=jnp.int32
         ),
         data=jax.tree_util.tree_map(
-            # template leaves can be python scalars (e.g. `turn` in pgx's othello state)
+            # template leaves can be python scalars (e.g. a turn counter in an environment's state)
             lambda x: jnp.zeros((max_nodes, *jnp.shape(x)), dtype=jnp.result_type(x)),
             template_data,
         ),

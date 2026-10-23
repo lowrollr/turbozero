@@ -107,7 +107,7 @@ function status(run) {
   return run.status;
 }
 
-// what a running run says it's doing now, and for how long: "ladder: playing pgx64 · 2m 10s"
+// what a running run says it's doing now, and for how long: "epoch 3: training · 2m 10s"
 function activity(run) {
   if (run.status !== "running" || !run.activity) return "";
   return `${run.activity} · ${duration(Date.now() / 1000 - run.activity_since)}`;
@@ -215,7 +215,7 @@ function renderEmpty() {
       { class: "empty" },
       h("h1", { text: "No runs yet" }),
       h("p", { text: "Start a training run with the monitor attached:" }),
-      h("p", {}, h("code", { text: "uv run examples/othello.py --monitor" })),
+      h("p", {}, h("code", { text: "Trainer(..., monitor=Monitor(url, project=...))" })),
       h("p", { text: "It will show up here as soon as it starts training." }),
     ),
   );
