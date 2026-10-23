@@ -1,18 +1,24 @@
 """The run monitor: the client logging to a live server, and the server storing and serving runs."""
 
+import functools
 import json
-import time
+import queue
+import threading
 import urllib.error
 import urllib.request
-from functools import partial
 
 import jax
+import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from core.common import two_player_game
+from core.common import GameFrame
+from core.evaluators.mcts.state import SearchRecord
 from monitor import Episode, Monitor, client
 from monitor.episodes import BOARDS, pgx_two_player_episode
+
+# one compilation of each environment's init and step, whichever test steps it
+jit = functools.cache(jax.jit)
 
 
 def test_run_round_trip(monitor_server):
@@ -45,16 +51,18 @@ def test_log_does_not_wait_on_the_server(monitor_server, monkeypatch):
     monitor = Monitor(monitor_server.url)
     monitor.start()
     send = monitor._request
+    server_is_back = threading.Event()
 
-    def slow_request(*args, **kwargs):
-        time.sleep(0.5)
+    def stalled_request(*args, **kwargs):
+        server_is_back.wait(timeout=10)
         return send(*args, **kwargs)
 
-    monkeypatch.setattr(monitor, "_request", slow_request)
+    monkeypatch.setattr(monitor, "_request", stalled_request)
 
-    start = time.time()
+    # returns while the server isn't answering
     monitor.log(0, {"loss": 1.0})
-    assert time.time() - start < 0.25
+    assert monitor_server.get(f"/api/runs/{monitor.run_id}/metrics")["rows"] == []
+    server_is_back.set()
     monitor.flush()
 
     assert len(monitor_server.get(f"/api/runs/{monitor.run_id}/metrics")["rows"]) == 1
@@ -136,25 +144,48 @@ def load_arrays(body: bytes) -> dict[str, np.ndarray]:
     }
 
 
-def test_pgx_episode_is_served_for_the_dashboard(monitor_server, ttt, scripted):
-    game = jax.jit(
-        partial(
-            two_player_game,
-            evaluator_1=scripted.first_legal,
-            evaluator_2=scripted.first_legal,
-            params_1=None,
-            params_2=None,
-            env_step_fn=ttt.step_fn,
-            env_init_fn=ttt.init_fn,
-            max_steps=12,
-            p1_first=False,
-        )
+def stacked(states):
+    """States stacked along a leading time axis."""
+    return jax.tree.map(lambda *xs: np.stack(xs), *states)
+
+
+def tic_tac_toe_frames(ttt, moves, num_frames, key, p1_search=None, p2_search=None):
+    """The frames `two_player_game` records of tic-tac-toe played with `moves` from the initial
+    state from `key`: the initial state and the state after each move, then the last one again
+    up to `num_frames`, as after a game ends. The first evaluator's value estimates are 0,
+    0.1, 0.2, ..., the second's their negatives."""
+    states = [jit(ttt.env.init)(key)]
+    for action in moves:
+        states.append(jit(ttt.env.step)(states[-1], action))
+    states += [states[-1]] * (num_frames - len(states))
+    completed = np.array([bool(state.terminated) for state in states])
+    values = np.arange(num_frames) / 10
+    return GameFrame(
+        env_state=stacked(states),
+        p1_value_estimate=jnp.asarray(values),
+        p2_value_estimate=jnp.asarray(-values),
+        completed=jnp.asarray(completed),
+        # each player's reward from the step that ends the game on
+        outcomes=jnp.asarray(
+            np.where(completed[:, None], np.asarray(states[-1].rewards), 0.0)
+        ),
+        p1_search=p1_search,
+        p2_search=p2_search,
     )
-    _, frames, p_ids = jax.device_get(game(jax.random.PRNGKey(0)))
+
+
+def test_pgx_episode_is_served_for_the_dashboard(monitor_server, ttt):
+    # playing the first free square, X wins on the diagonal with the 7th move; the trained
+    # agent (the first evaluator) moved second, so played O, and lost
+    frames = tic_tac_toe_frames(ttt, range(7), num_frames=10, key=jax.random.PRNGKey(0))
+    agent = 1 - int(frames.env_state.current_player[0])
     monitor = Monitor(monitor_server.url)
     monitor.start()
 
-    monitor.log(2, {"game": pgx_two_player_episode()(frames, p_ids, ttt.step_fn)})
+    episode = pgx_two_player_episode()(
+        frames, np.array([agent, 1 - agent]), ttt.step_fn
+    )
+    monitor.log(2, {"game": episode})
     monitor.flush()
 
     [entry] = monitor_server.get(f"/api/runs/{monitor.run_id}/media")["rows"]
@@ -163,80 +194,98 @@ def test_pgx_episode_is_served_for_the_dashboard(monitor_server, ttt, scripted):
         f"{monitor_server.url}/api/runs/{monitor.run_id}/episodes/{entry['episode']}"
     ) as resp:
         arrays = load_arrays(resp.read())
-    # playing the first free square, X wins on the diagonal with the 7th move: the
-    # initial board and 7 moves, without the frames padding the game out to 12 steps
+    # the initial board and 7 moves, without the frames after the game ended
     board = arrays["board"]
     assert board.shape == (1 + 7, 3, 3)
     assert (board[0] == 0).all()
     assert board[-1].tolist() == [[1, 2, 1], [2, 1, 2], [1, 0, 0]]
     assert arrays["to_move"].tolist() == [0, 1, 0, 1, 0, 1, 0, 1]
-    assert arrays["values"].shape == (1 + 7, 2)
-    # the trained agent moved second, so played O, and lost
+    np.testing.assert_allclose(arrays["values"][:, 0], np.arange(8) / 10)
+    np.testing.assert_allclose(arrays["values"][:, 1], -np.arange(8) / 10)
     assert (int(arrays["agent"]), int(arrays["completed"])) == (1, 1)
     assert float(arrays["outcome"]) == -1
     # the game didn't record its searches
     assert "search_offset" not in arrays
 
 
-def test_pgx_episode_carries_both_players_searches(monitor_server, ttt, make_search):
-    big = make_search().evaluator
-    small = make_search(num_iterations=16, max_nodes=40).evaluator
-    game = jax.jit(
-        partial(
-            two_player_game,
-            evaluator_1=big,
-            evaluator_2=small,
-            params_1=None,
-            params_2=None,
-            env_step_fn=ttt.step_fn,
-            env_init_fn=ttt.init_fn,
-            max_steps=9,
-            p1_first=True,
-            record_search=True,
-        )
+def search_record(*nodes, capacity=4):
+    """A `SearchRecord` of tic-tac-toe of a hand-built tree: `nodes` are (parent, action, q),
+    the root's first, with parent and action -1; the rest of the tree's capacity is unused. The
+    node at index i has i + 1 visits, a prior of 1 / (i + 1), and isn't terminal."""
+    unused = [(-1, -1, 0.0)] * (capacity - len(nodes))
+    parents, actions, q = np.array(list(nodes) + unused).T
+    visits = np.arange(1, capacity + 1)
+    return SearchRecord(
+        parents=jnp.asarray(parents, dtype=jnp.int32),
+        actions=jnp.asarray(actions, dtype=jnp.int32),
+        n=jnp.asarray(visits, dtype=jnp.int32),
+        q=jnp.asarray(q, dtype=jnp.float32),
+        prior=jnp.asarray(1 / visits, dtype=jnp.float32),
+        terminated=jnp.asarray(np.zeros(capacity, dtype=bool)),
+        policy=jnp.asarray(np.full(9, 1 / 9), dtype=jnp.float32),
+        num_nodes=jnp.asarray(len(nodes), dtype=jnp.int32),
     )
-    _, frames, p_ids = jax.device_get(game(jax.random.PRNGKey(0)))
-    monitor = Monitor(monitor_server.url)
-    monitor.start()
-    monitor.log(0, {"game": pgx_two_player_episode()(frames, p_ids, ttt.step_fn)})
-    monitor.flush()
-    [entry] = monitor_server.get(f"/api/runs/{monitor.run_id}/media")["rows"]
-    with urllib.request.urlopen(
-        f"{monitor_server.url}/api/runs/{monitor.run_id}/episodes/{entry['episode']}"
-    ) as resp:
-        arrays = load_arrays(resp.read())
 
-    num_moves = len(arrays["board"]) - 1
-    found = list(zip(arrays["search_frame"], arrays["search_player"]))
-    # the mover's search of each position, and from the second move on the other's tree of
-    # it too: the agent moved first, and its opponent had no tree before its first search
-    assert found[0] == (0, 0)
-    assert found[1:] == [(t, p) for t in range(1, num_moves) for p in (0, 1)]
-    offset = arrays["search_offset"]
-    assert offset[-1] == len(arrays["node_visits"])
+
+def test_pgx_episode_carries_both_players_searches(ttt):
+    # the trained agent moves first (X) to the centre, then its opponent to the corner. Frame
+    # t + 1 holds what each player made of the position at t: the agent searched both
+    # positions (keeping its tree of the second), its opponent only the second, so had no
+    # tree of the first
+    no_tree = search_record()
+    agent_searches = [
+        no_tree,
+        # its first node took an evicted node's slot, before its parent
+        search_record((-1, -1, 0.1), (2, 0, 0.3), (0, 4, -0.2)),
+        search_record((-1, -1, 0.2), (0, 0, 0.4)),
+    ]
+    opponent_searches = [
+        no_tree,
+        no_tree,
+        search_record((-1, -1, -0.2), (0, 8, 0.6)),
+    ]
+    frames = tic_tac_toe_frames(
+        ttt,
+        [4, 0],
+        num_frames=3,
+        key=jax.random.PRNGKey(0),
+        p1_search=stacked(agent_searches),
+        p2_search=stacked(opponent_searches),
+    )
+    agent = int(frames.env_state.current_player[0])
+
+    episode = pgx_two_player_episode()(
+        frames, np.array([agent, 1 - agent]), ttt.step_fn
+    )
+
+    arrays = episode.data
+    assert arrays["search_frame"].tolist() == [0, 1, 1]
+    assert arrays["search_player"].tolist() == [0, 0, 1]
+    assert arrays["search_offset"].tolist() == [0, 3, 5, 7]
+    assert arrays["node_parent"].tolist() == [-1, 2, 0, -1, 0, -1, 0]
+    assert arrays["node_action"].tolist() == [-1, 0, 4, -1, 0, -1, 8]
+    # each node's board, replayed from the position searched: 1 for X, 2 for O
+    empty, centre = [0] * 9, [0, 0, 0, 0, 1, 0, 0, 0, 0]
+    corner, other_corner = [2, 0, 0, 0, 1, 0, 0, 0, 0], [0, 0, 0, 0, 1, 0, 0, 0, 2]
+    expected = [empty, corner, centre, centre, corner, centre, other_corner]
     assert arrays["node_board"].dtype == np.uint8
-    parent = arrays["node_parent"]
-    for s, (t, _) in enumerate(found):
-        start, end = offset[s], offset[s + 1]
-        # the root is the position played from
-        assert parent[start] == -1
-        np.testing.assert_array_equal(arrays["node_board"][start], arrays["board"][t])
-        for i in range(start + 1, end):
-            p = start + parent[i]
-            # each node's board is its parent's with the move's mark added, by the player
-            # to move at the parent
-            action = arrays["node_action"][i]
-            expected = arrays["node_board"][p].copy()
-            expected.reshape(-1)[action] = arrays["node_to_move"][p] + 1
-            np.testing.assert_array_equal(arrays["node_board"][i], expected)
-            assert arrays["node_legal"][p][action]
-    # a move that ends the game is worth its result to the player who chose it: in
-    # tic-tac-toe a win, or a draw if it fills the board without one
-    terminal = np.flatnonzero(arrays["node_terminal"])
-    assert len(terminal)
-    for i in terminal:
-        full = (arrays["node_board"][i] != 0).all()
-        assert arrays["node_value"][i] in ((1.0, 0.0) if full else (1.0,))
+    assert arrays["node_board"].reshape(7, 9).tolist() == expected
+    assert arrays["node_to_move"].tolist() == [0, 0, 1, 1, 0, 1, 0]
+    np.testing.assert_array_equal(
+        arrays["node_legal"], arrays["node_board"].reshape(7, 9) == 0
+    )
+    # each node's value for the player who chose its move: the root's own, a child's its
+    # parent's, the opposite of its q (players alternate in tic-tac-toe)
+    np.testing.assert_allclose(
+        arrays["node_value"], [0.1, -0.3, 0.2, 0.2, -0.4, -0.2, -0.6], rtol=1e-6
+    )
+    # the rest of each node's statistics as they are
+    assert arrays["node_visits"].tolist() == [1, 2, 3, 1, 2, 1, 2]
+    np.testing.assert_allclose(
+        arrays["node_prior"], 1 / np.array([1, 2, 3, 1, 2, 1, 2]), rtol=1e-6
+    )
+    assert not arrays["node_terminal"].any()
+    assert arrays["search_policy"].shape == (3, 9)
 
 
 @pytest.mark.parametrize("env_id", ["othello", "connect_four"])
@@ -244,13 +293,12 @@ def test_pgx_boards_are_drawn_from_the_first_movers_side(env_id):
     import pgx
 
     env = pgx.make(env_id)
-    states = [env.init(jax.random.PRNGKey(0))]
+    states = [jit(env.init)(jax.random.PRNGKey(0))]
     for _ in range(3):
         action = int(np.argmax(states[-1].legal_action_mask))
-        states.append(env.step(states[-1], action))
-    stacked = jax.tree.map(lambda *xs: np.stack(xs), *states)
+        states.append(jit(env.step)(states[-1], action))
 
-    board, to_move = BOARDS[env_id](stacked._x)
+    board, to_move = BOARDS[env_id](stacked(states)._x)
 
     assert to_move.tolist() == [0, 1, 0, 1]
     # pieces of the colour that moves first are 1, whichever pgx player that is and
@@ -333,27 +381,53 @@ def test_activity_is_shown_until_the_run_finishes(monitor_server):
     assert meta["activity"] is None
 
 
+def drain(q: queue.Queue) -> int:
+    """Empties `q`; returns how many items it held."""
+    count = 0
+    while not q.empty():
+        q.get_nowait()
+        count += 1
+    return count
+
+
 def test_heartbeat_keeps_a_busy_run_fresh(monitor_server, monkeypatch):
-    monkeypatch.setattr(client, "HEARTBEAT_S", 0.05)
+    monkeypatch.setattr(client, "HEARTBEAT_S", 0.01)
     monitor = Monitor(monitor_server.url)
+    # an item for each activity sent; set once the heartbeat thread exits
+    sent, stopped = queue.Queue(), threading.Event()
+    post_activity, heartbeat = monitor._post_activity, monitor._heartbeat
+
+    def posted_activity(*args):
+        post_activity(*args)
+        sent.put(None)
+
+    def stopping_heartbeat(*args):
+        heartbeat(*args)
+        stopped.set()
+
+    monkeypatch.setattr(monitor, "_post_activity", posted_activity)
+    monkeypatch.setattr(monitor, "_heartbeat", stopping_heartbeat)
     monitor.start()
     monitor.activity("testing: a slow opponent")
     monitor.flush()
     first = monitor_server.get(f"/api/runs/{monitor.run_id}")["updated"]
 
-    # nothing is logged, but the heartbeat still reaches the server
-    deadline = time.time() + 5
-    while monitor_server.get(f"/api/runs/{monitor.run_id}")["updated"] == first:
-        assert time.time() < deadline, "no heartbeat arrived"
-        time.sleep(0.05)
+    # nothing is logged, but the heartbeat still reaches the server. The sender sends one
+    # at a time, so of two sent from now on, the second was sent after `first`
+    drain(sent)
+    for _ in range(2):
+        sent.get(timeout=5)
     meta = monitor_server.get(f"/api/runs/{monitor.run_id}")
+    assert meta["updated"] > first
     assert meta["activity"] == "testing: a slow opponent"
 
     # and stops once the run finishes
     monitor.finish()
-    finished = monitor_server.get(f"/api/runs/{monitor.run_id}")["updated"]
-    time.sleep(0.3)
-    assert monitor_server.get(f"/api/runs/{monitor.run_id}")["updated"] == finished
+    drain(sent)
+    assert stopped.wait(timeout=5), "the heartbeat didn't stop"
+    monitor.flush()
+    assert drain(sent) == 0
+    assert monitor_server.get(f"/api/runs/{monitor.run_id}")["status"] == "finished"
 
 
 def test_unreachable_server_never_raises(capsys):

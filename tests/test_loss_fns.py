@@ -4,10 +4,8 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import numpy as np
-import optax
 
 from core.memory.replay_memory import BaseExperience
-from core.networks.azresnet import AZResnet, AZResnetConfig
 from core.training.loss_fns import az_default_loss_fn
 
 
@@ -24,6 +22,20 @@ class OutputAsParams(eqx.Module):
 
     def __call__(self, x):
         return self.logits[x], self.value[x]
+
+
+class CountingCalls(eqx.Module):
+    """Stateful `OutputAsParams`: its state counts the batches it has been applied to."""
+
+    outputs: OutputAsParams
+    calls: eqx.nn.StateIndex
+
+    def __init__(self, policy_logits, value):
+        self.outputs = OutputAsParams(policy_logits, value)
+        self.calls = eqx.nn.StateIndex(jnp.array(0))
+
+    def __call__(self, x, state):
+        return self.outputs(x), state.set(self.calls, state.get(self.calls) + 1)
 
 
 def experience(
@@ -59,9 +71,9 @@ def test_masked_policy_loss_is_finite_and_ignores_illegal_logits():
 
     loss_fn = partial(az_default_loss_fn, l2_reg_lambda=0.0)
     net = OutputAsParams(logits, jnp.zeros((2, 1)))
-    (loss, (metrics, _)), grads = eqx.filter_value_and_grad(loss_fn, has_aux=True)(
-        net, None, batch
-    )
+    (loss, (metrics, _)), grads = eqx.filter_jit(
+        eqx.filter_value_and_grad(loss_fn, has_aux=True)
+    )(net, None, batch)
 
     assert jnp.isfinite(loss)
     # cross entropy against the softmax over legal actions only
@@ -118,48 +130,37 @@ def test_value_target_mixes_in_the_search_value():
     np.testing.assert_allclose(value_loss(0.5), expected([0.75, -0.4]), rtol=1e-6)
 
 
-def test_a_few_optimizer_steps_lower_the_loss():
-    config = AZResnetConfig(policy_head_out_size=9, num_blocks=1, num_channels=4)
-    net, nn_state = eqx.nn.make_with_state(AZResnet)(
-        config, (3, 3, 2), key=jax.random.PRNGKey(1)
-    )
-    keys = jax.random.split(jax.random.PRNGKey(0), 4)
-    batch_size = 16
-    observation = jax.random.bernoulli(keys[0], shape=(batch_size, 3, 3, 2)).astype(
-        jnp.float32
-    )
-    mask = (
-        jax.random.bernoulli(keys[1], p=0.7, shape=(batch_size, 9)).at[:, 0].set(True)
-    )
-    policy = jax.nn.softmax(
-        jnp.where(mask, jax.random.normal(keys[2], (batch_size, 9)), -jnp.inf)
-    )
-    outcome = jnp.where(jax.random.bernoulli(keys[3], shape=(batch_size,)), 1.0, -1.0)
+def two_positions():
+    """A batch of two positions, with a network's (made-up) outputs for them."""
     batch = experience(
-        rewards=jnp.stack([outcome, -outcome], -1),
-        cur_player_id=jnp.arange(batch_size) % 2,
-        policy_weights=policy,
-        policy_mask=mask,
-        observation=observation,
+        rewards=[[1, -1], [1, -1]],
+        cur_player_id=[0, 1],
+        policy_weights=[[0.25, 0.75], [1.0, 0.0]],
+        policy_mask=[[True, True]] * 2,
+    )
+    return batch, jnp.array([[0.5, -1.0], [2.0, 0.0]]), jnp.array([[0.5], [-0.25]])
+
+
+def test_l2_regularization_is_the_sum_of_the_squared_params():
+    batch, logits, value = two_positions()
+    net = OutputAsParams(logits, value)
+
+    loss, (metrics, _) = az_default_loss_fn(net, None, batch, l2_reg_lambda=0.1)
+
+    # 0.5^2 + 1^2 + 2^2 for the logits, 0.5^2 + 0.25^2 for the values
+    squares = 5.25 + 0.3125
+    np.testing.assert_allclose(
+        loss - (metrics["policy_loss"] + metrics["value_loss"]),
+        0.1 * squares,
+        rtol=1e-5,
     )
 
-    params, static = eqx.partition(net, eqx.is_inexact_array)
-    optimizer = optax.adam(1e-2)
-    opt_state = optimizer.init(params)
 
-    @jax.jit
-    def train_step(params, nn_state, opt_state):
-        grad_fn = eqx.filter_value_and_grad(az_default_loss_fn, has_aux=True)
-        (loss, (_, nn_state)), grads = grad_fn(
-            eqx.combine(params, static), nn_state, batch
-        )
-        updates, opt_state = optimizer.update(grads, opt_state)
-        return optax.apply_updates(params, updates), nn_state, opt_state, loss
+def test_network_state_comes_back_updated():
+    batch, logits, value = two_positions()
+    net, nn_state = eqx.nn.make_with_state(CountingCalls)(logits, value)
 
-    losses = []
-    for _ in range(20):
-        params, nn_state, opt_state, loss = train_step(params, nn_state, opt_state)
-        losses.append(float(loss))
+    _, (_, nn_state) = az_default_loss_fn(net, nn_state, batch, l2_reg_lambda=0.0)
 
-    assert all(np.isfinite(losses))
-    assert losses[-1] < 0.8 * losses[0]
+    assert nn_state is not None
+    assert int(nn_state.get(net.calls)) == 1
