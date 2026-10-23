@@ -23,7 +23,6 @@ examples/othello.py for a walk-through of each component.
 
 import argparse
 import tempfile
-from functools import partial
 from typing import cast
 
 import equinox as eqx
@@ -41,7 +40,7 @@ from core.networks.azresnet import AZResnet, AZResnetConfig
 from core.testing.two_player_baseline import TwoPlayerBaseline
 from core.training.exploration import Exploration
 from core.training.loss_fns import az_default_loss_fn
-from core.training.train import Trainer
+from core.training.train import Trainer, weight_decay_mask
 from core.types import StepMetadata
 from monitor import DEFAULT_URL, Monitor
 from monitor.episodes import pgx_two_player_episode
@@ -150,8 +149,11 @@ def main():
         train_steps_per_epoch=8,
         nn=resnet,
         nn_state=resnet_state,
-        loss_fn=partial(az_default_loss_fn, l2_reg_lambda=1e-4),
-        optimizer=optax.inject_hyperparams(optax.adam)(learning_rate=3e-3),
+        loss_fn=az_default_loss_fn,
+        # weight decay on the network's weights, not its biases or BatchNorm
+        optimizer=optax.inject_hyperparams(optax.adamw, static_args=("mask",))(
+            learning_rate=3e-3, weight_decay=0.5, mask=weight_decay_mask
+        ),
         evaluator=evaluator,
         evaluator_test=evaluator_test,
         # the search's visit counts stay the policy target; only the move played changes

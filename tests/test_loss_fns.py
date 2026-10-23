@@ -1,5 +1,3 @@
-from functools import partial
-
 import equinox as eqx
 import jax
 import jax.numpy as jnp
@@ -69,10 +67,9 @@ def test_masked_policy_loss_is_finite_and_ignores_illegal_logits():
     )
     logits = jnp.array([[1.0, 50.0, -1.0], [-50.0, 0.5, 0.0]])
 
-    loss_fn = partial(az_default_loss_fn, l2_reg_lambda=0.0)
     net = OutputAsParams(logits, jnp.zeros((2, 1)))
     (loss, (metrics, _)), grads = eqx.filter_jit(
-        eqx.filter_value_and_grad(loss_fn, has_aux=True)
+        eqx.filter_value_and_grad(az_default_loss_fn, has_aux=True)
     )(net, None, batch)
 
     assert jnp.isfinite(loss)
@@ -96,7 +93,7 @@ def test_value_target_is_outcome_for_player_to_move():
 
     def value_loss(predicted):
         net = OutputAsParams(logits, jnp.array(predicted)[:, None])
-        _, (metrics, _) = az_default_loss_fn(net, None, batch, l2_reg_lambda=0.0)
+        _, (metrics, _) = az_default_loss_fn(net, None, batch)
         return float(metrics["value_loss"])
 
     assert value_loss([1.0, -1.0]) == 0.0
@@ -117,7 +114,7 @@ def test_value_target_mixes_in_the_search_value():
 
     def value_loss(value_target_q):
         _, (metrics, _) = az_default_loss_fn(
-            net, None, batch, l2_reg_lambda=0.0, value_target_q=value_target_q
+            net, None, batch, value_target_q=value_target_q
         )
         return float(metrics["value_loss"])
 
@@ -141,18 +138,13 @@ def two_positions():
     return batch, jnp.array([[0.5, -1.0], [2.0, 0.0]]), jnp.array([[0.5], [-0.25]])
 
 
-def test_l2_regularization_is_the_sum_of_the_squared_params():
+def test_the_loss_is_the_policy_loss_plus_the_value_loss():
     batch, logits, value = two_positions()
-    net = OutputAsParams(logits, value)
 
-    loss, (metrics, _) = az_default_loss_fn(net, None, batch, l2_reg_lambda=0.1)
+    loss, (metrics, _) = az_default_loss_fn(OutputAsParams(logits, value), None, batch)
 
-    # 0.5^2 + 1^2 + 2^2 for the logits, 0.5^2 + 0.25^2 for the values
-    squares = 5.25 + 0.3125
     np.testing.assert_allclose(
-        loss - (metrics["policy_loss"] + metrics["value_loss"]),
-        0.1 * squares,
-        rtol=1e-5,
+        loss, metrics["policy_loss"] + metrics["value_loss"], rtol=1e-6
     )
 
 
@@ -160,7 +152,7 @@ def test_network_state_comes_back_updated():
     batch, logits, value = two_positions()
     net, nn_state = eqx.nn.make_with_state(CountingCalls)(logits, value)
 
-    _, (_, nn_state) = az_default_loss_fn(net, nn_state, batch, l2_reg_lambda=0.0)
+    _, (_, nn_state) = az_default_loss_fn(net, nn_state, batch)
 
     assert nn_state is not None
     assert int(nn_state.get(net.calls)) == 1

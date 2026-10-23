@@ -32,7 +32,7 @@ from core.memory.replay_memory import EpisodeReplayBuffer
 from core.networks.azresnet import AZResnet, AZResnetConfig
 from core.testing.two_player_tester import TwoPlayerTester
 from core.training.loss_fns import az_default_loss_fn
-from core.training.train import Trainer
+from core.training.train import Trainer, weight_decay_mask
 from core.types import StepMetadata
 from monitor import DEFAULT_URL, Monitor
 from monitor.episodes import pgx_two_player_episode
@@ -126,8 +126,11 @@ def main():
         train_steps_per_epoch=(batch_size * MAX_STEPS) // train_batch_size,
         nn=resnet,
         nn_state=resnet_state,
-        loss_fn=partial(az_default_loss_fn, l2_reg_lambda=0.0001),
-        optimizer=optax.inject_hyperparams(optax.adam)(learning_rate=5e-3),
+        loss_fn=az_default_loss_fn,
+        # weight decay on the network's weights, not its biases or BatchNorm
+        optimizer=optax.inject_hyperparams(optax.adamw, static_args=("mask",))(
+            learning_rate=5e-3, weight_decay=0.5, mask=weight_decay_mask
+        ),
         # self-play samples moves in proportion to visit counts; test games play the most-visited
         evaluator=make_evaluator(temperature=1.0, dirichlet_alpha=0.6),
         evaluator_test=make_evaluator(temperature=0.0),

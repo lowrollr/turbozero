@@ -13,7 +13,6 @@ the positions it led to) the same. --trace writes a profile of one timed call; s
 
 import argparse
 import time
-from functools import partial
 from typing import Any
 
 import equinox as eqx
@@ -67,7 +66,7 @@ def make_trainer(args) -> tuple[Trainer, tuple]:
         train_steps_per_epoch=0,
         nn=resnet,
         nn_state=params[1],
-        loss_fn=partial(az_default_loss_fn, l2_reg_lambda=1e-4),
+        loss_fn=az_default_loss_fn,
         optimizer=make_optimizer(1),
         evaluator=evaluator,
         # room for every step's sample and its symmetric copies, and no more

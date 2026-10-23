@@ -13,12 +13,11 @@ def az_default_loss_fn(
     nn: Any,
     nn_state: eqx.nn.State | None,
     experience: BaseExperience,
-    l2_reg_lambda: float = 0.0001,
     value_target_q: float = 0.0,
 ) -> tuple[jax.Array, tuple[dict, eqx.nn.State | None]]:
     """Implements the default AlphaZero loss function.
 
-    = Policy Loss + Value Loss + L2 Regularization
+    = Policy Loss + Value Loss
     Policy Loss: Cross-entropy loss between predicted policy and target policy
     Value Loss: L2 loss between predicted value and target value
 
@@ -32,7 +31,6 @@ def az_default_loss_fn(
         nn_state: state of the neural network (e.g. BatchNorm statistics), None for stateless networks
         experience: experience sampled from replay buffer
             - stores the observation, target policy, target value
-        l2_reg_lambda: L2 regularization weight (default = 1e-4)
         value_target_q: weight of the search's value in the target value, from 0 (the outcome alone,
             the default) to 1 (the search's value alone)
 
@@ -69,13 +67,7 @@ def az_default_loss_fn(
     # compute MSE value loss
     value_loss = optax.l2_loss(pred_value.squeeze(), target_value).mean()
 
-    # compute L2 regularization
-    l2_reg = l2_reg_lambda * jax.tree_util.tree_reduce(
-        lambda x, y: x + y,
-        jax.tree.map(lambda x: (x**2).sum(), eqx.filter(nn, eqx.is_inexact_array)),
-    )
-
     # total loss
-    loss = policy_loss + value_loss + l2_reg
+    loss = policy_loss + value_loss
     aux_metrics = {"policy_loss": policy_loss, "value_loss": value_loss}
     return loss, (aux_metrics, nn_state)
