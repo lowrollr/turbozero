@@ -131,10 +131,15 @@ class Tree[NodeType]:
         )
 
     def set_child(
-        self, parent_index: ArrayLike, edge_index: ArrayLike, data: NodeType
+        self,
+        parent_index: ArrayLike,
+        edge_index: ArrayLike,
+        data: NodeType,
+        evict: ArrayLike = NULL_INDEX,
     ) -> Tree[NodeType]:
         """Stores `data` at the child of a node along an edge: updates the child if the edge exists,
-        otherwise adds it as a new node, like `add_node` (a no-op if the tree is full).
+        otherwise adds it as a new node, like `add_node`. If the tree is full, the new node takes the
+        slot of the leaf `evict`, which is removed from the tree; a no-op if `evict` is NULL_INDEX.
 
         Equivalent to a `lax.cond` between `update_node` and `add_node`, but writes a single node either
         way. Under vmap, where whether the edge exists differs across trees, such a cond becomes a
@@ -144,6 +149,9 @@ class Tree[NodeType]:
             parent_index: the index of the parent node.
             edge_index: the index of the edge from the parent to the child.
             data: the data to store at the child.
+            evict: (optional) a leaf, other than the root and `parent_index`, to remove to make room
+                for a new child when the tree is full. Its slot then holds a child of a node that can
+                come after it, so nodes are no longer in the order they were added.
 
         Returns:
             Tree[NodeType]: tree with the child's data stored.
@@ -151,22 +159,46 @@ class Tree[NodeType]:
         self.check_data_type(data)
         exists = self.is_edge(parent_index, edge_index)
         in_bounds = self.next_free_idx < self.capacity
-        # an existing child stays where it is; a new one goes at the next free index, which is out
-        # of bounds (so the writes below are no-ops) when the tree is full
+        evicting = ~exists & ~in_bounds & (evict != self.NULL_INDEX)
+        # an existing child stays where it is; a new one goes at the next free index, or in the
+        # evicted leaf's slot when the tree is full. Without one to evict, the index is out of bounds,
+        # so the writes below are no-ops
         index = jnp.where(
-            exists, self.edge_map[parent_index, edge_index], self.next_free_idx
+            exists,
+            self.edge_map[parent_index, edge_index],
+            jnp.where(evicting, evict, self.next_free_idx),
         )
         adding = ~exists & in_bounds
+        # cut the evicted leaf from its parent (out of bounds, dropped, when not evicting)
+        evict_parent = self.parents[evict]
+        edge_map = self.edge_map.at[
+            jnp.where(evicting, evict_parent, self.capacity),
+            jnp.argmax(self.edge_map[evict_parent] == evict),
+        ].set(self.NULL_INDEX, mode="drop")
         return replace(
             self,
             next_free_idx=jnp.where(adding, self.next_free_idx + 1, self.next_free_idx),
             # an existing child's parent is already `parent_index`
             parents=self.parents.at[index].set(parent_index),
-            edge_map=self.edge_map.at[parent_index, edge_index].set(
-                jnp.where(exists | adding, index, self.NULL_INDEX)
+            edge_map=edge_map.at[parent_index, edge_index].set(
+                jnp.where(exists | adding | evicting, index, self.NULL_INDEX)
             ),
             data=jax.tree.map(lambda x, y: x.at[index].set(y), self.data, data),
         )
+
+    def leaves(self) -> jax.Array:
+        """Which nodes are in the tree and have no children.
+
+        Returns:
+            jax.Array: (capacity,) bool
+        """
+        # the root's parent is NULL_INDEX, and points out of bounds
+        has_child = (
+            jnp.zeros((self.capacity,), dtype=jnp.bool_)
+            .at[jnp.where(self.parents == self.NULL_INDEX, self.capacity, self.parents)]
+            .set(True, mode="drop")
+        )
+        return (jnp.arange(self.capacity) < self.next_free_idx) & ~has_child
 
     def set_root(self, data: NodeType) -> Tree[NodeType]:
         """Sets node data at the root node.
@@ -213,7 +245,7 @@ class Tree[NodeType]:
         the batch was done, and on GPU every iteration of a loop waits on the host.
 
         Args:
-            index: the index of the node to start from.
+            index: the index of the node to start from (NULL_INDEX for an empty path, all NULL_INDEX).
 
         Returns:
             jax.Array: (capacity,) the path's node indices, padded with NULL_INDEX.
@@ -233,6 +265,26 @@ class Tree[NodeType]:
             up = up[up]
         return jnp.where(path == sentinel, self.NULL_INDEX, path)
 
+    def root_subtrees(self) -> jax.Array:
+        """Labels each node with the child of the root it descends from (the root, the root's children
+        and unused nodes are labelled with themselves).
+
+        Returns:
+            jax.Array: (capacity,) each node's root child's index
+        """
+        # pointer jumping: each node points at its parent, except the root, the root's children and
+        # unused nodes, which point at themselves (so jumps stop at the root's children)
+        subtrees = jnp.where(
+            self.parents > self.ROOT_INDEX,
+            self.parents,
+            jnp.arange(self.capacity, dtype=self.parents.dtype),
+        )
+        # after k jumps each node points 2^k levels up (or at its root child, if closer),
+        # so ceil(log2(capacity)) jumps cover the deepest possible tree (depth capacity - 1)
+        for _ in range(max(1, (self.capacity - 1).bit_length())):
+            subtrees = subtrees[subtrees]
+        return subtrees
+
     def _get_translation(
         self, child_index: ArrayLike
     ) -> tuple[jax.Array, jax.Array, jax.Array]:
@@ -247,18 +299,7 @@ class Tree[NodeType]:
                 - translation: the mapping from the old indices to the new indices after collapsing the subtree.
                 - erase_idxs: the indices of the nodes that will be erased after collapsing the subtree.
         """
-        # label each node with the root child it descends from, by pointer jumping:
-        # each node points at its parent, except the root, the root's children and unused nodes,
-        # which point at themselves (so jumps stop at the root's children)
-        subtrees = jnp.where(
-            self.parents > self.ROOT_INDEX,
-            self.parents,
-            jnp.arange(self.capacity, dtype=self.parents.dtype),
-        )
-        # after k jumps each node points 2^k levels up (or at its root child, if closer),
-        # so ceil(log2(capacity)) jumps cover the deepest possible tree (depth capacity - 1)
-        for _ in range(max(1, (self.capacity - 1).bit_length())):
-            subtrees = subtrees[subtrees]
+        subtrees = self.root_subtrees()
 
         # get idx of subtree
         subtree_idx = self.edge_map[self.ROOT_INDEX, child_index]
@@ -266,11 +307,14 @@ class Tree[NodeType]:
         nodes_to_retain = subtrees == subtree_idx
         slots_aranged = jnp.arange(self.capacity)
         old_subtree_idxs = nodes_to_retain * slots_aranged
-        # get translation of old indices to new indices (collapsed)
-        cumsum = jnp.cumsum(nodes_to_retain)
-        new_next_node_index = cumsum[-1]
+        # get translation of old indices to new indices (collapsed): the new root first, then the
+        # rest in their old order (a node can come before the new root, when it took an evicted
+        # node's slot, see `set_child`)
+        is_new_root = slots_aranged == subtree_idx
+        cumsum = jnp.cumsum(nodes_to_retain & ~is_new_root)
+        new_next_node_index = nodes_to_retain.sum()
         translation = jnp.where(
-            nodes_to_retain, nodes_to_retain * (cumsum - 1), self.NULL_INDEX
+            is_new_root, 0, jnp.where(nodes_to_retain, cumsum, self.NULL_INDEX)
         )
         # get indices of nodes that will be erased
         erase_idxs = slots_aranged >= new_next_node_index
@@ -364,7 +408,7 @@ def init_tree[NodeType](
             (max_nodes, branching_factor), fill_value=Tree.NULL_INDEX, dtype=jnp.int32
         ),
         data=jax.tree_util.tree_map(
-            # template leaves can be python scalars (e.g. `turn` in pgx's othello state)
+            # template leaves can be python scalars (e.g. a turn counter in an environment's state)
             lambda x: jnp.zeros((max_nodes, *jnp.shape(x)), dtype=jnp.result_type(x)),
             template_data,
         ),

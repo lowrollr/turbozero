@@ -55,6 +55,8 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-# summarise xfails/xpasses/skips at the end of the run
-addopts = "-ra"
+# summarise xfails/xpasses/skips at the end of the run; skip tests marked slow (run them
+# with `pytest -m slow`)
+addopts = "-ra -m 'not slow'"
+markers = ["slow: takes several seconds (deselected by default; run with -m slow)"]
 xfail_strict = true

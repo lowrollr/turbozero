@@ -107,7 +107,8 @@ class WeightedMCTS(MCTS):
         Args:
             key: rng
             tree: The search tree.
-            parent: index of the parent node (in most cases, this is the new node added to the tree this iteration)
+            parent: index of the parent node (in most cases, this is the new node added to the tree this iteration),
+                or NULL_INDEX to back up nothing
             value: expanded node value estimate
 
         Returns:

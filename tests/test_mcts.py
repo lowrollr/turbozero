@@ -179,6 +179,19 @@ def test_search_continues_from_reused_tree(make_search, ttt):
     assert root(out.eval_state).n == child_n + search.evaluator.num_iterations
 
 
+def assert_consistent(tree):
+    """Parents and edges agree, and every node has at least one visit more than its children
+    (exactly one more, but for the visits of evicted leaves)."""
+    parents, edge_map, n = map(np.asarray, (tree.parents, tree.edge_map, tree.data.n))
+    used = int(tree.next_free_idx)
+    for i in range(used):
+        children = edge_map[i][edge_map[i] != tree.NULL_INDEX]
+        assert (children < used).all() and (parents[children] == i).all()
+        assert n[i] >= 1 + n[children].sum()
+        if i != tree.ROOT_INDEX:
+            assert (edge_map[parents[i]] == i).sum() == 1
+
+
 @pytest.mark.parametrize("cls", ALL_SEARCHES)
 def test_tiny_tree_does_not_crash_and_counts_every_iteration(make_search, ttt, cls):
     search = make_search(cls, max_nodes=4)
@@ -186,9 +199,112 @@ def test_tiny_tree_does_not_crash_and_counts_every_iteration(make_search, ttt, c
 
     tree = out.eval_state
     assert tree.next_free_idx == tree.capacity
-    # every iteration is still counted at the root, even when its leaf could not be stored
+    # every iteration lands on a node: when the tree is full, a new leaf replaces an old one
     assert root(tree).n == 1 + search.evaluator.num_iterations
     assert jnp.isfinite(tree.data.q).all()
+    assert_consistent(tree)
+
+
+@pytest.mark.parametrize("cls", ALL_SEARCHES)
+def test_full_tree_backs_every_iteration_up_to_a_root_child(make_search, ttt, cls):
+    # 8 nodes for 32 iterations: room for the root's 5 children and deeper leaves to evict
+    search = make_search(cls, max_nodes=8)
+    out, _ = run_search(search, jax.random.PRNGKey(0), MIDGAME_MOVES, ttt)
+
+    tree = out.eval_state
+    assert tree.next_free_idx == tree.capacity
+    # so the policy target counts every iteration
+    assert root_child_visits(tree).sum() == search.evaluator.num_iterations
+    assert root(tree).n == 1 + search.evaluator.num_iterations
+    assert_consistent(tree)
+
+
+@pytest.mark.parametrize("cls", ALL_SEARCHES)
+def test_reused_full_trees_stay_consistent(make_search, ttt, cls):
+    # a game with tree reuse in a tree too small for one search: the kept subtrees fill it, and
+    # evicted slots hold nodes out of the order they were added in
+    search = make_search(cls, max_nodes=12)
+    state, meta = ttt.play([])
+    tree = search.init()
+    key = jax.random.PRNGKey(0)
+    while not meta.terminated:
+        key, search_key = jax.random.split(key)
+        out = search.evaluate(search_key, tree, state, meta)
+        # (an empty tree's root starts with the one visit of its own evaluation)
+        assert root(out.eval_state).n == (
+            max(root(tree).n, 1) + search.evaluator.num_iterations
+        )
+        assert_consistent(out.eval_state)
+        child = out.eval_state.data_at(out.eval_state.edge_map[0, out.action])
+        tree = search.step(out.eval_state, out.action)
+        assert_consistent(tree)
+        jax.tree.map(np.testing.assert_array_equal, root(tree), child)
+        state, meta = ttt.step_fn(state, out.action)
+
+
+@pytest.mark.parametrize("cls", ALL_SEARCHES)
+def test_full_tree_with_nothing_to_evict_ends_the_search(cls, fixed_length_env):
+    # one action a move: the tree is a single path, and once it's full the only leaf is the one
+    # each iteration would expand. Its value isn't backed up then, so the search stops there
+    env = fixed_length_env(length=100, num_actions=1)
+    search = cls(
+        eval_fn=lambda state, params, key: (jnp.zeros(1), jnp.array(0.5)),
+        action_selector=PUCTSelector(),
+        branching_factor=1,
+        max_nodes=4,
+        num_iterations=10,
+    )
+    state, meta = env.init_fn(jax.random.PRNGKey(0))
+    out = search.evaluate(
+        key=jax.random.PRNGKey(0),
+        eval_state=search.init(template_embedding=state),
+        env_state=state,
+        root_metadata=meta,
+        params=None,
+        env_step_fn=env.step_fn,
+    )
+
+    tree = out.eval_state
+    np.testing.assert_array_equal(tree.data.n, [4, 3, 2, 1])
+    assert_consistent(tree)
+
+
+@pytest.mark.parametrize("cls", ALL_SEARCHES)
+def test_search_that_never_fills_the_tree_does_not_depend_on_its_size(
+    make_search, ttt, cls
+):
+    # a game with tree reuse in trees that 32 iterations a move for 9 moves can't fill: evictions
+    # never happen, and a larger tree changes nothing
+    searches = [make_search(cls, max_nodes=1 + 32 * 9 + extra) for extra in (0, 50)]
+    state, meta = ttt.play([])
+    trees = [search.init() for search in searches]
+    key = jax.random.PRNGKey(0)
+    while not meta.terminated:
+        key, search_key = jax.random.split(key)
+        small, large = (
+            search.evaluate(search_key, tree, state, meta)
+            for search, tree in zip(searches, trees)
+        )
+        assert small.eval_state.next_free_idx < small.eval_state.capacity
+        np.testing.assert_array_equal(small.action, large.action)
+        np.testing.assert_array_equal(small.policy_weights, large.policy_weights)
+        trees = [
+            search.step(out.eval_state, out.action)
+            for search, out in zip(searches, (small, large))
+        ]
+        for searched in [(small.eval_state, large.eval_state), trees]:
+            assert_tree_prefix_equal(*searched)
+        state, meta = ttt.step_fn(state, small.action)
+
+
+def assert_tree_prefix_equal(small, large):
+    """`small` is `large` cut to its capacity."""
+    np.testing.assert_array_equal(small.next_free_idx, large.next_free_idx)
+    for x, y in zip(
+        jax.tree.leaves((small.parents, small.edge_map, small.data)),
+        jax.tree.leaves((large.parents, large.edge_map, large.data)),
+    ):
+        np.testing.assert_array_equal(x, y[: small.capacity])
 
 
 @pytest.mark.parametrize("cls", ALL_SEARCHES)

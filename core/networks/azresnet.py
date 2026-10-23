@@ -17,12 +17,17 @@ class AZResnetConfig:
         num_channels: number of channels in each residual block
         inference_dtype: dtype the network computes in, in inference mode (see `eqx.nn.inference_mode`),
             e.g. "bfloat16" for faster self-play; it trains in float32 either way
+        remat: in training, keep only each residual block's input for the backward pass, and compute
+            the activations inside the block again from it (gradient checkpointing, see `jax.checkpoint`):
+            training takes much less memory, for about one more forward pass of compute. The
+            results are the same up to float rounding. Inference is unchanged.
     """
 
     policy_head_out_size: int
     num_blocks: int
     num_channels: int
     inference_dtype: str = "float32"
+    remat: bool = False
 
 
 def conv(
@@ -34,7 +39,42 @@ def conv(
 
 
 def batch_norm(channels: int) -> eqx.nn.BatchNorm:
-    return eqx.nn.BatchNorm(channels, axis_name=BATCH_AXIS, mode="batch")
+    """BatchNorm whose running averages of the batch statistics both start at 0.
+
+    Equinox (0.13) starts the running variance at 1, but divides both running averages by
+    1 - momentum^steps, as if they started at 0 (the zero-debiasing of Adam's moments): in inference
+    the variance was too large by momentum^steps / (1 - momentum^steps), 99 times after one training
+    step, a third too large after 128, and only negligibly so after about 1000.
+    """
+    bn = eqx.nn.BatchNorm(channels, axis_name=BATCH_AXIS, mode="batch")
+    zeros = jnp.zeros((channels,))
+    return eqx.tree_at(
+        lambda bn: bn.batch_state_index, bn, eqx.nn.StateIndex((zeros, zeros))
+    )
+
+
+def inference_affine(
+    bn: eqx.nn.BatchNorm, state: eqx.nn.State
+) -> tuple[jax.Array, jax.Array]:
+    """The per-channel affine map, x * scale + offset, BatchNorm (see `batch_norm`) applies in
+    inference mode: normalization by the averages of the batch statistics it has seen in training,
+    or before it has seen any, by mean 0 and variance 1 (where its running averages, still 0, would
+    divide by the square root of its epsilon).
+
+    Returns:
+        tuple[jax.Array, jax.Array]: scale and offset, each (channels,)
+    """
+    assert bn.batch_counter is not None and bn.batch_state_index is not None
+    steps = state.get(bn.batch_counter)
+    running_mean, running_var = state.get(bn.batch_state_index)
+    # the running averages start at 0, so they fall short by a factor of 1 - momentum^steps
+    debias = jnp.where(steps == 0, 1, 1 - bn.momentum**steps)
+    mean = running_mean / debias
+    var = jnp.where(steps == 0, 1, running_var / debias)
+    scale = jax.lax.rsqrt(var + bn.eps)
+    if bn.weight is not None and bn.bias is not None:
+        return scale * bn.weight, bn.bias - mean * scale * bn.weight
+    return scale, -mean * scale
 
 
 def conv_bn(
@@ -46,20 +86,16 @@ def conv_bn(
 ) -> tuple[jax.Array, eqx.nn.State]:
     """A convolution followed by BatchNorm.
 
-    In inference mode BatchNorm is a fixed per-channel affine map, so it's folded into the convolution's
-    weights and a bias: one pass over the activations instead of two (or more). The folded convolution
-    computes in `dtype`.
+    In inference mode BatchNorm is a fixed per-channel affine map (see `inference_affine`), so it's
+    folded into the convolution's weights and a bias: one pass over the activations instead of two (or
+    more). The folded convolution computes in `dtype`.
     """
     if not bn.inference:
         return bn(conv(x), state)
-    # the map's offset and scale are its value and slope at 0
-    zeros = jnp.zeros((conv.out_channels, 1, 1), conv.weight.dtype)
-    offset, scale = jax.jvp(
-        lambda y: bn(y, state)[0], (zeros,), (jnp.ones_like(zeros),)
-    )
+    scale, offset = inference_affine(bn, state)
     weight = conv.weight * scale.reshape(-1, 1, 1, 1)
     folded = eqx.tree_at(lambda c: c.weight, conv, weight.astype(dtype))
-    return folded(x.astype(dtype)) + offset.astype(dtype), state
+    return folded(x.astype(dtype)) + offset.reshape(-1, 1, 1).astype(dtype), state
 
 
 class ResidualBlock(eqx.Module):
@@ -91,6 +127,22 @@ class ResidualBlock(eqx.Module):
         return jax.nn.relu(x + y), state
 
 
+def checkpointed(
+    block: ResidualBlock, x: jax.Array, state: eqx.nn.State
+) -> tuple[jax.Array, eqx.nn.State]:
+    """Applies `block` under `jax.checkpoint`: differentiating it saves only its inputs, and computes
+    its activations again in the backward pass."""
+    params, static = eqx.partition(block, eqx.is_array)
+
+    @jax.checkpoint
+    def apply(
+        params: ResidualBlock, x: jax.Array, state: eqx.nn.State
+    ) -> tuple[jax.Array, eqx.nn.State]:
+        return eqx.combine(params, static)(x, state)
+
+    return apply(params, x, state)
+
+
 class AZResnet(eqx.Module):
     """Implements the AlphaZero ResNet model.
 
@@ -107,6 +159,7 @@ class AZResnet(eqx.Module):
     value_bn: eqx.nn.BatchNorm
     value_linear: eqx.nn.Linear
     inference_dtype: str = eqx.field(static=True)
+    remat: bool = eqx.field(static=True)
 
     def __init__(
         self,
@@ -139,6 +192,7 @@ class AZResnet(eqx.Module):
         self.value_bn = batch_norm(1)
         self.value_linear = eqx.nn.Linear(height * width, 1, key=keys[4])
         self.inference_dtype = config.inference_dtype
+        self.remat = config.remat
 
     def __call__(
         self, x: jax.Array, state: eqx.nn.State
@@ -157,7 +211,10 @@ class AZResnet(eqx.Module):
 
         # residual blocks
         for block in self.blocks:
-            x, state = block(x, state)
+            if self.remat and not self.stem_bn.inference:
+                x, state = checkpointed(block, x, state)
+            else:
+                x, state = block(x, state)
 
         # policy head
         policy, state = conv_bn(self.policy_conv, self.policy_bn, x, state, dtype)

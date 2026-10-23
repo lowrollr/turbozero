@@ -46,8 +46,11 @@ class MCTS(Evaluator):
             eval_fn: leaf node evaluation function (env_state -> (policy_logits, value))
             action_selector: action selection function (eval_state -> action)
             branching_factor: max number of actions (== children per node)
-            max_nodes: allocated size of MCTS tree, any additional nodes will not be created,
-                but values from out-of-bounds leaf nodes will still backpropagate
+            max_nodes: allocated size of MCTS tree. A search that needs a new node when the tree is
+                full makes room by evicting a leaf (see `eviction_candidate`), so it searches all its
+                iterations whatever the size; but evictions forget part of the tree, and with
+                `persist_tree` the tree a search starts from can fill most of it, so allow for
+                `num_iterations` on top of the subtree a search typically keeps
             num_iterations: number of MCTS iterations to perform per evaluate call
             discount: discount factor for MCTS (default: -1.0)
                 - use a negative discount in two-player games (e.g. -1.0)
@@ -225,9 +228,44 @@ class MCTS(Evaluator):
         node_data = jax.tree.map(
             lambda v, n: jnp.where(node_exists, v, n), visited, new
         )
-        tree = tree.set_child(parent, action, node_data)
-        # backpropagate
-        return self.backpropagate(key, tree, parent, value)
+        # when the tree is full, a new leaf takes the slot of the least-visited leaf
+        tree = tree.set_child(
+            parent, action, node_data, evict=self.eviction_candidate(tree, parent)
+        )
+        # backpropagate, only if the leaf is in the tree: otherwise (a full tree with nothing to
+        # evict) its value would reach the root but no child of it, and PUCT would choose the same
+        # leaf again and again. Every later iteration then does nothing, and the search ends early
+        landed = tree.is_edge(parent, action)
+        return self.backpropagate(
+            key, tree, jnp.where(landed, parent, tree.NULL_INDEX), value
+        )
+
+    def eviction_candidate(self, tree: MCTSTree, parent: ArrayLike) -> jax.Array:
+        """The leaf to evict if the tree is full and an iteration needs a new node under `parent`:
+        the least-visited leaf, other than the root and `parent`, and not a child of the root unless
+        every leaf is (the root's children hold the policy target); of those, the one whose parent
+        has the fewest visits, which the search is least likely to come back to. The evicted leaf's
+        visits stay counted in its ancestors, as if it had never been expanded; PUCT can expand it
+        again.
+
+        Args:
+            tree: MCTSTree, full
+            parent: index of the node the new leaf goes under
+
+        Returns:
+            jax.Array: the leaf's index, or NULL_INDEX if there is none
+        """
+        index = jnp.arange(tree.capacity)
+        leaves = tree.leaves() & (index != tree.ROOT_INDEX) & (index != parent)
+        deep = leaves & (tree.parents != tree.ROOT_INDEX)
+        candidates = jnp.where(deep.any(), deep, leaves)
+        most = jnp.iinfo(tree.data.n.dtype).max
+        n = jnp.where(candidates, tree.data.n, most)
+        # (only the root's parent is NULL_INDEX, and the root isn't a candidate)
+        parent_n = tree.data.n[jnp.maximum(tree.parents, 0)]
+        # of the least visited, the first with the least visited parent
+        leaf = jnp.argmin(jnp.where(n == n.min(), parent_n, most))
+        return jnp.where(candidates.any(), leaf, tree.NULL_INDEX)
 
     def traverse(self, tree: MCTSTree) -> TraversalState:
         """Traverse from the root node until an unvisited leaf node is reached.
@@ -274,7 +312,8 @@ class MCTS(Evaluator):
         Args:
             key: rng
             tree: MCTSTree to evaluate
-            parent: index of the parent node (in most cases, this is the new node added to the tree this iteration)
+            parent: index of the parent node (in most cases, this is the new node added to the tree this iteration),
+                or NULL_INDEX to back up nothing
             value: value estimate of the leaf node
 
         Returns:
