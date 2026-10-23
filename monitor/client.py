@@ -1,14 +1,15 @@
-"""Push metrics and media from a training run to the monitor server.
+"""Push metrics and data from a training run to the monitor server.
 
     monitor = Monitor("http://localhost:8008", project="my-game")
     monitor.start(config=trainer.get_config())
     monitor.activity("self-play (epoch 3)")
-    monitor.log(epoch, {"loss": 0.41, "greedy_game": Episode("pgx_two_player", ...)})
+    monitor.log(epoch, {"loss": 0.41, "test_game": Episode("othello", ...)})
     monitor.finish()
 
-`Trainer` does all of this when it's given a monitor. Everything but `start` happens
-on a background thread: `log` only queues its values, so the training loop never
-waits on encoding, copies off the device or the network. Logging never raises: if
+`Trainer` does all of this when it's given a monitor. Runs only send data: numbers,
+episodes as raw arrays and dicts; drawing them is the dashboard's job. Everything but
+`start` happens on a background thread: `log` only queues its values, so the training
+loop never waits on copies off the device or the network. Logging never raises: if
 the server is down the run keeps training and the failure is reported once.
 
 While a run is going, a heartbeat thread resends its current activity every
@@ -29,17 +30,15 @@ from urllib.parse import quote
 
 import numpy as np
 
-from core.monitor.media import encode_media
-
 DEFAULT_URL = "http://localhost:8008"
 # seconds between heartbeats; the dashboard calls a run stale after a few missed ones
 HEARTBEAT_S = 30.0
 
 
 class Episode:
-    """The raw data of one episode, e.g. Episode("pgx_two_player", **arrays). The
-    server renders it with its renderer for `env` (see core.monitor.renderers), so
-    the training run never draws anything."""
+    """The raw data of one episode, e.g. Episode("othello", board=boards, ...). The
+    dashboard draws it with its renderer for `env` (monitor/static/renderers.js),
+    so the training run never draws anything."""
 
     def __init__(self, env: str, **data: Any):
         self.env = env
@@ -189,8 +188,8 @@ class Monitor:
         self._enqueue(self._post_activity, self.run_id, text)
 
     def log(self, step: int, data: dict[str, Any]) -> None:
-        """Queue scalars, media and episodes for one step; they're sent in the
-        background. Values that are none of these are dropped."""
+        """Queue scalars, episodes and dicts (shown as they are) for one step;
+        they're sent in the background. Values that are none of these are dropped."""
         if self.run_id is None:
             return
         self._enqueue(self._log, self.run_id, step, dict(data))
@@ -211,14 +210,9 @@ class Monitor:
                     timeout=60,
                 )
                 continue
-            media = encode_media(value)
-            if media is not None:
-                content_type, body = media
-                self._request(
-                    f"/api/runs/{run_id}/media?key={quote(key)}&step={step}",
-                    body,
-                    content_type=content_type,
-                    timeout=60,
+            if isinstance(value, dict):
+                self._post_json(
+                    f"/api/runs/{run_id}/media?key={quote(key)}&step={step}", value
                 )
         if metrics:
             self._post_json(

@@ -1,4 +1,3 @@
-import xml.etree.ElementTree as ET
 from functools import partial
 
 import jax
@@ -8,7 +7,6 @@ import pytest
 
 from core.common import two_player_game
 from core.evaluators.random_evaluator import RandomEvaluator
-from core.monitor.renderers import _caption
 from core.testing.two_player_baseline import TwoPlayerBaseline
 from core.testing.two_player_tester import TwoPlayerTester, TwoPlayerTestState
 
@@ -101,34 +99,6 @@ def test_tester_run_on_skipped_epoch_returns_state_unchanged(ttt, scripted):
     assert new_state is state
     assert metrics == {}
     assert rendered is None
-
-
-def test_caption_handles_svgs_with_a_viewbox():
-    # pgx's own SVGs only set width/height; an SVG with a viewBox (and no width) must work too
-    svg = (
-        b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 50" height="50">'
-        b'<rect width="100" height="50" fill="black"/></svg>'
-    )
-
-    root = ET.fromstring(_caption(svg, ["agent", "opponent"]))
-
-    # the viewBox and height grow by a fifth, for a strip holding a line per player
-    assert root.attrib["viewBox"] == "0.0 0.0 100.0 60.0"
-    assert float(root.attrib["height"]) == 60.0
-    texts = [el.text for el in root.iter("{http://www.w3.org/2000/svg}text")]
-    assert texts == ["agent", "opponent"]
-
-
-def test_caption_handles_pgx_svgs():
-    svg = (
-        b'<svg xmlns="http://www.w3.org/2000/svg" width="240.0" height="240.0">'
-        b'<rect width="240" height="240" fill="black"/></svg>'
-    )
-
-    root = ET.fromstring(_caption(svg, ["agent", "opponent"]))
-
-    assert float(root.attrib["height"]) == 288.0
-    assert "viewBox" not in root.attrib
 
 
 def test_random_evaluator_plays_legal_moves_uniformly(ttt):

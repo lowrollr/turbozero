@@ -2,6 +2,10 @@
 // No framework; every view is plain DOM built with h(), and labels that come
 // from a run (metric names, config values) only ever go in as text.
 
+import { h } from "./dom.js";
+import { RENDERERS } from "./renderers.js";
+import { episodePlayer, loadArrays } from "./episodes.js";
+
 const SERIES = ["--s1", "--s2", "--s3", "--s4", "--s5", "--s6"].map((v) => `var(${v})`);
 const POLL_MS = 2000;
 const RUNS_POLL_MS = 5000;
@@ -33,24 +37,6 @@ const state = {
 };
 
 // ---------------------------------------------------------------- helpers
-
-function h(tag, attrs = {}, ...children) {
-  const svg = ["svg", "path", "line", "circle", "text", "g", "rect"].includes(tag);
-  const el = svg
-    ? document.createElementNS("http://www.w3.org/2000/svg", tag)
-    : document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) {
-    if (v == null || v === false) continue;
-    if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
-    else if (k === "text") el.textContent = v;
-    else el.setAttribute(k, v === true ? "" : v);
-  }
-  for (const c of children.flat()) {
-    if (c == null || c === false) continue;
-    el.append(c instanceof Node ? c : document.createTextNode(String(c)));
-  }
-  return el;
-}
 
 async function api(path) {
   const res = await fetch(path);
@@ -599,7 +585,7 @@ window.addEventListener("resize", () => {
   clearTimeout(resizeTimer);
   resizeTimer = setTimeout(() => {
     if (!view) return;
-    // leave media alone so gifs don't restart
+    // leave media alone so episodes don't restart
     if (state.rows.length) renderCharts();
   }, 150);
 });
@@ -660,28 +646,80 @@ function updateMediaCard(key, entries, card) {
       }),
     ),
   );
-  // swapping the element restarts a gif, so only do it when the entry changes
-  const id = entry.file || `error-${entry.step}`;
+  // swapping the element restarts an episode, so only do it when the entry changes
+  const id = entry.episode || entry.file;
   if (card.shown === id) return;
   card.shown = id;
-  if (entry.error) {
-    card.body.replaceChildren(h("div", { class: "media-error", text: `couldn't render: ${entry.error}` }));
-    return;
+  if (entry.episode) showEpisode(card, entry);
+  else showData(card, entry);
+}
+
+// data a run logged as a dict, as it is
+async function showData(card, entry) {
+  card.body.replaceChildren();
+  const data = await api(`/media/${state.runId}/${encodeURIComponent(entry.file)}`);
+  if (card.shown !== entry.file) return;
+  card.body.replaceChildren(h("pre", { text: JSON.stringify(data, null, 2) }));
+}
+
+// a test's episode, played on a canvas by its env's renderer (renderers.js)
+async function showEpisode(card, entry) {
+  const fail = (text) => card.shown === entry.episode && card.body.replaceChildren(h("div", { class: "media-error", text }));
+  const render = RENDERERS[entry.env];
+  if (!render) return fail(`no renderer for ${entry.env} episodes`);
+  card.body.replaceChildren();
+  let view, arrays;
+  try {
+    arrays = await loadArrays(`/api/runs/${state.runId}/episodes/${encodeURIComponent(entry.episode)}`);
+    view = render(arrays);
+  } catch (e) {
+    return fail(`couldn't show this episode: ${e.message}`);
   }
-  const src = `/media/${state.runId}/${encodeURIComponent(entry.file)}`;
-  if (entry.file.endsWith(".json")) {
-    card.body.replaceChildren();
-    fetch(src)
-      .then((r) => r.json())
-      .then((data) => {
-        if (card.shown !== entry.file) return;
-        card.body.replaceChildren(h("pre", { text: JSON.stringify(data, null, 2) }));
-      });
-  } else if (entry.file.endsWith(".mp4")) {
-    card.body.replaceChildren(h("video", { src, autoplay: true, loop: true, muted: true, controls: true }));
-  } else {
-    card.body.replaceChildren(h("img", { src, alt: `${key} at epoch ${entry.step}` }));
-  }
+  if (card.shown !== entry.episode) return;
+  const caption = view.players && arrays.values ? gameCaption(view, arrays) : null;
+  const player = episodePlayer(view, { below: caption?.el });
+  if (caption) player.onFrame = caption.show;
+  card.body.replaceChildren(player.el);
+  // drawn once the canvas has a size; the caption needn't wait
+  caption?.show(player.frame);
+}
+
+// who played which colour in a two-player game, each one's value estimate at the
+// frame shown, its pieces on the board if the view counts them, and the result at
+// the end
+function gameCaption(view, arrays) {
+  const agent = arrays.agent.item();
+  const last = view.frames - 1;
+  const outcome = arrays.completed.item() ? arrays.outcome.item() : null;
+  const result = (sign) => (outcome == null ? "" : outcome * sign > 0 ? "won" : outcome * sign < 0 ? "lost" : "drew");
+  const rows = [
+    { who: "trained agent", color: agent, values: 0, sign: 1 },
+    { who: "opponent", color: 1 - agent, values: 1, sign: -1 },
+  ].map((p) => {
+    const side = view.players[p.color];
+    const swatch = h("i", { class: `swatch${side.ring ? " ring" : ""}` });
+    swatch.style.setProperty("--c", side.color);
+    const value = h("b", { class: "num" });
+    const pieces = view.pieces && h("span", { class: "num dim" });
+    const tag = h("span", { class: "result" });
+    const el = h("div", { class: "seat" }, swatch, h("span", { class: "who", text: `${p.who} · ${side.name}` }), h("span", { class: "spacer" }), pieces, h("span", { class: "dim", text: "value" }), value, tag);
+    return { ...p, el, value, pieces, tag };
+  });
+  const toMove = arrays.to_move;
+  return {
+    el: h("div", { class: "seats" }, rows.map((r) => r.el)),
+    show(t) {
+      for (const r of rows) {
+        const v = arrays.values.get(t, r.values);
+        r.value.textContent = `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(3)}`;
+        if (r.pieces) r.pieces.textContent = `${view.pieces(t, r.color)} discs`;
+        const over = t === last && outcome != null;
+        r.tag.textContent = over ? result(r.sign) : "";
+        r.tag.className = `result ${over ? result(r.sign) : ""}`;
+        r.el.classList.toggle("to-move", !over && toMove?.get(t) === r.color);
+      }
+    },
+  };
 }
 
 // ---------------------------------------------------------------- config

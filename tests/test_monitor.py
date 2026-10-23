@@ -1,7 +1,6 @@
-"""The run monitor: the client logging to a live server, and the server storing, rendering and serving runs."""
+"""The run monitor: the client logging to a live server, and the server storing and serving runs."""
 
-import importlib
-import io
+import json
 import time
 import urllib.error
 import urllib.request
@@ -10,30 +9,10 @@ from functools import partial
 import jax
 import numpy as np
 import pytest
-from PIL import Image
-from PIL.GifImagePlugin import GifImageFile
 
 from core.common import two_player_game
-from core.monitor import Episode, Monitor, Video, client
-from core.monitor.renderers import pgx_two_player_episode
-
-
-def cairo_available():
-    try:
-        importlib.import_module("cairosvg")
-    except OSError:  # the cairo system library is missing
-        return False
-    return True
-
-
-def wait_for_media(server, run_id, count, timeout=60):
-    """Media entries of a run once there are `count` of them (episodes render in the background)."""
-    deadline = time.time() + timeout
-    while True:
-        rows = server.get(f"/api/runs/{run_id}/media")["rows"]
-        if len(rows) >= count or time.time() > deadline:
-            return rows
-        time.sleep(0.05)
+from monitor import Episode, Monitor, client
+from monitor.episodes import BOARDS, pgx_two_player_episode
 
 
 def test_run_round_trip(monitor_server):
@@ -107,32 +86,57 @@ def test_non_finite_metrics_are_stored_as_null(monitor_server):
     )
 
 
-def test_media(monitor_server):
-    frames = [Image.new("RGB", (8, 8), c) for c in ("red", "blue")]
+def test_dicts_are_stored_as_data(monitor_server):
     monitor = Monitor(monitor_server.url)
     monitor.start()
 
-    monitor.log(4, {"video": Video(frames), "board": frames[0]})
+    monitor.log(4, {"openings": {"e6": 3, "f5": 1}, "not_data": object()})
     monitor.flush()
 
-    entries = monitor_server.get(f"/api/runs/{monitor.run_id}/media")["rows"]
-    assert {(e["key"], e["step"], e["file"]) for e in entries} == {
-        ("video", 4, "video-4.gif"),
-        ("board", 4, "board-4.png"),
+    [entry] = monitor_server.get(f"/api/runs/{monitor.run_id}/media")["rows"]
+    assert (entry["key"], entry["step"], entry["file"]) == (
+        "openings",
+        4,
+        "openings-4.json",
+    )
+    assert monitor_server.get(f"/media/{monitor.run_id}/openings-4.json") == {
+        "e6": 3,
+        "f5": 1,
     }
-    with urllib.request.urlopen(
-        f"{monitor_server.url}/media/{monitor.run_id}/video-4.gif"
-    ) as resp:
-        assert resp.headers["Content-Type"] == "image/gif"
-        gif = Image.open(io.BytesIO(resp.read()))
-    assert isinstance(gif, GifImageFile)
-    assert gif.n_frames == 2
 
 
-@pytest.mark.skipif(
-    not cairo_available(), reason="rendering needs the cairo system library"
-)
-def test_pgx_episode_is_rendered_by_the_server(monitor_server, ttt, scripted):
+def test_pictures_are_refused(monitor_server):
+    # runs log data; drawing it is the dashboard's job
+    monitor = Monitor(monitor_server.url)
+    monitor.start()
+
+    request = urllib.request.Request(
+        f"{monitor_server.url}/api/runs/{monitor.run_id}/media?key=board&step=0",
+        data=b"GIF89a",
+        headers={"Content-Type": "image/gif"},
+        method="POST",
+    )
+    with pytest.raises(urllib.error.HTTPError) as e:
+        urllib.request.urlopen(request)
+    assert e.value.code == 415
+
+
+def load_arrays(body: bytes) -> dict[str, np.ndarray]:
+    """An episode as the dashboard gets it (static/episodes.js loadArrays)."""
+    length = int.from_bytes(body[:4], "little")
+    header = json.loads(body[4 : 4 + length])
+    return {
+        name: np.frombuffer(
+            body,
+            dtype=spec["dtype"],
+            count=int(np.prod(spec["shape"])),
+            offset=4 + length + spec["offset"],
+        ).reshape(spec["shape"])
+        for name, spec in header.items()
+    }
+
+
+def test_pgx_episode_is_served_for_the_dashboard(monitor_server, ttt, scripted):
     game = jax.jit(
         partial(
             two_player_game,
@@ -143,52 +147,83 @@ def test_pgx_episode_is_rendered_by_the_server(monitor_server, ttt, scripted):
             env_step_fn=ttt.step_fn,
             env_init_fn=ttt.init_fn,
             max_steps=12,
+            p1_first=False,
         )
     )
     _, frames, p_ids = jax.device_get(game(jax.random.PRNGKey(0)))
     monitor = Monitor(monitor_server.url)
     monitor.start()
 
-    monitor.log(
-        2, {"game": pgx_two_player_episode(p1_label="X", p2_label="O")(frames, p_ids)}
-    )
+    monitor.log(2, {"game": pgx_two_player_episode()(frames, p_ids)})
     monitor.flush()
 
-    [entry] = wait_for_media(monitor_server, monitor.run_id, 1)
-    assert (entry["key"], entry["step"], entry.get("error")) == ("game", 2, None)
+    [entry] = monitor_server.get(f"/api/runs/{monitor.run_id}/media")["rows"]
+    assert (entry["key"], entry["step"], entry["env"]) == ("game", 2, "tic_tac_toe")
     with urllib.request.urlopen(
-        f"{monitor_server.url}/media/{monitor.run_id}/{entry['file']}"
+        f"{monitor_server.url}/api/runs/{monitor.run_id}/episodes/{entry['episode']}"
     ) as resp:
-        gif = Image.open(io.BytesIO(resp.read()))
-    # playing the first legal move, X wins down the left column on the 7th move: the
-    # initial board and 7 moves, each shown for 900ms, the final board held 3 times as long
-    assert isinstance(gif, GifImageFile)
-    assert gif.n_frames == 1 + 7
-    assert gif.info["duration"] == 900
-    gif.seek(7)
-    assert gif.info["duration"] == 3 * 900
+        arrays = load_arrays(resp.read())
+    # playing the first free square, X wins on the diagonal with the 7th move: the
+    # initial board and 7 moves, without the frames padding the game out to 12 steps
+    board = arrays["board"]
+    assert board.shape == (1 + 7, 3, 3)
+    assert (board[0] == 0).all()
+    assert board[-1].tolist() == [[1, 2, 1], [2, 1, 2], [1, 0, 0]]
+    assert arrays["to_move"].tolist() == [0, 1, 0, 1, 0, 1, 0, 1]
+    assert arrays["values"].shape == (1 + 7, 2)
+    # the trained agent moved second, so played O, and lost
+    assert (int(arrays["agent"]), int(arrays["completed"])) == (1, 1)
+    assert float(arrays["outcome"]) == -1
 
 
-def test_render_error_is_recorded(monitor_server):
-    monitor = Monitor(monitor_server.url)
-    monitor.start()
+@pytest.mark.parametrize("env_id", ["othello", "connect_four"])
+def test_pgx_boards_are_drawn_from_the_first_movers_side(env_id):
+    import pgx
 
-    # missing every array the renderer needs
-    monitor.log(0, {"game": Episode("pgx_two_player", env_id="tic_tac_toe")})
-    monitor.flush()
+    env = pgx.make(env_id)
+    states = [env.init(jax.random.PRNGKey(0))]
+    for _ in range(3):
+        action = int(np.argmax(states[-1].legal_action_mask))
+        states.append(env.step(states[-1], action))
+    stacked = jax.tree.map(lambda *xs: np.stack(xs), *states)
 
-    [entry] = wait_for_media(monitor_server, monitor.run_id, 1)
-    assert entry["key"] == "game" and entry["error"].startswith("KeyError")
+    board, to_move = BOARDS[env_id](stacked._x)
+
+    assert to_move.tolist() == [0, 1, 0, 1]
+    # pieces of the colour that moves first are 1, whichever pgx player that is and
+    # whoever is to move
+    if env_id == "othello":
+        assert board[0][3].tolist()[3:5] == [2, 1]
+        # black's first move, at the first legal square (d3), turns d4 black
+        assert (board[1][2][3], board[1][3][3]) == (1, 1)
+    else:
+        # the first two discs drop into the bottom of the leftmost column
+        assert board[2][5][0] == 1 and board[2][4][0] == 2
 
 
-def test_unknown_renderer_is_rejected(monitor_server, capsys):
+def test_episode_with_unknown_env_is_still_stored(monitor_server):
+    # the dashboard says it has no renderer for it
     monitor = Monitor(monitor_server.url)
     monitor.start()
 
     monitor.log(0, {"game": Episode("nope", x=[1, 2])})
     monitor.flush()
 
-    assert "no renderer for env 'nope'" in capsys.readouterr().err
+    [entry] = monitor_server.get(f"/api/runs/{monitor.run_id}/media")["rows"]
+    assert entry["env"] == "nope"
+
+
+def test_unreadable_episode_is_rejected(monitor_server, capsys):
+    monitor = Monitor(monitor_server.url)
+    monitor.start()
+
+    monitor.log(0, {"game": Episode("othello", names=np.array(["a", "b"]))})
+    monitor.log(0, {"game": Episode("bad name", x=[1])})
+    monitor.flush()
+
+    err = capsys.readouterr().err
+    assert "names isn't numbers" in err
+    assert "env names are letters" in err
     assert monitor_server.get(f"/api/runs/{monitor.run_id}/media")["rows"] == []
 
 

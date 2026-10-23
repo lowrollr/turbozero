@@ -13,7 +13,7 @@ openings (see xot.py), which keeps them varied.
 
 Start the monitor first, in another shell, with `uv run turbozero-monitor`. It shows
 the metrics, which rung of the ladder the agent has reached, and a game against the
-last opponent it played, which it renders itself.
+last opponent it played, which it draws in the browser.
 
 The first epoch is slow: nearly all of the training loop is JIT-compiled the first
 time it runs. On one RTX 5080 the rest take about 63s each (36s with
@@ -64,14 +64,14 @@ from core.evaluators.mcts.action_selection import PUCTSelector
 from core.evaluators.mcts.mcts import MCTS
 from core.evaluators.random_evaluator import RandomEvaluator
 from core.memory.replay_memory import EpisodeReplayBuffer
-from core.monitor import DEFAULT_URL, Monitor
-from core.monitor.renderers import pgx_two_player_episode
 from core.testing.ladder import LadderTester, Rung
 from core.training.exploration import Exploration
 from core.training.loss_fns import az_default_loss_fn
 from core.training.schedule import EvaluatorSchedule, Schedule, parse_schedule
 from core.training.train import Trainer
 from core.training.tree_positions import TreePositions
+from monitor import DEFAULT_URL, Monitor
+from monitor.episodes import pgx_two_player_episode
 
 
 def epoch_list(text: str) -> list[int]:
@@ -377,13 +377,8 @@ def main():
     )
     greedy = make_nn_eval_fn_no_params_callable(greedy_eval, state_to_nn_input)
 
-    # with a monitor, each test sends a game for the monitor server to render
-    # (drawing it needs the cairo system library there, not here)
-    episode_fn = (
-        pgx_two_player_episode(p1_label="Black", p2_label="White")
-        if args.monitor
-        else None
-    )
+    # with a monitor, each test sends a game for the dashboard to play
+    episode_fn = pgx_two_player_episode() if args.monitor else None
 
     # the ladder, easiest first: each test plays the lowest rung the agent hasn't
     # beaten, and moves up past every rung it scores at least 55% against. Our agent
