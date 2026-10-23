@@ -1,3 +1,4 @@
+import inspect
 import json
 import os
 import re
@@ -209,6 +210,27 @@ def _describe(tree: Any) -> list[tuple[str, tuple[int, ...], str]]:
     return described
 
 
+def _flatten(config: dict, prefix: str = "") -> dict:
+    """`config` with its nested dicts' entries in its own, named by their path, e.g. `args.lr`."""
+    flat = {}
+    for k, v in config.items():
+        if isinstance(v, dict) and v:
+            flat.update(_flatten(v, f"{prefix}{k}."))
+        else:
+            flat[f"{prefix}{k}"] = v
+    return flat
+
+
+def _to_config(x: Any) -> Any:
+    """Array `x` as a JSON value, its floats the shortest decimals that round-trip at their precision
+    (a float32 0.9 is 0.9, not 0.8999999761581421)."""
+    x = np.asarray(x)
+    if x.dtype.kind != "f":
+        return x.tolist()
+    shortest = [float(str(v)) for v in x.reshape(-1)]
+    return np.array(shortest).reshape(x.shape).tolist()
+
+
 def _to_host(x: Any) -> np.ndarray:
     """`x` as a numpy array, through a temporary array on the CPU device if there is one: for an
     accelerator's array, `np.asarray` would keep the host copy on it, for as long as it lives."""
@@ -227,21 +249,91 @@ def _to_device(x: Any) -> jax.Array:
     return jnp.array(x, copy=True)
 
 
+def _is_injected(x: Any) -> bool:
+    """Whether `x` is the state of an `optax.inject_hyperparams` optimizer."""
+    return isinstance(
+        x, optax.InjectHyperparamsState | optax.InjectStatefulHyperparamsState
+    )
+
+
 def restart_schedules(opt_state: Any) -> Any:
-    """`opt_state` with its learning rate schedules' step counts back at 0 (optax's
-    `ScaleByScheduleState` and `InjectHyperparamsState`), so that they start over.
+    """`opt_state` with its learning rate schedules' step counts back at 0, so that they start
+    over: optax's `ScaleByScheduleState` (a schedule passed as an optimizer's learning rate), and
+    `optax.inject_hyperparams`' own step count and its schedules' states.
 
     Everything else (e.g. Adam's moments, and the step count of its bias correction) is
     kept."""
 
     def is_schedule(x: Any) -> bool:
-        return isinstance(x, optax.ScaleByScheduleState | optax.InjectHyperparamsState)
+        return isinstance(x, optax.ScaleByScheduleState) or _is_injected(x)
+
+    def has_count(x: Any) -> bool:
+        return isinstance(x, tuple) and "count" in getattr(x, "_fields", ())
+
+    def restart_count(x: Any) -> Any:
+        return x._replace(count=jnp.zeros_like(x.count))
+
+    def restart(x: Any) -> Any:
+        if isinstance(x, optax.ScaleByScheduleState):
+            return restart_count(x)
+        x = restart_count(x)._replace(inner_state=restart_schedules(x.inner_state))
+        if isinstance(x, optax.InjectStatefulHyperparamsState):
+            # each schedule counts its own steps (optax's `WrappedScheduleState`)
+            x = x._replace(
+                hyperparams_states=jax.tree.map(
+                    lambda s: restart_count(s) if has_count(s) else s,
+                    x.hyperparams_states,
+                    is_leaf=has_count,
+                )
+            )
+        return x
 
     return jax.tree.map(
-        lambda x: x._replace(count=jnp.zeros_like(x.count)) if is_schedule(x) else x,
-        opt_state,
-        is_leaf=is_schedule,
+        lambda x: restart(x) if is_schedule(x) else x, opt_state, is_leaf=is_schedule
     )
+
+
+def injected_hyperparams(
+    opt_state: Any, scheduled_only: bool = False
+) -> dict[str, jax.Array]:
+    """The hyperparameters of the `optax.inject_hyperparams` optimizers in `opt_state`, by name:
+    the values its last update used (or, before any, the first update will).
+
+    Args:
+        opt_state: an optimizer's state
+        scheduled_only: only those that follow a schedule (e.g. a decaying learning rate)
+
+    Returns:
+        dict[str, jax.Array]: the hyperparameters' values, none if the optimizer doesn't inject any
+    """
+    hyperparams = {}
+    for state in jax.tree.leaves(opt_state, is_leaf=_is_injected):
+        if not _is_injected(state):
+            continue
+        scheduled = getattr(state, "hyperparams_states", {})
+        hyperparams.update(
+            (name, value)
+            for name, value in state.hyperparams.items()
+            if not scheduled_only or name in scheduled
+        )
+    return hyperparams
+
+
+def describe_fn(fn: Callable) -> dict:
+    """`fn`'s name and keyword arguments, with their defaults and any `functools.partial` sets.
+    Used for logging."""
+    keywords = {}
+    while isinstance(fn, partial):
+        keywords = {**fn.keywords, **keywords}
+        fn = fn.func
+    try:
+        params = inspect.signature(fn).parameters.values()
+    except (TypeError, ValueError):
+        params = []
+    defaults = {
+        p.name: p.default for p in params if p.default is not inspect.Parameter.empty
+    }
+    return {"name": getattr(fn, "__name__", str(fn)), **defaults, **keywords}
 
 
 class Trainer:
@@ -295,7 +387,10 @@ class Trainer:
             train_steps_per_epoch: # of training steps to take in each epoch
             nn: neural network (an equinox module, see core.networks.utils.apply_nn), training starts from its parameters
             loss_fn: loss function for training (see core.training.loss_fns)
-            optimizer: optax optimizer
+            optimizer: optax optimizer. Wrap it in `optax.inject_hyperparams` to have its hyperparameters
+                recorded with the monitor's run (their initial values), and the ones that follow a schedule
+                (e.g. a decaying learning rate) logged every epoch, their mean over its training steps:
+                `optax.inject_hyperparams(optax.adam)(learning_rate=schedule)`
             evaluator: the `Evaluator` to use during self-play, or an `EvaluatorSchedule` of evaluators
                 that take over from one another at given epochs (e.g. searching more MCTS iterations
                 later in training)
@@ -364,6 +459,13 @@ class Trainer:
         self.nn_state = nn_state
         self.loss_fn = loss_fn
         self.optimizer = optimizer
+        # the injected hyperparameters' initial values, for the config
+        self.optimizer_config = {
+            name: _to_config(value)
+            for name, value in injected_hyperparams(
+                jax.jit(optimizer.init)(eqx.filter(nn, eqx.is_inexact_array))
+            ).items()
+        }
         self.extract_model_params_fn = extract_model_params_fn
         # data collection
         self.batch_size = batch_size
@@ -459,6 +561,15 @@ class Trainer:
             "warmup_steps": self.warmup_steps,
             "collection_steps_per_epoch": self.collection_steps_per_epoch,
             "train_steps_per_epoch": self.train_steps_per_epoch,
+            "max_episode_steps": self.max_episode_steps,
+            "nn": self.nn.__class__.__name__,
+            "nn_params": sum(
+                x.size
+                for x in jax.tree.leaves(eqx.filter(self.nn, eqx.is_inexact_array))
+            ),
+            "loss_fn": describe_fn(self.loss_fn),
+            "optimizer": self.optimizer_config or None,
+            "data_transforms": len(self.transform_fns),
             **(
                 {"grad_accum_steps": self.grad_accum_steps}
                 if self.grad_accum_steps > 1
@@ -484,6 +595,7 @@ class Trainer:
             "tree_positions": self.tree_positions.get_config()
             if self.tree_positions is not None
             else None,
+            "testers": [tester.get_config() for tester in self.testers],
         }
 
     def collect(
@@ -742,8 +854,12 @@ class Trainer:
             opt_state=opt_state,
             step=ts.step + 1,
         )
-        # return updated train state and metrics
-        metrics = {**metrics, "loss": loss}
+        # return updated train state and metrics, with the hyperparameters this step used
+        metrics = {
+            **metrics,
+            "loss": loss,
+            **injected_hyperparams(opt_state, scheduled_only=True),
+        }
         return ts, metrics
 
     def accumulate_grads(
@@ -1256,10 +1372,9 @@ class Trainer:
         current = json.loads(
             json.dumps({**self.get_config(), **self.extra_config}, default=str)
         )
+        current, saved = _flatten(current), _flatten(meta["config"])
         changed = sorted(
-            k
-            for k in current.keys() | meta["config"].keys()
-            if current.get(k) != meta["config"].get(k)
+            k for k in current.keys() | saved.keys() if current.get(k) != saved.get(k)
         )
         if changed:
             print(

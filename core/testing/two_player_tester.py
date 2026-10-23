@@ -34,6 +34,10 @@ class TwoPlayerTester(BaseTester):
         super().__init__(*args, num_keys=num_episodes, **kwargs)
         self.num_episodes = num_episodes
 
+    def get_config(self) -> dict:
+        """Returns the configuration of the tester. Used for logging."""
+        return {**super().get_config(), "num_episodes": self.num_episodes}
+
     def init(self, params: Any, **kwargs) -> TwoPlayerTestState:  # pylint: disable=unused-argument
         """Initializes the internal state of the TwoPlayerTester.
 

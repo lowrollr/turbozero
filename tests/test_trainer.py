@@ -474,6 +474,42 @@ def test_config_lists_the_schedule_and_grad_accum_only_when_used(env, tmp_path):
     assert "grad_accum_steps" not in plain and "collection_schedule" not in plain
 
 
+def test_config_records_the_loss_testers_and_injected_hyperparameters(env, tmp_path):
+    config = make_trainer(
+        env,
+        tmp_path,
+        optimizer=optax.inject_hyperparams(optax.adam)(
+            learning_rate=optax.linear_schedule(1e-3, 0.0, 10)
+        ),
+        testers=[TwoPlayerTester(num_episodes=2)],
+    ).get_config()
+
+    # float32 values, recorded as the decimals they were given as
+    assert config["optimizer"] == {
+        "learning_rate": 1e-3,
+        "b1": 0.9,
+        "b2": 0.999,
+        "eps": 1e-8,
+        "eps_root": 0.0,
+    }
+    assert config["loss_fn"] == {
+        "name": "az_default_loss_fn",
+        "l2_reg_lambda": 1e-4,
+        "value_target_q": 0.0,
+    }
+    assert config["testers"] == [
+        {
+            "name": "TwoPlayerTester",
+            "class": "TwoPlayerTester",
+            "epochs_per_test": 1,
+            "num_episodes": 2,
+        }
+    ]
+    assert (config["nn"], config["max_episode_steps"]) == ("MLP", 8)
+    # nothing to record of an optimizer whose hyperparameters aren't injected
+    assert make_trainer(env, tmp_path).get_config()["optimizer"] is None
+
+
 # checkpoints
 
 
@@ -1389,6 +1425,27 @@ def test_grad_accum_matches_one_minibatch_without_batch_norm(env, tmp_path):
     assert not leaves_equal(whole.params, make().init_train_state().params)
     assert_trees_close(accumulated, whole)
     assert_trees_close(accumulated_metrics, whole_metrics)
+
+
+def test_train_step_reports_the_scheduled_hyperparameters_it_used(env, tmp_path):
+    trainer = make_trainer(
+        env,
+        tmp_path,
+        train_batch_size=8,
+        optimizer=optax.inject_hyperparams(optax.adam)(
+            learning_rate=optax.linear_schedule(1e-3, 0.0, 10)
+        ),
+    )
+
+    _, metrics = train_steps_on(trainer, batches(env))
+
+    assert [float(m["learning_rate"]) for m in metrics] == [
+        pytest.approx(1e-3),
+        pytest.approx(9e-4),
+        pytest.approx(8e-4),
+    ]
+    # constant ones are in the config, not the metrics
+    assert "b1" not in metrics[0]
 
 
 def test_grad_accum_updates_batch_norm_statistics_once_per_step(env, tmp_path):

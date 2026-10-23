@@ -147,9 +147,10 @@ def make_optimizer(
     total_steps: int, lr: float = 1e-3, lr_final: float = 1e-4
 ) -> optax.GradientTransformation:
     """Adam, with the learning rate decaying from `lr` to `lr_final` over
-    `total_steps` training steps, along a cosine."""
-    return optax.adam(
-        optax.cosine_decay_schedule(
+    `total_steps` training steps, along a cosine. Its hyperparameters are injected, for the
+    trainer to record them and log the learning rate."""
+    return optax.inject_hyperparams(optax.adam)(
+        learning_rate=optax.cosine_decay_schedule(
             lr, decay_steps=max(total_steps, 1), alpha=lr_final / lr
         )
     )

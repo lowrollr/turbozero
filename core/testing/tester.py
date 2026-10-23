@@ -52,6 +52,14 @@ class BaseTester:
             name = self.__class__.__name__
         self.name = name
 
+    def get_config(self) -> dict:
+        """Returns the configuration of the Tester. Used for logging."""
+        return {
+            "name": self.name,
+            "class": self.__class__.__name__,
+            "epochs_per_test": self.epochs_per_test,
+        }
+
     def init(self, *args, **kwargs) -> TestState:  # pylint: disable=unused-argument
         """Initializes the internal state of the Tester."""
         return TestState()

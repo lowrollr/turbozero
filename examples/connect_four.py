@@ -127,7 +127,7 @@ def main():
         nn=resnet,
         nn_state=resnet_state,
         loss_fn=partial(az_default_loss_fn, l2_reg_lambda=0.0001),
-        optimizer=optax.adam(5e-3),
+        optimizer=optax.inject_hyperparams(optax.adam)(learning_rate=5e-3),
         # self-play samples moves in proportion to visit counts; test games play the most-visited
         evaluator=make_evaluator(temperature=1.0, dirichlet_alpha=0.6),
         evaluator_test=make_evaluator(temperature=0.0),
@@ -144,6 +144,7 @@ def main():
             )
         ],
         monitor=Monitor(args.monitor, project="connect_four") if args.monitor else None,
+        extra_config={"args": vars(args)},
     )
     trainer.train_loop(seed=args.seed, num_epochs=args.epochs)
 
