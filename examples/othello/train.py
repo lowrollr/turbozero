@@ -43,6 +43,7 @@ from functools import partial
 import pgx
 from game import (
     SYMMETRY_TRANSFORM_FNS,
+    WEIGHT_DECAY,
     env,
     episode_metrics,
     greedy_eval,
@@ -176,6 +177,12 @@ def main():
         type=float,
         default=1e-4,
         help="the learning rate at the end of the run (it decays along a cosine)",
+    )
+    parser.add_argument(
+        "--weight-decay",
+        type=float,
+        default=WEIGHT_DECAY,
+        help="AdamW's weight decay, of the network's weights (not its biases or BatchNorm)",
     )
     parser.add_argument(
         "--inference-dtype",
@@ -394,14 +401,10 @@ def main():
         grad_accum_steps=args.grad_accum,
         nn=resnet,
         nn_state=resnet_state,
-        loss_fn=partial(
-            az_default_loss_fn,
-            l2_reg_lambda=1e-4,
-            value_target_q=args.value_target_q,
-        ),
+        loss_fn=partial(az_default_loss_fn, value_target_q=args.value_target_q),
         # decays from --lr to --lr-final over the run
         optimizer=make_optimizer(
-            args.epochs * args.train_steps, args.lr, args.lr_final
+            args.epochs * args.train_steps, args.lr, args.lr_final, args.weight_decay
         ),
         evaluator=evaluator,
         # stores `capacity` samples for each of the `batch_size` environments

@@ -84,10 +84,9 @@ def test_injected_hyperparams_without_injection():
 
 
 def test_describe_fn():
-    assert describe_fn(partial(az_default_loss_fn, l2_reg_lambda=1e-3)) == {
+    assert describe_fn(partial(az_default_loss_fn, value_target_q=0.5)) == {
         "name": "az_default_loss_fn",
-        "l2_reg_lambda": 1e-3,
-        "value_target_q": 0.0,
+        "value_target_q": 0.5,
     }
     assert describe_fn(len) == {"name": "len"}
 
