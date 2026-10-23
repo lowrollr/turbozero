@@ -200,9 +200,9 @@ class EpisodeReplayBuffer:
         """Copies a replay buffer state of any capacity, held in numpy arrays (e.g. loaded from a
         file), into one of this buffer's capacity, on the host.
 
-        Each environment keeps its newest entries, as many as fit, at the same ages (see
-        `sample_mask`), so a window samples the same entries as before. With more capacity
-        than `state`, the oldest places are left empty.
+        Each environment keeps its newest entries, as many as fit, oldest first, so the next
+        entry written overwrites the oldest. With more capacity than `state`, the oldest places
+        are left empty.
 
         Args:
             state: replay buffer state, with a batch dimension in front of the capacity
@@ -242,50 +242,28 @@ class EpisodeReplayBuffer:
         )
         return resized, [copy(x) for x in entry_data]
 
-    def sample_mask(
-        self, state: ReplayBufferState, window: jax.Array | int | None = None
-    ) -> jax.Array:
-        """Marks the buffer entries that can be sampled: populated, from a finished episode, and
-        with `window`, among the `window` newest entries written.
+    def sample_mask(self, state: ReplayBufferState) -> jax.Array:
+        """Marks the buffer entries that can be sampled: populated, and from a finished episode.
 
-        An entry's age is how many entries have been written after it, `(next_idx - 1 - idx) mod
-        capacity`, so a window of `w` holds what a buffer of capacity `w` would (an episode
-        discarded by `truncate` aside: it doesn't push older entries out of the window). Entries
-        of an episode still in progress count towards the window, though they can't be sampled.
-
-        Compatible with `jax.jit`: `window` may be a traced value, so changing it doesn't
-        recompile. Works with any number of batch dimensions in front of the capacity dimension.
+        Compatible with `jax.jit`. Works with any number of batch dimensions in front of the
+        capacity dimension.
 
         Args:
             state: replay buffer state
-            window: (optional) entries per environment, newest first, to sample from; by default
-                the whole buffer. At least `capacity` means the whole buffer too.
 
         Returns:
             jax.Array: boolean mask, same shape as `state.populated`
         """
-        mask = jnp.logical_and(state.populated, state.has_reward)
-        if window is None:
-            return mask
-        age = (
-            state.next_idx[..., None] - 1 - jnp.arange(self.capacity)
-        ) % self.capacity
-        return mask & (age < window)
+        return jnp.logical_and(state.populated, state.has_reward)
 
-    def check_can_sample(
-        self,
-        state: ReplayBufferState,
-        window: int | None = None,
-        sample_size: int = 1,
-    ) -> None:
+    def check_can_sample(self, state: ReplayBufferState, sample_size: int = 1) -> None:
         """Checks on the host that an episode has finished, and that there are at least
-        `sample_size` entries to sample (in `window`, see `sample_mask`).
+        `sample_size` entries to sample.
 
         Not compatible with `jax.jit`: `state` must hold concrete arrays.
 
         Args:
             state: replay buffer state
-            window: (optional) entries per environment to sample from, see `sample_mask`
             sample_size: entries a sample takes
 
         Raises:
@@ -297,12 +275,12 @@ class EpisodeReplayBuffer:
                 "Cannot sample from the replay buffer: no episodes have finished yet. "
                 "Collect more self-play steps before training (e.g. increase `warmup_steps`)."
             )
-        count = int(self.sample_mask(state, window).sum())
+        count = int(self.sample_mask(state).sum())
         if count < sample_size:
             raise ValueError(
                 f"Cannot sample {sample_size} entries from the replay buffer: only {count} can be "
                 "sampled. Collect more self-play steps before training (e.g. increase "
-                "`warmup_steps`), widen the replay window, or sample fewer."
+                "`warmup_steps`), or sample fewer."
             )
 
     def sample_indices(
@@ -332,7 +310,6 @@ class EpisodeReplayBuffer:
         state: ReplayBufferState,
         key: jax.Array,
         sample_size: int,
-        window: int | None = None,
     ) -> BaseExperience:
         """Samples experiences from the replay buffer.
 
@@ -346,8 +323,6 @@ class EpisodeReplayBuffer:
             state: replay buffer state
             key: rng
             sample_size: size of minibatch to sample
-            window: (optional) entries per environment, newest first, to sample from (see
-                `sample_mask`); by default the whole buffer
 
         Returns:
             BaseExperience: minibatch of size (sample_size, ...)
@@ -355,18 +330,17 @@ class EpisodeReplayBuffer:
         Raises:
             ValueError: if fewer than `sample_size` entries can be sampled
         """
-        self.check_can_sample(state, window, sample_size)
-        mask = self.sample_mask(state, window)
+        self.check_can_sample(state, sample_size)
+        mask = self.sample_mask(state)
         indices = jnp.unravel_index(
             self.sample_indices(key, mask, sample_size), mask.shape
         )
         return jax.tree_util.tree_map(lambda x: x[indices], state.buffer)
 
     def count_distinct_observations(
-        self, state: ReplayBufferState, window: jax.Array | int | None = None
+        self, state: ReplayBufferState
     ) -> tuple[jax.Array, jax.Array]:
-        """Counts the experiences that can be sampled (in `window`, see `sample_mask`), and how
-        many distinct observations they hold.
+        """Counts the experiences that can be sampled, and how many distinct observations they hold.
 
         A measure of how varied the replay data is. Observations are compared by a 64-bit hash
         of their contents, so collisions are possible but vanishingly rare at buffer sizes.
@@ -374,13 +348,11 @@ class EpisodeReplayBuffer:
 
         Args:
             state: replay buffer state
-            window: (optional) entries per environment, newest first, to count (see `sample_mask`);
-                by default the whole buffer
 
         Returns:
             Tuple[jax.Array, jax.Array]: (number of distinct observations, number of experiences)
         """
-        valid = self.sample_mask(state, window).reshape(-1)
+        valid = self.sample_mask(state).reshape(-1)
         obs = state.buffer.observation_nn.reshape(valid.shape[0], -1)
         # compare raw bits: floats as float32, everything else as int32
         if jnp.issubdtype(obs.dtype, jnp.floating):
