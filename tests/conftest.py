@@ -81,9 +81,14 @@ def uniform_eval_fn(state, params, key):  # pylint: disable=unused-argument
 @jax.tree_util.register_dataclass
 @dataclass(frozen=True)
 class ScriptedState:
-    """Evaluator state for `ScriptedEvaluator`: how many moves it has made this game."""
+    """Evaluator state for `ScriptedEvaluator`: how many moves it has made and how many times it
+    has been stepped this game, the action it was last stepped with (-1 for none), and how many
+    times it has been reset."""
 
     moves: jax.Array
+    steps: jax.Array
+    last_step: jax.Array
+    resets: jax.Array
 
 
 class ScriptedEvaluator(Evaluator):
@@ -92,6 +97,8 @@ class ScriptedEvaluator(Evaluator):
     - `first_legal`: always plays the lowest-index legal action.
     - `resign`: plays square 0 on its first move and repeats it on its second, which is illegal,
       so it loses on its second move (pgx ends the game and gives -1 to whoever moves illegally).
+
+    Its state records how it's stepped and reset (see `ScriptedState`).
     """
 
     def __init__(self, strategy: str, discount: float = -1.0):
@@ -100,10 +107,14 @@ class ScriptedEvaluator(Evaluator):
         self.strategy = strategy
 
     def init(self, *args, **kwargs) -> ScriptedState:
-        return ScriptedState(moves=jnp.array(0, dtype=jnp.int32))
+        zero = jnp.array(0, dtype=jnp.int32)
+        return ScriptedState(moves=zero, steps=zero, last_step=zero - 1, resets=zero)
 
     def reset(self, state: ScriptedState) -> ScriptedState:
-        return ScriptedState(moves=jnp.zeros_like(state.moves))
+        return replace(self.init(), resets=state.resets + 1)
+
+    def step(self, state: ScriptedState, action: jax.Array) -> ScriptedState:
+        return replace(state, steps=state.steps + 1, last_step=action.astype(jnp.int32))
 
     def evaluate(
         self, key, eval_state, env_state, root_metadata, params, env_step_fn, **kwargs

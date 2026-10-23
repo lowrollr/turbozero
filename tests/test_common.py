@@ -1,3 +1,5 @@
+"""Stepping an environment and an evaluator together, and two-player games between evaluators."""
+
 from functools import partial
 
 import jax
@@ -6,14 +8,9 @@ import numpy as np
 import pytest
 
 from core.common import step_env_and_evaluator, two_player_game
-from core.evaluators.alphazero import AlphaZero
-from core.evaluators.mcts.mcts import MCTS
-
-# a drawn game with one move left: X 0 2 3 7 (8 to play), O 1 4 5 6
-DRAW_MOVES, LAST_ACTION = [0, 1, 2, 4, 3, 5, 7, 6], 8
 
 
-def play_games(ttt, evaluator_1, evaluator_2, max_steps, num_games=16):
+def play_games(env, evaluator_1, evaluator_2, max_steps, num_games=16, p1_first=None):
     game = jax.jit(
         jax.vmap(
             partial(
@@ -22,9 +19,10 @@ def play_games(ttt, evaluator_1, evaluator_2, max_steps, num_games=16):
                 evaluator_2=evaluator_2,
                 params_1=None,
                 params_2=None,
-                env_step_fn=ttt.step_fn,
-                env_init_fn=ttt.init_fn,
+                env_step_fn=env.step_fn,
+                env_init_fn=env.init_fn,
                 max_steps=max_steps,
+                p1_first=p1_first,
             )
         )
     )
@@ -36,7 +34,8 @@ def play_games(ttt, evaluator_1, evaluator_2, max_steps, num_games=16):
 
 @pytest.mark.parametrize("winner", [1, 2])
 def test_two_player_game_attributes_outcomes_to_evaluators(ttt, scripted, winner):
-    # the resigning evaluator loses whoever moves first
+    # the resigning evaluator loses whoever moves first: unlike in a game decided by who moves
+    # first, the outcomes show which evaluator they're credited to
     evaluators = (
         (scripted.first_legal, scripted.resign)
         if winner == 1
@@ -51,24 +50,23 @@ def test_two_player_game_attributes_outcomes_to_evaluators(ttt, scripted, winner
     assert frames.completed[:, -1].all()
 
 
-def test_two_player_game_first_mover_wins_with_first_legal_play(ttt, scripted):
-    # both players take the lowest free square, so X completes the 2-4-6 diagonal on move 7
-    outcomes, _, evaluator_1_first = play_games(
-        ttt, scripted.first_legal, scripted.first_legal, max_steps=10
-    )
+@pytest.mark.parametrize("p1_first", [None, True, False])
+def test_two_player_game_is_won_by_whoever_moves_first(
+    fixed_length_env, scripted, p1_first
+):
+    # a game of 3 moves, won by the first to move; the step limit is odd too
+    env = fixed_length_env(length=3)
+    max_steps = 5
 
-    expected = jnp.where(
-        evaluator_1_first[:, None], jnp.array([1.0, -1.0]), jnp.array([-1.0, 1.0])
-    )
-    np.testing.assert_array_equal(outcomes, expected)
-
-
-def test_two_player_game_with_odd_max_steps(ttt, scripted):
-    max_steps = 7
     outcomes, frames, evaluator_1_first = play_games(
-        ttt, scripted.first_legal, scripted.first_legal, max_steps
+        env, scripted.first_legal, scripted.first_legal, max_steps, p1_first=p1_first
     )
 
+    if p1_first is None:
+        # chosen at random
+        assert evaluator_1_first.any() and (~evaluator_1_first).any()
+    else:
+        assert (evaluator_1_first == p1_first).all()
     expected = jnp.where(
         evaluator_1_first[:, None], jnp.array([1.0, -1.0]), jnp.array([-1.0, 1.0])
     )
@@ -77,90 +75,72 @@ def test_two_player_game_with_odd_max_steps(ttt, scripted):
     assert frames.completed.shape[1] == max_steps + 1
 
 
-@pytest.fixture(scope="module")
-def stepper(make_search, ttt):
-    search = make_search(AlphaZero(MCTS))
-
-    @partial(jax.jit, static_argnames=("max_steps", "reset"))
-    def step(key, env_state, meta, eval_state, max_steps, reset=True):
-        return step_env_and_evaluator(
-            key,
-            env_state,
-            meta,
-            eval_state,
-            None,
-            search.evaluator,
-            ttt.step_fn,
-            ttt.init_fn,
-            max_steps,
+def step_once(env, evaluator, max_steps, reset=True):
+    """One step of `env` from its initial state, and of `evaluator` from its initial state."""
+    env_state, meta = env.init_fn(jax.random.PRNGKey(0))
+    return jax.jit(
+        partial(
+            step_env_and_evaluator,
+            params=None,
+            evaluator=evaluator,
+            env_step_fn=env.step_fn,
+            env_init_fn=env.init_fn,
+            max_steps=max_steps,
             reset=reset,
         )
-
-    return search, step
-
-
-def assert_is_initial_state(env_state):
-    assert env_state._step_count == 0
-    assert not env_state.terminated
-    assert env_state.legal_action_mask.all()
+    )(jax.random.PRNGKey(0), env_state, meta, evaluator.init())
 
 
-def test_step_resets_env_and_evaluator_when_episode_terminates(ttt, stepper):
-    search, step = stepper
-    state, meta = ttt.play(DRAW_MOVES)
+@pytest.mark.parametrize(
+    "length, max_steps, ending",
+    [(1, 10, "terminated"), (10, 1, "truncated")],
+)
+def test_step_resets_env_and_evaluator_when_episode_ends(
+    fixed_length_env, scripted, length, max_steps, ending
+):
+    env = fixed_length_env(length=length)
 
-    output, env_state, _, terminated, truncated, rewards = step(
-        jax.random.PRNGKey(0), state, meta, search.init(), max_steps=20
+    output, env_state, _, terminated, truncated, rewards = step_once(
+        env, scripted.first_legal, max_steps
     )
 
-    assert output.action == LAST_ACTION
-    assert terminated and not truncated
-    np.testing.assert_array_equal(rewards, [0.0, 0.0])
-    assert_is_initial_state(env_state)
-    assert output.eval_state.next_free_idx == 0
-    assert root_n(output.eval_state) == 0
+    assert (bool(terminated), bool(truncated)) == (
+        ending == "terminated",
+        ending == "truncated",
+    )
+    np.testing.assert_array_equal(
+        rewards, env.rewards if ending == "terminated" else [0.0, 0.0]
+    )
+    # a new game, and the evaluator reset rather than stepped
+    assert int(env_state.step) == 0
+    eval_state = output.eval_state
+    assert int(eval_state.resets) == 1 and int(eval_state.steps) == 0
 
 
-def test_step_resets_env_and_evaluator_when_episode_is_truncated(ttt, stepper):
-    search, step = stepper
-    state, meta = ttt.play([])
+def test_step_without_reset_keeps_terminal_state(fixed_length_env, scripted):
+    env = fixed_length_env(length=1)
 
-    output, env_state, _, terminated, truncated, _ = step(
-        jax.random.PRNGKey(0), state, meta, search.init(), max_steps=0
+    output, env_state, meta, terminated, _, _ = step_once(
+        env, scripted.first_legal, max_steps=10, reset=False
     )
 
-    assert truncated and not terminated
-    assert_is_initial_state(env_state)
-    assert output.eval_state.next_free_idx == 0
+    assert terminated and meta.terminated and int(env_state.step) == 1
+    # the evaluator's state as the evaluation left it, neither reset nor stepped
+    eval_state = output.eval_state
+    assert int(eval_state.moves) == 1
+    assert int(eval_state.resets) == 0 and int(eval_state.steps) == 0
 
 
-def test_step_without_reset_keeps_terminal_state(ttt, stepper):
-    search, step = stepper
-    state, meta = ttt.play(DRAW_MOVES)
+def test_step_mid_episode_advances_env_and_steps_evaluator(fixed_length_env, scripted):
+    env = fixed_length_env(length=10)
 
-    output, env_state, _, terminated, _, _ = step(
-        jax.random.PRNGKey(0), state, meta, search.init(), max_steps=20, reset=False
-    )
-
-    assert terminated
-    assert env_state.terminated
-    assert output.eval_state.next_free_idx > 0
-
-
-def test_step_mid_episode_advances_env_and_reuses_subtree(ttt, stepper):
-    search, step = stepper
-    state, meta = ttt.play([4])
-
-    output, env_state, _, terminated, truncated, _ = step(
-        jax.random.PRNGKey(0), state, meta, search.init(), max_steps=20
+    output, env_state, _, terminated, truncated, _ = step_once(
+        env, scripted.first_legal, max_steps=10
     )
 
     assert not terminated and not truncated
-    assert env_state._step_count == 2
-    assert env_state._x.board[output.action] != -1
-    # the evaluator moved to the searched subtree under the chosen action, not to an empty tree
-    assert root_n(output.eval_state) > 1
-
-
-def root_n(tree):
-    return tree.data_at(tree.ROOT_INDEX).n
+    assert int(env_state.step) == 1
+    # the evaluator follows the move played (e.g. to the subtree of a search tree)
+    eval_state = output.eval_state
+    assert int(eval_state.steps) == 1 and int(eval_state.last_step) == output.action
+    assert int(eval_state.resets) == 0

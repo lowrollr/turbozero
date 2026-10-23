@@ -127,6 +127,8 @@ def test_step_plays_the_chosen_move_and_keeps_the_evaluators_policy(ttt, scripte
     assert not env_state.legal_action_mask[4]
     assert env_state.legal_action_mask[0]
     np.testing.assert_array_equal(output.policy_weights, np.eye(9)[0])
+    # and the evaluator follows the move played (e.g. to its subtree), not its own
+    assert int(output.eval_state.last_step) == 4
 
 
 def test_collect_stores_the_evaluators_policy_not_the_move_played(

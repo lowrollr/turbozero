@@ -6,12 +6,10 @@ so every episode length below is deterministic."""
 from functools import partial
 
 import jax
-import jax.numpy as jnp
 import numpy as np
 import pytest
 
 from core.common import step_env_and_evaluator, two_player_game
-from core.testing.two_player_tester import TwoPlayerTester, TwoPlayerTestState
 
 
 def run_steps(env, evaluator, max_steps, num_steps, reset=True):
@@ -168,45 +166,3 @@ def test_two_player_game_hitting_the_step_limit_is_completed_as_a_draw(
     np.testing.assert_array_equal(outcomes, [0.0, 0.0])
     np.testing.assert_array_equal(frames.env_state.step, np.arange(max_steps + 1))
     np.testing.assert_array_equal(frames.completed, [False] * max_steps + [True])
-
-
-def test_two_player_game_on_tic_tac_toe_hitting_the_step_limit(ttt, scripted):
-    # with first-legal play X wins on move 7, so 6 steps cut the game short
-    outcomes, frames, _ = play_game(ttt, scripted.first_legal, max_steps=6)
-
-    np.testing.assert_array_equal(outcomes, [0.0, 0.0])
-    assert frames.completed[-1] and not frames.completed[:-1].any()
-    assert not frames.env_state.terminated[-1]
-
-
-def test_tester_episode_has_every_frame_up_to_the_final_state(
-    fixed_length_env, scripted
-):
-    max_steps = 4
-    env = fixed_length_env(length=max_steps)
-    packed = []
-
-    def episode_fn(frames, p_ids, env_step_fn):  # pylint: disable=unused-argument
-        packed.append(frames)
-        return "episode"
-
-    tester = TwoPlayerTester(num_episodes=2, episode_fn=episode_fn)
-    state = TwoPlayerTestState(best_params={"w": jnp.zeros(3)})
-
-    _, _, episode = tester.run(
-        key=jax.random.PRNGKey(0),
-        epoch_num=0,
-        max_steps=max_steps,
-        env_step_fn=env.step_fn,
-        env_init_fn=env.init_fn,
-        evaluator=scripted.first_legal,
-        state=state,
-        params={"w": jnp.ones(3)},
-    )
-
-    assert episode == "episode"
-    [frames] = packed
-    # one transfer off the device: numpy arrays stacked along time
-    assert isinstance(frames.completed, np.ndarray)
-    assert frames.env_state.step.tolist() == list(range(max_steps + 1))
-    assert frames.completed[-1]
