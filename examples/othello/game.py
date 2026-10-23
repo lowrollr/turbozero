@@ -14,7 +14,8 @@ from core.evaluators.alphazero import AlphaZero
 from core.evaluators.mcts.action_selection import PUCTSelector
 from core.evaluators.mcts.mcts import MCTS
 from core.networks.azresnet import AZResnet, AZResnetConfig
-from core.types import StepMetadata, TrainState
+from core.training.train import weight_decay_mask
+from core.types import StepMetadata
 
 # vectorized environments pair well with batched AlphaZero; pgx has many more:
 # https://sotets.uk/pgx/othello/
@@ -117,6 +118,12 @@ SYMMETRY_TRANSFORM_FNS = [
 ]
 
 
+# AdamW's decay of a weight each step is learning rate * WEIGHT_DECAY * weight. An L2 penalty
+# of 1e-4 in the loss, which training used before, came to about this under Adam on the
+# convolutions (from 0.3 to 0.8, Adam's normalization making it uneven between weights)
+WEIGHT_DECAY = 0.5
+
+
 def make_network(
     num_blocks: int,
     num_channels: int,
@@ -144,15 +151,22 @@ def make_network(
 
 
 def make_optimizer(
-    total_steps: int, lr: float = 1e-3, lr_final: float = 1e-4
+    total_steps: int,
+    lr: float = 1e-3,
+    lr_final: float = 1e-4,
+    weight_decay: float = WEIGHT_DECAY,
 ) -> optax.GradientTransformation:
-    """Adam, with the learning rate decaying from `lr` to `lr_final` over
-    `total_steps` training steps, along a cosine. Its hyperparameters are injected, for the
-    trainer to record them and log the learning rate."""
-    return optax.inject_hyperparams(optax.adam)(
+    """AdamW, with the learning rate decaying from `lr` to `lr_final` over
+    `total_steps` training steps, along a cosine, and weight decay on the network's weights,
+    not its biases or BatchNorm scales and offsets (see `weight_decay_mask`). Its
+    hyperparameters are injected, for the trainer to record them and log the learning
+    rate."""
+    return optax.inject_hyperparams(optax.adamw, static_args=("mask",))(
         learning_rate=optax.cosine_decay_schedule(
             lr, decay_steps=max(total_steps, 1), alpha=lr_final / lr
-        )
+        ),
+        weight_decay=weight_decay,
+        mask=weight_decay_mask,
     )
 
 
@@ -169,16 +183,11 @@ def load_checkpoint(
         num_blocks, num_channels, inference_dtype=inference_dtype
     )
     params = eqx.filter(network, eqx.is_inexact_array)
-    # the optimizer state's structure doesn't depend on the schedule's length
-    template = TrainState(
-        params=params,
-        nn_state=network_state,
-        opt_state=make_optimizer(1).init(params),
-        step=jnp.array(0, dtype=jnp.int32),
-    )
+    # a checkpoint is a TrainState's arrays in order, params and network state first: read
+    # just those, so that it loads whatever optimizer trained it
     with open(path, "rb") as f:
-        train_state = eqx.tree_deserialise_leaves(f, template)
-    return network, (train_state.params, train_state.nn_state)
+        params, network_state = eqx.tree_deserialise_leaves(f, (params, network_state))
+    return network, (params, network_state)
 
 
 def make_test_evaluator(eval_fn, num_iterations: int = 64, noise: bool = True) -> MCTS:

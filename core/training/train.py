@@ -256,6 +256,15 @@ def _is_injected(x: Any) -> bool:
     )
 
 
+def weight_decay_mask(params: Any) -> Any:
+    """Which of `params` weight decay applies to: the weight matrices and convolution kernels (arrays
+    of 2 or more dimensions), not biases or normalization layers' scales and offsets. For optax's
+    `mask` argument, e.g. `optax.adamw(learning_rate, weight_decay=0.5, mask=weight_decay_mask)`,
+    and with `optax.inject_hyperparams`, which takes a callable argument for a schedule unless it's
+    static: `optax.inject_hyperparams(optax.adamw, static_args=("mask",))`."""
+    return jax.tree.map(lambda x: x.ndim >= 2, params)
+
+
 def restart_schedules(opt_state: Any) -> Any:
     """`opt_state` with its learning rate schedules' step counts back at 0, so that they start
     over: optax's `ScaleByScheduleState` (a schedule passed as an optimizer's learning rate), and
