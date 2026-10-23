@@ -1,5 +1,4 @@
-"""Training positions taken from self-play search trees, as in OLIVAW (Norelli & Panconesi, 2022,
-https://arxiv.org/abs/2103.17228, section IV-B).
+"""Training positions taken from self-play search trees.
 
 Besides the positions self-play plays, which train on (the search's visit distribution, the game's
 outcome), the network trains on positions its searches explored often: each on the visit distribution
@@ -32,9 +31,9 @@ class TreePositions:
         capacity: tree positions (data transforms' copies included) the replay buffer keeps per
             environment. Training samples those stored in the replay window's span of self-play (see
             `Trainer.tree_sample_mask`), so K times the largest replay window always holds it.
-        ratio: tree positions per played position in training batches (OLIVAW's is 1)
+        ratio: tree positions per played position in training batches (1 for half of each batch)
         half_life: (optional) epochs over which `ratio` halves; by default it stays constant
-        most_visited: store each search's most-visited nodes, as OLIVAW did, rather than sampling
+        most_visited: store each search's most-visited nodes, rather than sampling
             nodes in proportion to their visits
         discarded_only: only store nodes the search tree is about to discard: not those in the
             subtree of the move played, which the next search reuses (when the evaluator persists its

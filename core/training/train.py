@@ -331,7 +331,7 @@ class Trainer:
                 every epoch as `episode_<name>`, its mean over the episodes that terminated that epoch (truncated
                 ones aren't counted). Must be compatible with `jax.jit`.
             data_transform_fns: (optional) list of data transform functions to apply to self-play experiences (e.g. rotation, reflection, etc.)
-            tree_positions: (optional) also train on positions from self-play's search trees, as OLIVAW did
+            tree_positions: (optional) also train on positions from self-play's search trees
                 (see core.training.tree_positions). They're kept in a replay buffer of their own, and make up
                 a share of each training batch, sampled from those stored in the replay window's span of
                 self-play (see `tree_sample_mask`). Needs MCTS self-play evaluators.
