@@ -4,7 +4,8 @@ Protocol, which both speak for Othello). One process plays one game.
 - Edax (https://github.com/abulmo/edax-reversi): build it with `setup_edax.sh`
 - Egaroucid (https://github.com/Nyanyan/Egaroucid): build it with `setup_egaroucid.sh`
 
-Both search to a fixed depth set by their "level", with their opening books off.
+Both play at a "level" L, with their opening books off: up to level 10, they search L moves
+ahead, and solve the game exactly once 2L or fewer squares are empty.
 """
 
 import os
@@ -97,7 +98,8 @@ class GTPEngine:
 class Edax(GTPEngine):
     name = "edax"
     setup_script = "setup_edax.sh"
-    memory_per_process = 100 << 20
+    # mostly its hash table (2^22 entries, about 130 MB); measured at about 165 MB
+    memory_per_process = 170 << 20
 
     @classmethod
     def installed(cls, engine_dir: Path) -> bool:
