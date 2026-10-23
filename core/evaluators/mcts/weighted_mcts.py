@@ -101,7 +101,7 @@ class WeightedMCTS(MCTS):
 
     def backpropagate(
         self, key: jax.Array, tree: MCTSTree, parent: ArrayLike, value: ArrayLike
-    ) -> MCTSTree:
+    ) -> MCTSTree:  # pylint: disable=unused-argument
         """Backpropagate weighted sums of child q-values and update visit counts.
 
         Args:
@@ -141,27 +141,20 @@ class WeightedMCTS(MCTS):
                     jnp.finfo(normalized_q_values).min,
                 )
             else:
-                # if temperature == 0, select max q-value amongst visited children
-                # apply random noise to break ties amongst nodes w/ same number of visits
-                # (fold in the node index so each node on the path gets independent noise)
-                node_key = jax.random.fold_in(key, node_idx)
-                noise = jax.random.uniform(
-                    node_key,
-                    shape=normalized_q_values.shape,
-                    maxval=self.tiebreak_noise,
-                )
-                noisy_q_values = jnp.where(
+                # if temperature == 0, select max q-value amongst visited children (children tied
+                # for it have the same value, so which one doesn't matter)
+                visited_q_values = jnp.where(
                     child_n_values > 0,
-                    normalized_q_values + noise,
+                    normalized_q_values,
                     jnp.finfo(normalized_q_values).min,
                 )
 
                 # mask out all values except for max value index
                 # so softmax output at a[max_index] = 1 and 0 everywhere else
                 max_vector = jnp.full_like(
-                    noisy_q_values, jnp.finfo(noisy_q_values).min
+                    visited_q_values, jnp.finfo(visited_q_values).min
                 )
-                index_of_max = jnp.argmax(noisy_q_values)
+                index_of_max = jnp.argmax(visited_q_values)
                 max_vector = max_vector.at[index_of_max].set(1)
                 q_values_masked = max_vector
 

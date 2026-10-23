@@ -1,11 +1,9 @@
 from dataclasses import replace
 
-import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from core.evaluators.alphazero import AlphaZero
 from core.evaluators.mcts.action_selection import (
     MuZeroPUCTSelector,
     PUCTSelector,
@@ -77,19 +75,6 @@ def test_puct_with_no_visits_picks_highest_prior():
         assert PUCTSelector()(tree, tree.ROOT_INDEX, -1.0) == np.argmax(prior)
 
 
-MUZERO = MuZeroPUCTSelector()
-
-
-def test_muzero_selector_runs_in_search(make_search, ttt):
-    search = make_search(AlphaZero(MCTS), action_selector=MUZERO)
-    state, meta = ttt.play([4, 0])
-
-    out = search.evaluate(jax.random.PRNGKey(0), search.init(), state, meta)
-
-    np.testing.assert_allclose(out.policy_weights.sum(), 1.0, rtol=1e-6)
-    assert meta.action_mask[out.action]
-
-
 def visited_tree(prior, root_q, child_n, child_q):
     """Root with every child visited: `child_q` is from each child's perspective, the root's `n` is 1 + the children's."""
     prior, child_n, child_q = (np.asarray(x) for x in (prior, child_n, child_q))
@@ -117,6 +102,20 @@ def visited_tree(prior, root_q, child_n, child_q):
         )
         tree = tree.add_node(tree.ROOT_INDEX, action, child)
     return tree
+
+
+@pytest.mark.parametrize("selector", [PUCTSelector(), MuZeroPUCTSelector()])
+def test_selectors_never_choose_a_move_without_prior(selector):
+    # illegal moves have no prior; however bad the legal moves' values are for the player to move
+    # (they're the children's, from their side), their exploration bonus keeps them ahead
+    tree = visited_tree(
+        prior=[0.5, 0.0, 0.5, 0.0],
+        root_q=0.9,
+        child_n=[20, 0, 20, 0],
+        child_q=[1, 0, 1, 0],
+    )
+
+    assert int(selector(tree, tree.ROOT_INDEX, -1.0)) in (0, 2)
 
 
 @pytest.mark.parametrize(
