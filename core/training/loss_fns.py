@@ -23,8 +23,9 @@ def az_default_loss_fn(
     Value Loss: L2 loss between predicted value and target value
 
     The target value is the episode's outcome for the player to move, z, or with `value_target_q`
-    a mix of it and the search's value of the position, q: (1 - value_target_q) * z + value_target_q * q
-    (see "Lessons from implementing AlphaZero", Young, Prasad & Abrams, 2018).
+    a mix of it and the search's value of the position, q: (1 - value_target_q) * z + value_target_q * q.
+    z is a noisy signal for a position far from the end of its game; q is better informed, if limited
+    by the search's horizon.
 
     Args:
         nn: the neural network (an equinox module, see core.networks.utils.apply_nn), differentiated with respect to its floating point arrays

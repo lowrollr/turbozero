@@ -318,7 +318,8 @@ def two_player_game(
         env_step_fn: The environment step function.
         env_init_fn: The environment initialization function.
         max_steps: The maximum number of steps per episode. A game still in progress after `max_steps` steps
-            is truncated: it is marked completed and scored with the rewards of its last step (0 for pgx games).
+            is truncated: it is marked completed and scored with the rewards of its last step (0 in games that only
+            reward their end).
         p1_first: (optional) whether the first evaluator moves first. Chosen at random from `key` if not given.
             - Under `vmap`, a random first player makes whose turn it is differ across games, so every step runs
               both evaluators and keeps one move from each game. Pass it as a fixed value for a batch of games
