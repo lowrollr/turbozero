@@ -97,6 +97,16 @@ class LadderTester(BaseTester):
             for rung in self.rungs
         ]
 
+    def get_config(self) -> dict:
+        """Returns the configuration of the tester. Used for logging."""
+        return {
+            **super().get_config(),
+            "num_episodes": self.num_episodes,
+            "promote_score": self.promote_score,
+            "climb": self.climb,
+            "rungs": [baseline.get_config() for baseline in self.baselines],
+        }
+
     def init(self, *args, **kwargs) -> LadderTestState:  # pylint: disable=unused-argument
         """Initializes the internal state of the LadderTester: at the bottom of the ladder."""
         return LadderTestState(rung=jnp.array(0, dtype=jnp.int32))

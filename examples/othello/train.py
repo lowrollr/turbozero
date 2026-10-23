@@ -438,9 +438,13 @@ def main():
         else None,
         save_state_at=args.save_state_at,
         save_state_every=args.save_state_every,
+        # every argument but how the run starts (a fork records its parent)
         extra_config={
-            "value_target_q": args.value_target_q,
-            **({"remat": True} if args.remat else {}),
+            "args": {
+                k: v
+                for k, v in vars(args).items()
+                if k not in ("resume", "init_from", "init_without_buffers")
+            }
         },
     )
     trainer.train_loop(

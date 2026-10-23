@@ -17,6 +17,13 @@ jobs:
           enable-cache: true
       # CPU build of jax: no --extra cuda, the runners have no GPU (tests/conftest.py also forces CPU)
       - run: uv sync --locked
+      # the programs the tests compiled last time (see tests/conftest.py): a run reuses those its
+      # changes didn't touch
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/turbozero/jax-tests
+          key: jax-tests-${{ hashFiles('uv.lock') }}-${{ github.sha }}
+          restore-keys: jax-tests-${{ hashFiles('uv.lock') }}-
       - run: uv run pytest
 
   lint:

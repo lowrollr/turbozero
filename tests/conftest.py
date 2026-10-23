@@ -4,6 +4,11 @@ import os
 
 # tests always run on CPU, never the GPU
 os.environ["JAX_PLATFORMS"] = "cpu"
+# pytest-xdist workers already use one core each, so each runs XLA single-threaded
+if "PYTEST_XDIST_WORKER" in os.environ:
+    os.environ["XLA_FLAGS"] = (
+        os.environ.get("XLA_FLAGS", "") + " --xla_cpu_multi_thread_eigen=false"
+    ).strip()
 
 import json
 import threading
@@ -30,6 +35,16 @@ from core.training.train import Trainer
 from core.types import StepMetadata
 from monitor import client
 from monitor.server import make_server
+
+# compiling dominates the suite's runtime, so compiled programs persist across runs (and
+# worktrees); JAX_COMPILATION_CACHE_DIR overrides where
+if jax.config.jax_compilation_cache_dir is None:
+    jax.config.update(
+        "jax_compilation_cache_dir",
+        os.path.expanduser("~/.cache/turbozero/jax-tests"),
+    )
+jax.config.update("jax_persistent_cache_min_compile_time_secs", 0)
+jax.config.update("jax_compilation_cache_max_size", 2**30)
 
 env = pgx.make("tic_tac_toe")
 
@@ -322,7 +337,10 @@ def monitor_server(tmp_path):
     Returns a namespace with its `url`, `dir`, and `get(path)` to read its API as JSON.
     """
     server = make_server("127.0.0.1", 0, str(tmp_path / "runs"))
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    # polls for shutdown often, so that it takes no time
+    thread = threading.Thread(
+        target=partial(server.serve_forever, poll_interval=0.01), daemon=True
+    )
     thread.start()
     url = f"http://127.0.0.1:{server.server_address[1]}"
 

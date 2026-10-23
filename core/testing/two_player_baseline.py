@@ -45,6 +45,16 @@ class TwoPlayerBaseline(BaseTester):
             baseline_params = jnp.array([])
         self.baseline_params = baseline_params
 
+    def get_config(self) -> dict:
+        """Returns the configuration of the tester. Used for logging."""
+        return {
+            **super().get_config(),
+            "num_episodes": self.num_episodes,
+            "balance_first_player": self.balance_first_player,
+            "baseline_evaluator": self.baseline_evaluator.__class__.__name__,
+            "baseline_evaluator_config": self.baseline_evaluator.get_config(),
+        }
+
     @partial(jax.jit, static_argnums=(0, 1, 2, 3, 4))
     def test(
         self,

@@ -47,13 +47,13 @@ dev = [
     "pre-commit>=4.6.2",
     "pyright>=1.1.414",
     "pytest>=9.1.1",
+    "pytest-xdist>=3.8.0",
     "ruff>=0.16.10",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-# summarise xfails/xpasses/skips at the end of the run; skip tests marked slow (run them
-# with `pytest -m slow`)
-addopts = "-ra -m 'not slow'"
-markers = ["slow: takes several seconds (deselected by default; run with -m slow)"]
+# summarise xfails/xpasses/skips at the end of the run; run the tests in parallel, on up
+# to 8 processes (`-n0` runs them in this one, e.g. to debug with --pdb)
+addopts = "-ra -n auto --maxprocesses 8 --dist worksteal"
 xfail_strict = true
