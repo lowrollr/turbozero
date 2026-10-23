@@ -151,7 +151,7 @@ def main():
         nn=resnet,
         nn_state=resnet_state,
         loss_fn=partial(az_default_loss_fn, l2_reg_lambda=1e-4),
-        optimizer=optax.adam(3e-3),
+        optimizer=optax.inject_hyperparams(optax.adam)(learning_rate=3e-3),
         evaluator=evaluator,
         evaluator_test=evaluator_test,
         # the search's visit counts stay the policy target; only the move played changes
@@ -175,6 +175,7 @@ def main():
         monitor=Monitor(args.monitor, project="tic_tac_toe") if args.monitor else None,
         # a fresh directory each run: the trainer won't overwrite another run's checkpoints
         ckpt_dir=tempfile.mkdtemp(prefix="turbozero-tic-tac-toe-"),
+        extra_config={"args": vars(args)},
     )
     trainer.train_loop(
         seed=args.seed, num_epochs=args.epochs, eval_every=args.eval_every

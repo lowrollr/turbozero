@@ -370,6 +370,57 @@ def test_train_loop_logs_to_monitor(trainer, monitor_server, monkeypatch):
     assert episodes == ["TwoPlayerTester_game-0.npz", "TwoPlayerTester_game-1.npz"]
 
 
+def test_injected_hyperparams_are_recorded_and_scheduled_ones_logged(
+    ttt, tmp_path, monkeypatch
+):
+    trainer = make_trainer(
+        ttt,
+        tmp_path,
+        optimizer=optax.inject_hyperparams(optax.adam)(
+            learning_rate=optax.linear_schedule(1e-3, 0.0, 10)
+        ),
+    )
+    logged = {}
+    monkeypatch.setattr(
+        trainer, "log_metrics", lambda metrics, epoch: logged.setdefault(epoch, metrics)
+    )
+
+    trainer.train_loop(seed=0, num_epochs=2)
+
+    # one training step an epoch: the first at the schedule's start, the second a tenth down
+    assert [float(logged[epoch]["learning_rate"]) for epoch in (0, 1)] == [
+        pytest.approx(1e-3),
+        pytest.approx(9e-4),
+    ]
+    assert "b1" not in logged[0]
+    config = trainer.get_config()
+    # float32 values, recorded as the decimals they were given as
+    assert config["optimizer"] == {
+        "learning_rate": 1e-3,
+        "b1": 0.9,
+        "b2": 0.999,
+        "eps": 1e-8,
+        "eps_root": 0.0,
+    }
+    assert config["loss_fn"] == {
+        "name": "az_default_loss_fn",
+        "l2_reg_lambda": 1e-4,
+        "value_target_q": 0.0,
+    }
+    assert config["testers"] == [
+        {
+            "name": "TwoPlayerTester",
+            "class": "TwoPlayerTester",
+            "epochs_per_test": 1,
+            "num_episodes": 2,
+        }
+    ]
+
+
+def test_without_injected_hyperparams_none_are_recorded(trainer):
+    assert trainer.get_config()["optimizer"] is None
+
+
 def test_test_games_start_with_test_env_init_fn(trainer, ttt, monkeypatch):
     monkeypatch.setattr(trainer, "save_checkpoint", lambda *args, **kwargs: None)
     used = []
