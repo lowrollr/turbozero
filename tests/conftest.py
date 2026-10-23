@@ -78,16 +78,6 @@ def uniform_eval_fn(state, params, key):  # pylint: disable=unused-argument
     return jnp.zeros((env.num_actions,)), jnp.array(0.0)
 
 
-def make_logits_eval_fn(logits, value=0.0):
-    """Eval fn returning fixed policy logits and a fixed value for every state."""
-    logits = jnp.asarray(logits, dtype=jnp.float32)
-
-    def eval_fn(state, params, key):  # pylint: disable=unused-argument
-        return logits, jnp.array(value, dtype=jnp.float32)
-
-    return eval_fn
-
-
 @jax.tree_util.register_dataclass
 @dataclass(frozen=True)
 class ScriptedState:
@@ -151,19 +141,25 @@ class FixedLengthState:
     current_player: jax.Array
 
 
-def make_fixed_length_env(length, rewards=(1.0, -1.0), num_actions=2):
+def make_fixed_length_env(length, rewards=(1.0, -1.0), num_actions=2, action_mask=None):
     """Two-player environment that terminates after exactly `length` steps, whatever the actions.
 
-    Players alternate, starting with player 0. Every action is legal, and the terminal step pays `rewards`
-    (indexed by player id); every other step pays 0.
+    Players alternate, starting with player 0. The legal actions are `action_mask`'s at every step
+    (by default, every action), and the terminal step pays `rewards` (indexed by player id); every
+    other step pays 0.
     """
     rewards = jnp.asarray(rewards, dtype=jnp.float32)
+    action_mask = (
+        jnp.ones((num_actions,), dtype=jnp.bool_)
+        if action_mask is None
+        else jnp.asarray(action_mask, dtype=jnp.bool_)
+    )
 
     def metadata(state):
         terminated = state.step >= length
         return StepMetadata(
             rewards=jnp.where(terminated, rewards, 0.0),
-            action_mask=jnp.ones((num_actions,), dtype=jnp.bool_),
+            action_mask=action_mask,
             terminated=terminated,
             cur_player_id=state.current_player,
             step=state.step,

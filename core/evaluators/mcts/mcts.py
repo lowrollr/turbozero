@@ -39,7 +39,6 @@ class MCTS(Evaluator):
         num_iterations: int,
         discount: float = -1.0,
         temperature: float = 1.0,
-        tiebreak_noise: float = 1e-8,
         persist_tree: bool = True,
     ):
         """Initializes an MCTS evaluator.
@@ -57,8 +56,8 @@ class MCTS(Evaluator):
             discount: discount factor for MCTS (default: -1.0)
                 - use a negative discount in two-player games (e.g. -1.0)
                 - use a positive discount in single-player games (e.g. 1.0)
-            temperature: temperature for root action selection (default: 1.0)
-            tiebreak_noise: magnitude of noise to add to policy weights for breaking ties (default: 1e-8)
+            temperature: temperature for root action selection (default: 1.0); at 0, the most visited
+                action, ties broken at random
             persist_tree: whether to persist search tree state between calls to `evaluate` (default: True)
         """
         super().__init__(discount=discount)
@@ -68,7 +67,6 @@ class MCTS(Evaluator):
         self.max_nodes = max_nodes
         self.action_selector = action_selector
         self.temperature = temperature
-        self.tiebreak_noise = tiebreak_noise
         self.persist_tree = persist_tree
 
     def get_config(self) -> dict:
@@ -81,7 +79,6 @@ class MCTS(Evaluator):
             "action_selection_config": self.action_selector.get_config(),
             "discount": self.discount,
             "temperature": self.temperature,
-            "tiebreak_noise": self.tiebreak_noise,
             "persist_tree": self.persist_tree,
         }
 
@@ -373,12 +370,12 @@ class MCTS(Evaluator):
 
         # zero temperature == argmax
         if self.temperature == 0:
-            # break ties by adding small amount of noise
-            noise = jax.random.uniform(
-                key, shape=policy_weights.shape, maxval=self.tiebreak_noise
+            # of the most visited actions, one at random: equal visits give exactly equal weights
+            noise = jax.random.uniform(key, shape=policy_weights.shape)
+            action = jnp.argmax(
+                jnp.where(policy_weights == policy_weights.max(), noise, -1.0)
             )
-            noisy_policy_weights = policy_weights + noise
-            return jnp.argmax(noisy_policy_weights), policy_weights
+            return action, policy_weights
 
         # apply temperature
         policy_weights_t = policy_weights ** (1 / self.temperature)

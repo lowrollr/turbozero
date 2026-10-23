@@ -380,6 +380,10 @@ def evict_and_regrow(rng: random.Random, parents, edge_map, values):
     return p, e, values[leaf], leaf
 
 
+# compiled once for each shape of tree
+set_child = jax.jit(lambda tree, p, e, v, leaf: tree.set_child(p, e, node(v), leaf))
+
+
 @pytest.mark.parametrize("seed", range(20))
 def test_get_subtree_after_evictions_matches_reference(get_subtree, seed):
     # evicted slots hold nodes added later, so a node's parent or the new root can come after it
@@ -389,7 +393,6 @@ def test_get_subtree_after_evictions_matches_reference(get_subtree, seed):
         rng, max_nodes, BRANCHING, num_nodes=max_nodes
     )
     tree = build_tree(num_nodes, parents, edge_map, values)
-    set_child = jax.jit(lambda tree, p, e, v, leaf: tree.set_child(p, e, node(v), leaf))
     for _ in range(rng.randint(1, 3 * max_nodes)):
         p, e, v, leaf = evict_and_regrow(rng, parents, edge_map, values)
         tree = set_child(tree, p, e, v, leaf)
@@ -409,15 +412,18 @@ def reference_path(parents, index):
     return path + [Tree.NULL_INDEX] * (len(parents) - len(path))
 
 
+path_to_root = jax.jit(lambda tree, index: tree.path_to_root(index))
+
+
 @pytest.mark.parametrize("seed", range(20))
 def test_path_to_root_matches_reference(seed):
     rng = random.Random(seed)
     tree = random_tree(rng, max_nodes=rng.choice([1, 2, 12, 33]))
     num_nodes, parents = tree[0], tree[1]
-    path_to_root = jax.jit(build_tree(*tree).path_to_root)
+    built = build_tree(*tree)
     for index in range(num_nodes):
         np.testing.assert_array_equal(
-            path_to_root(index), reference_path(parents, index)
+            path_to_root(built, index), reference_path(parents, index)
         )
 
 
@@ -437,3 +443,20 @@ def test_path_to_root_of_null_index_is_empty():
     np.testing.assert_array_equal(
         tree.path_to_root(Tree.NULL_INDEX), [Tree.NULL_INDEX] * MAX_NODES
     )
+
+
+@pytest.mark.parametrize("seed", range(10))
+def test_root_subtrees_match_reference(seed):
+    rng = random.Random(seed)
+    tree = random_tree(rng, max_nodes=rng.choice([1, 2, 12, 33]))
+    num_nodes, parents = tree[0], tree[1]
+    capacity = len(parents)
+
+    def root_child(index):
+        # the last node before the root on the path up, or the node itself for the root, its
+        # children and unused nodes
+        path = [i for i in reference_path(parents, index) if i != Tree.NULL_INDEX]
+        return path[-2] if len(path) > 1 else index
+
+    expected = [root_child(i) if i < num_nodes else i for i in range(capacity)]
+    np.testing.assert_array_equal(build_tree(*tree).root_subtrees(), expected)
