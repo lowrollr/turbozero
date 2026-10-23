@@ -6,7 +6,7 @@ import zipfile
 from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass, replace
 from functools import partial
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import equinox as eqx
 import jax
@@ -22,7 +22,6 @@ from core.memory.replay_memory import (
     EpisodeReplayBuffer,
     ReplayBufferState,
 )
-from core.monitor import Monitor
 from core.testing.tester import BaseTester, TestState
 from core.training.exploration import Exploration
 from core.training.schedule import EvaluatorSchedule, describe
@@ -41,6 +40,11 @@ from core.types import (
     StepMetadata,
     TrainState,
 )
+
+if TYPE_CHECKING:
+    # only a type: the trainer logs to whatever it's given, so core doesn't need the
+    # monitor package
+    from monitor import Monitor
 
 
 @jax.tree_util.register_dataclass
@@ -364,7 +368,7 @@ class Trainer:
         data_transform_fns: Sequence[DataTransformFn] = (),
         tree_positions: TreePositions | None = None,
         extract_model_params_fn: ExtractModelParamsFn = extract_params,
-        monitor: Monitor | None = None,
+        monitor: "Monitor | None" = None,
         ckpt_dir: str = "/tmp/turbozero_checkpoints",
         max_checkpoints: int = 2,
         keep_every: int | None = None,
@@ -426,7 +430,7 @@ class Trainer:
                 a share of each training batch, sampled from those stored in the replay buffer's span of
                 self-play (see `tree_sample_mask`). Needs MCTS self-play evaluators.
             extract_model_params_fn: (optional) function to extract model parameters from TrainState
-            monitor: (optional) `core.monitor.Monitor` to log metrics and test episodes to (see a tester's `episode_fn`)
+            monitor: (optional) `monitor.Monitor` to log metrics and test episodes to (see a tester's `episode_fn`)
                 - start the server with `turbozero-monitor`; a run is created on the first `train_loop`,
                   and later calls (e.g. continuing from `initial_state`) keep logging to it
             ckpt_dir: directory to save checkpoints
@@ -1972,7 +1976,7 @@ class Trainer:
                     if metrics:
                         metrics = {k: v.mean() for k, v in metrics.items()}
                         self.log_metrics(metrics, cur_epoch)
-                    # the monitor server renders the episode, off the training loop
+                    # the dashboard draws the episode, so the training loop never does
                     if episode is not None and self.monitor is not None:
                         self.monitor.log(
                             cur_epoch, {f"{self.testers[i].name}_game": episode}

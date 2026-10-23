@@ -71,7 +71,7 @@ class LadderTester(BaseTester):
                 against a rung to move past it
             climb: when the agent beats a rung, play the next one in the same test
             episode_fn: (optional) packs the first episode against each rung played for the monitor
-                to render, see `BaseTester`
+                to show, see `BaseTester`
             name: (optional) name of the tester, prefixes its metrics
         """
         super().__init__(

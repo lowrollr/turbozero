@@ -25,11 +25,11 @@ from core.evaluators.evaluator import EvalOutput, Evaluator
 from core.evaluators.mcts.action_selection import PUCTSelector
 from core.evaluators.mcts.mcts import MCTS
 from core.memory.replay_memory import EpisodeReplayBuffer
-from core.monitor import client
-from core.monitor.server import make_server
 from core.training.loss_fns import az_default_loss_fn
 from core.training.train import Trainer
 from core.types import StepMetadata
+from monitor import client
+from monitor.server import make_server
 
 env = pgx.make("tic_tac_toe")
 

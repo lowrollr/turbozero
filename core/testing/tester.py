@@ -37,11 +37,11 @@ class BaseTester:
             num_keys: number of keys to use for tester
                 - often equal to number of episodes
             epochs_per_test: number of epochs between each test
-            episode_fn: (optional) packs the first episode of each test for the monitor to render, as
+            episode_fn: (optional) packs the first episode of each test for the monitor to show, as
                 `episode_fn(frames, p_ids)`: the episode's `GameFrame`s stacked along a leading time axis
                 (`max_steps + 1` of them) and its player ids, both as numpy arrays.
-                - e.g. `core.monitor.renderers.pgx_two_player_episode()`: the monitor server draws the
-                  episode, so the training loop never renders anything
+                - e.g. `monitor.episodes.pgx_two_player_episode()`: the dashboard draws the
+                  episode in the browser, so the training loop never renders anything
             name: (optional) name of the tester (used for logging and differentiating between testers)
                 - defaults to the class name
         """
