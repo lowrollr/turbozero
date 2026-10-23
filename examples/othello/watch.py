@@ -30,8 +30,8 @@ import time
 from collections import defaultdict
 from pathlib import Path
 
-from core.monitor import DEFAULT_URL, Monitor
 from core.training.train import checkpoint_epochs, checkpoint_path
+from monitor import DEFAULT_URL, Monitor
 
 VS_ENGINE = Path(__file__).with_name("vs_engine.py")
 

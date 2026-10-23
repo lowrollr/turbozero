@@ -25,8 +25,6 @@ from core.evaluators.evaluator import EvalOutput, Evaluator
 from core.evaluators.mcts.action_selection import PUCTSelector
 from core.evaluators.mcts.mcts import MCTS
 from core.memory.replay_memory import BaseExperience, EpisodeReplayBuffer
-from core.monitor import Monitor
-from core.monitor.renderers import pgx_two_player_episode
 from core.networks.azresnet import AZResnet, AZResnetConfig
 from core.networks.utils import apply_nn
 from core.testing.two_player_tester import TwoPlayerTester
@@ -42,6 +40,8 @@ from core.training.train import (
     state_path,
 )
 from core.training.tree_positions import TreePositions
+from monitor import Monitor
+from monitor.episodes import pgx_two_player_episode
 
 # slow (every test compiles its own Trainer): deselected by default, run with `pytest -m slow`
 pytestmark = pytest.mark.slow
@@ -363,7 +363,7 @@ def test_train_loop_logs_to_monitor(trainer, monitor_server, monkeypatch):
             "buffer_distinct_positions",
             "buffer_distinct_fraction",
         } <= logged
-    # each test's first game went to the server as raw arrays, for it to render
+    # each test's first game went to the server as raw arrays, for the dashboard to draw
     episodes = sorted(
         p.name for p in (monitor_server.dir / monitor.run_id / "episodes").iterdir()
     )

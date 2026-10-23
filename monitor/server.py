@@ -1,4 +1,4 @@
-"""A small HTTP server that training runs push metrics and media to, and that serves
+"""A small HTTP server that training runs push metrics and data to, and that serves
 the dashboard for browsing them.
 
     uv run turbozero-monitor --port 8008 --dir runs
@@ -7,15 +7,18 @@ Everything lives on disk under the run directory, one folder per run:
 
     <dir>/<run id>/meta.json      project, name, config, timestamps, status, activity
     <dir>/<run id>/metrics.jsonl  one {"step": ..., "time": ..., <metrics>} per line
-    <dir>/<run id>/media.jsonl    one {"key": ..., "step": ..., "file": ...} per line
-    <dir>/<run id>/media/         the media files themselves
-    <dir>/<run id>/episodes/      raw episode data (.npz), rendered into media/
+    <dir>/<run id>/media.jsonl    one {"key": ..., "step": ..., "file": ...} per line,
+                                  or {..., "env": ..., "episode": ...} for an episode
+    <dir>/<run id>/media/         data runs logged as dicts (.json)
+    <dir>/<run id>/episodes/      the tests' episodes, as raw arrays (.npz)
 
-Runs send episodes as raw arrays; the server renders them (core.monitor.renderers)
-on a background thread, so neither the training run nor the dashboard draws them.
+Runs send episodes as raw arrays, and the dashboard gets them as they are (see
+pack_arrays) and draws them itself (static/renderers.js), so it can play, pause and
+step through them, and neither the training run nor the server draws anything.
 """
 
 import argparse
+import io
 import json
 import math
 import mimetypes
@@ -24,8 +27,7 @@ import re
 import secrets
 import threading
 import time
-import traceback
-from concurrent.futures import ThreadPoolExecutor
+import zipfile
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -34,22 +36,7 @@ from urllib.parse import parse_qs, urlparse
 
 import numpy as np
 
-from core.monitor.media import encode_media
-from core.monitor.renderers import RENDERERS
-
 STATIC_DIR = Path(__file__).parent / "static"
-
-# content types the server accepts as media, and the extension each is stored under
-MEDIA_TYPES = {
-    "image/png": "png",
-    "image/gif": "gif",
-    "image/jpeg": "jpg",
-    "image/svg+xml": "svg",
-    "image/webp": "webp",
-    "video/mp4": "mp4",
-    "application/json": "json",
-}
-
 
 # runs get a memorable name unless the training script gives one
 ADJECTIVES = [
@@ -182,33 +169,51 @@ class RunStore:
             meta["status"] = "running"
             self._write_meta(run_dir, meta)
 
-    def add_media(
-        self, run_id: str, key: str, step: int, content_type: str, data: bytes
-    ) -> dict[str, Any]:
+    def _add_entry(self, run_dir: Path, entry: dict[str, Any]) -> None:
+        """Append to the run's media, holding the lock."""
+        with open(run_dir / "media.jsonl", "a") as f:
+            f.write(json.dumps(entry) + "\n")
+        meta = self._read_meta(run_dir)
+        meta["updated"] = entry["time"]
+        self._write_meta(run_dir, meta)
+
+    def add_media(self, run_id: str, key: str, step: int, data: Any) -> dict[str, Any]:
+        """Store data a run logged as a dict, which the dashboard shows as it is."""
         run_dir = self._dir(run_id)
-        ext = MEDIA_TYPES[content_type]
-        file = f"{_safe(key)}-{step}.{ext}"
+        file = f"{_safe(key)}-{step}.json"
         entry = {"key": key, "step": step, "file": file, "time": time.time()}
         with self.lock:
-            (run_dir / "media" / file).write_bytes(data)
-            with open(run_dir / "media.jsonl", "a") as f:
-                f.write(json.dumps(entry) + "\n")
-            meta = self._read_meta(run_dir)
-            meta["updated"] = entry["time"]
-            self._write_meta(run_dir, meta)
+            (run_dir / "media" / file).write_text(json.dumps(data))
+            self._add_entry(run_dir, entry)
         return entry
 
-    def add_media_error(self, run_id: str, key: str, step: int, error: str) -> None:
-        """Record media that failed to render, so the dashboard can say why."""
+    def add_episode(
+        self, run_id: str, key: str, step: int, env: str, data: bytes
+    ) -> dict[str, Any]:
+        """Store a test's episode, raw, for the dashboard to draw: an entry in the
+        run's media naming its `env`, which picks the dashboard's renderer."""
         run_dir = self._dir(run_id)
-        entry = {"key": key, "step": step, "error": error, "time": time.time()}
-        with self.lock, open(run_dir / "media.jsonl", "a") as f:
-            f.write(json.dumps(entry) + "\n")
+        # refuse what the dashboard couldn't read, rather than store it
+        pack_arrays(_load_arrays(data))
+        file = f"{_safe(key)}-{step}.npz"
+        entry = {
+            "key": key,
+            "step": step,
+            "env": env,
+            "episode": file,
+            "time": time.time(),
+        }
+        with self.lock:
+            (run_dir / "episodes" / file).write_bytes(data)
+            self._add_entry(run_dir, entry)
+        return entry
 
-    def save_episode(self, run_id: str, key: str, step: int, data: bytes) -> Path:
-        path = self._dir(run_id) / "episodes" / f"{_safe(key)}-{step}.npz"
-        path.write_bytes(data)
-        return path
+    def episode(self, run_id: str, file: str) -> bytes:
+        """A test's episode, packed for the dashboard."""
+        path = self._dir(run_id) / "episodes" / _safe(file)
+        if not path.is_file():
+            raise KeyError(file)
+        return pack_arrays(_load_arrays(path.read_bytes()))
 
     def set_activity(self, run_id: str, activity: str | None) -> None:
         """Record what a running run is doing now. Runs also send their current activity
@@ -275,25 +280,50 @@ class RunStore:
         return path
 
 
-def render_episode(
-    store: RunStore, run_id: str, key: str, step: int, env: str, path: Path
-) -> None:
-    """Render a saved episode into media; on failure, record the error instead."""
+def _load_arrays(data: bytes) -> dict[str, np.ndarray]:
+    """The arrays of an .npz file's bytes."""
     try:
-        with np.load(path, allow_pickle=False) as npz:
-            data = {name: npz[name] for name in npz.files}
-        media = encode_media(RENDERERS[env](data))
-        if media is None:
-            raise TypeError(f"the {env!r} renderer returned nothing displayable")
-        store.add_media(run_id, key, step, *media)
-    except Exception as e:  # noqa: BLE001 - a broken render is recorded, not raised
-        traceback.print_exc()
-        store.add_media_error(run_id, key, step, f"{type(e).__name__}: {e}")
+        with np.load(io.BytesIO(data), allow_pickle=False) as npz:
+            return {name: npz[name] for name in npz.files}
+    except (zipfile.BadZipFile, OSError, ValueError) as e:
+        raise ValueError(f"an episode is an .npz file of arrays ({e})") from e
+
+
+def _env(query: dict[str, list[str]]) -> str:
+    """The env an episode was logged for, which names the dashboard's renderer for it."""
+    env = query["env"][0]
+    if not re.fullmatch(r"[A-Za-z0-9_]+", env):
+        raise ValueError(f"env names are letters, digits and underscores, not {env!r}")
+    return env
+
+
+def pack_arrays(arrays: dict[str, np.ndarray]) -> bytes:
+    """Arrays as the dashboard reads them (static/episodes.js loadArrays): the
+    length of a JSON header as a little-endian uint32, the header, {name: {"dtype",
+    "shape", "offset"}}, then each array's bytes from that offset past the header,
+    4-byte aligned. Floats go as float32, other numbers as int32, bools as uint8."""
+    header, chunks, offset = {}, [], 0
+    for name, a in arrays.items():
+        a = np.asarray(a)
+        if a.dtype == np.bool_:
+            a = a.astype(np.uint8)
+        elif np.issubdtype(a.dtype, np.floating):
+            a = a.astype("<f4")
+        elif np.issubdtype(a.dtype, np.number):
+            a = a.astype("<i4")
+        else:
+            raise TypeError(f"{name} isn't numbers but {a.dtype}")
+        data = a.tobytes()
+        header[name] = {"dtype": a.dtype.name, "shape": a.shape, "offset": offset}
+        chunks.append(data + bytes(-len(data) % 4))
+        offset += len(chunks[-1])
+    head = json.dumps(header).encode()
+    head += b" " * (-len(head) % 4)
+    return len(head).to_bytes(4, "little") + head + b"".join(chunks)
 
 
 class Handler(BaseHTTPRequestHandler):
     store: RunStore
-    renderer: ThreadPoolExecutor
 
     def log_message(self, format, *args):
         # one line per request is noise next to a training run
@@ -335,6 +365,9 @@ class Handler(BaseHTTPRequestHandler):
                     self._json(self.store.metrics(run_id, since))
                 case ["api", "runs", run_id, "media"]:
                     self._json(self.store.media(run_id, since))
+                case ["api", "runs", run_id, "episodes", file]:
+                    body = self.store.episode(run_id, file)
+                    self._send(HTTPStatus.OK, body, "application/octet-stream")
                 case ["media", run_id, file]:
                     self._file(self.store.media_path(run_id, file))
                 case [] | ["run", _]:
@@ -375,36 +408,30 @@ class Handler(BaseHTTPRequestHandler):
                     self.store.log(run_id, int(body["step"]), body["metrics"])
                     self._json({"ok": True})
                 case ["api", "runs", run_id, "media"]:
+                    # runs send data, never pictures: the dashboard draws them
                     content_type = self.headers.get("Content-Type", "")
-                    if content_type not in MEDIA_TYPES:
+                    if content_type != "application/json":
                         self._error(
                             HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
-                            f"unsupported media type {content_type!r}",
+                            f"runs log data as JSON, not {content_type!r}",
                         )
                         return
                     entry = self.store.add_media(
                         run_id,
                         key=query["key"][0],
                         step=int(query["step"][0]),
-                        content_type=content_type,
-                        data=self._body(),
+                        data=json.loads(self._body()),
                     )
                     self._json(entry, HTTPStatus.CREATED)
                 case ["api", "runs", run_id, "episodes"]:
-                    env = query["env"][0]
-                    if env not in RENDERERS:
-                        known = ", ".join(sorted(RENDERERS))
-                        self._error(
-                            HTTPStatus.BAD_REQUEST,
-                            f"no renderer for env {env!r} (known: {known})",
-                        )
-                        return
-                    key, step = query["key"][0], int(query["step"][0])
-                    path = self.store.save_episode(run_id, key, step, self._body())
-                    self.renderer.submit(
-                        render_episode, self.store, run_id, key, step, env, path
+                    entry = self.store.add_episode(
+                        run_id,
+                        key=query["key"][0],
+                        step=int(query["step"][0]),
+                        env=_env(query),
+                        data=self._body(),
                     )
-                    self._json({"queued": True}, HTTPStatus.ACCEPTED)
+                    self._json(entry, HTTPStatus.CREATED)
                 case ["api", "runs", run_id, "finish"]:
                     body = json.loads(self._body() or b"{}")
                     self.store.finish(run_id, body.get("status", "finished"))
@@ -419,15 +446,7 @@ class Handler(BaseHTTPRequestHandler):
 
 def make_server(host: str, port: int, run_dir: str) -> ThreadingHTTPServer:
     """The monitor's HTTP server, storing runs in `run_dir` (port 0 picks a free one)."""
-    handler = type(
-        "Handler",
-        (Handler,),
-        {
-            "store": RunStore(Path(run_dir)),
-            # one thread, so renders queue up rather than competing with requests
-            "renderer": ThreadPoolExecutor(max_workers=1),
-        },
-    )
+    handler = type("Handler", (Handler,), {"store": RunStore(Path(run_dir))})
     return ThreadingHTTPServer((host, port), handler)
 
 
@@ -437,9 +456,6 @@ def main():
     parser.add_argument("--port", type=int, default=8008)
     parser.add_argument("--dir", default="runs", help="where runs are stored")
     args = parser.parse_args()
-    # renderers use jax (to rebuild pgx states); keep it off the accelerator, which
-    # belongs to the training runs. Must be set before jax is first imported
-    os.environ["JAX_PLATFORMS"] = "cpu"
     server = make_server(args.host, args.port, args.dir)
     print(
         f"turbozero monitor on http://{args.host}:{args.port}  "

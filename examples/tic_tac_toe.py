@@ -37,14 +37,14 @@ from core.evaluators.mcts.action_selection import PUCTSelector
 from core.evaluators.mcts.mcts import MCTS
 from core.evaluators.random_evaluator import RandomEvaluator
 from core.memory.replay_memory import EpisodeReplayBuffer
-from core.monitor import DEFAULT_URL, Monitor
-from core.monitor.renderers import pgx_two_player_episode
 from core.networks.azresnet import AZResnet, AZResnetConfig
 from core.testing.two_player_baseline import TwoPlayerBaseline
 from core.training.exploration import Exploration
 from core.training.loss_fns import az_default_loss_fn
 from core.training.train import Trainer
 from core.types import StepMetadata
+from monitor import DEFAULT_URL, Monitor
+from monitor.episodes import pgx_two_player_episode
 
 env = pgx.make("tic_tac_toe")
 
@@ -166,9 +166,7 @@ def main():
             TwoPlayerBaseline(
                 num_episodes=512,
                 baseline_evaluator=RandomEvaluator(),
-                episode_fn=pgx_two_player_episode(p1_label="X", p2_label="O")
-                if args.monitor
-                else None,
+                episode_fn=pgx_two_player_episode() if args.monitor else None,
                 name="random",
             )
         ],

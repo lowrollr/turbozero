@@ -1,10 +1,7 @@
 from dataclasses import dataclass, replace
-from operator import itemgetter
 from typing import Any
 
-import graphviz
 import jax
-import jax.numpy as jnp
 from jax.typing import ArrayLike
 
 from core.evaluators.evaluator import EvalOutput
@@ -106,43 +103,3 @@ class MCTSOutput(EvalOutput):
 
     eval_state: MCTSTree
     policy_weights: jax.Array
-
-
-def tree_to_graph(tree, batch_id=0):
-    """Converts a search tree to a graphviz graph."""
-    graph = graphviz.Digraph()
-
-    def get_child_visits_no_batch(tree, index):
-        mapping = tree.edge_map[batch_id, index]
-        child_data = tree.data.n[batch_id, mapping]
-        return jnp.where(
-            (mapping == Tree.NULL_INDEX).reshape((-1,) + (1,) * (child_data.ndim - 1)),
-            0,
-            child_data,
-        )
-
-    for n_i in range(tree.parents.shape[1]):
-        node = jax.tree_util.tree_map(itemgetter((batch_id, n_i)), tree.data)
-        if node.n.item() > 0:
-            graph.node(
-                str(n_i),
-                str(
-                    {
-                        "i": str(n_i),
-                        "n": str(node.n.item()),
-                        "q": f"{node.q.item():.2f}",
-                        "t": str(node.terminated.item()),
-                    }
-                ),
-            )
-
-            child_visits = get_child_visits_no_batch(tree, n_i)
-            mapping = tree.edge_map[batch_id, n_i]
-            for a_i in range(tree.edge_map.shape[2]):
-                v_a = child_visits[a_i].item()
-                if v_a > 0:
-                    graph.edge(str(n_i), str(mapping[a_i]), f"{a_i}:{node.p[a_i]:.4f}")
-        else:
-            break
-
-    return graph
