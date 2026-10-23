@@ -644,7 +644,7 @@ def test_testers_play_from_the_test_env_init_fn(env, tmp_path, fake_loop):
 
 def test_train_loop_reports_to_the_monitor(env, tmp_path, fake_loop):
     monitor = FakeMonitor()
-    tester = FakeTester(episode_fn=lambda frames, p_ids: "episode")
+    tester = FakeTester(episode_fn=lambda frames, p_ids, env_step_fn: "episode")
     trainer = make_trainer(
         env,
         tmp_path,

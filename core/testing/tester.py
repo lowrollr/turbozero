@@ -38,8 +38,10 @@ class BaseTester:
                 - often equal to number of episodes
             epochs_per_test: number of epochs between each test
             episode_fn: (optional) packs the first episode of each test for the monitor to show, as
-                `episode_fn(frames, p_ids)`: the episode's `GameFrame`s stacked along a leading time axis
-                (`max_steps + 1` of them) and its player ids, both as numpy arrays.
+                `episode_fn(frames, p_ids, env_step_fn)`: the episode's `GameFrame`s stacked along a leading
+                time axis (`max_steps + 1` of them) and its player ids, both as numpy arrays, and the
+                environment step function. The frames record what each move's search explored (see
+                `two_player_game`'s `record_search`), which the packer can replay with `env_step_fn`.
                 - e.g. `monitor.episodes.pgx_two_player_episode()`: the dashboard draws the
                   episode in the browser, so the training loop never renders anything
             name: (optional) name of the tester (used for logging and differentiating between testers)
@@ -51,6 +53,11 @@ class BaseTester:
         if name is None:
             name = self.__class__.__name__
         self.name = name
+
+    @property
+    def record_search(self) -> bool:
+        """Whether test games record what each move's search explored: only for `episode_fn` to pack."""
+        return self.episode_fn is not None
 
     def get_config(self) -> dict:
         """Returns the configuration of the Tester. Used for logging."""
@@ -126,7 +133,7 @@ class BaseTester:
                 # the first episode, copied off the device in one transfer: the initial state,
                 # then one frame per step
                 frames, p_ids = jax.device_get((frames, p_ids))
-                episode = self.episode_fn(frames, p_ids)
+                episode = self.episode_fn(frames, p_ids, env_step_fn)
             else:
                 episode = None
             return state, metrics, episode

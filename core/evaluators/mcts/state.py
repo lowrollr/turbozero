@@ -2,6 +2,7 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 import jax
+import jax.numpy as jnp
 from jax.typing import ArrayLike
 
 from core.evaluators.evaluator import EvalOutput
@@ -103,3 +104,58 @@ class MCTSOutput(EvalOutput):
 
     eval_state: MCTSTree
     policy_weights: jax.Array
+
+
+@jax.tree_util.register_dataclass
+@dataclass(frozen=True)
+class SearchRecord:
+    """What a search explored: its tree's structure and statistics, without the environment states
+    (most of the tree), for the monitor to show. Node indices are the tree's.
+
+    Attributes:
+        parents: (N) each node's parent, NULL_INDEX for the root and unused nodes
+        actions: (N) the action from each node's parent to it, NULL_INDEX for the root and unused nodes
+        n: (N) visit counts
+        q: (N) value estimates, for the player to move at each node
+        prior: (N) the policy's weight on the action from each node's parent to it
+        terminated: (N) whether each node's state is terminal
+        policy: (F) the root's policy
+        num_nodes: () nodes in use, 0 to `num_nodes - 1`
+    """
+
+    parents: jax.Array
+    actions: jax.Array
+    n: jax.Array
+    q: jax.Array
+    prior: jax.Array
+    terminated: jax.Array
+    policy: jax.Array
+    num_nodes: jax.Array
+
+
+def search_record(tree: MCTSTree) -> SearchRecord:
+    """The record of what the search in `tree` explored."""
+    capacity, branching = tree.capacity, tree.branching_factor
+    # each child's action is the edge that points at it; missing edges point out of bounds
+    edges = tree.edge_map.reshape(-1)
+    actions = (
+        jnp.full((capacity,), tree.NULL_INDEX, dtype=jnp.int32)
+        .at[jnp.where(edges == tree.NULL_INDEX, capacity, edges)]
+        .set(jnp.tile(jnp.arange(branching, dtype=jnp.int32), capacity), mode="drop")
+    )
+    has_parent = tree.parents != tree.NULL_INDEX
+    prior = jnp.where(
+        has_parent,
+        tree.data.p[jnp.maximum(tree.parents, 0), jnp.maximum(actions, 0)],
+        0.0,
+    )
+    return SearchRecord(
+        parents=tree.parents,
+        actions=actions,
+        n=tree.data.n,
+        q=tree.data.q,
+        prior=prior,
+        terminated=tree.data.terminated,
+        policy=tree.data.p[tree.ROOT_INDEX],
+        num_nodes=tree.next_free_idx,
+    )

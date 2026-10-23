@@ -516,3 +516,26 @@ def test_batched_search_matches_searching_each_tree_alone(make_search, ttt, cls)
             batched.eval_state,
             alone.eval_state,
         )
+
+
+@pytest.mark.parametrize("cls", ALL_SEARCHES)
+def test_search_record_matches_the_tree(make_search, ttt, cls):
+    search = make_search(cls)
+    output, _ = run_search(search, jax.random.PRNGKey(0), MIDGAME_MOVES, ttt)
+    tree = output.eval_state
+    record = jax.device_get(search.evaluator.search_record(tree))
+    tree = jax.device_get(tree)
+    k = int(record.num_nodes)
+
+    assert k == int(tree.next_free_idx) > 1
+    assert (record.parents[0], record.actions[0]) == (-1, -1)
+    for i in range(1, k):
+        parent, action = record.parents[i], record.actions[i]
+        # each node hangs off its parent by its action, with its parent's prior for it
+        assert tree.edge_map[parent, action] == i
+        assert record.prior[i] == tree.data.p[parent, action]
+    np.testing.assert_array_equal(record.n[:k], tree.data.n[:k])
+    np.testing.assert_array_equal(record.q[:k], tree.data.q[:k])
+    np.testing.assert_array_equal(record.policy, tree.data.p[0])
+    # unused nodes have no parent or action
+    assert (record.parents[k:] == -1).all() and (record.actions[k:] == -1).all()

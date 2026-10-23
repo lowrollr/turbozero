@@ -67,8 +67,12 @@ document.addEventListener("keydown", (ev) => {
 // frame and f goes full screen, while the pointer is over it. player.onFrame(frame)
 // is called with every frame drawn. A view can count its frames its own way,
 // counter(frame), offer its own speeds, and stop at its last frame rather than loop
-// (loop: false). Anything in `below` goes under the canvas, full screen too.
-export function episodePlayer(view, { maxHeight = MAX_HEIGHT, below = null } = {}) {
+// (loop: false). Anything in `below` goes under the canvas, full screen too. It
+// starts playing unless `paused`.
+// player.onClick(event), if set, gets clicks on the canvas first, and returns true
+// for those it took; the rest play and pause. player.canvas is the canvas, and
+// player.redraw() draws the frame again, for a view that changed.
+export function episodePlayer(view, { maxHeight = MAX_HEIGHT, below = null, paused = false } = {}) {
   const canvas = h("canvas");
   canvas.style.aspectRatio = `${view.width} / ${view.height}`;
   // no taller than maxHeight on screen
@@ -89,7 +93,7 @@ export function episodePlayer(view, { maxHeight = MAX_HEIGHT, below = null } = {
   // full screen, as big as fits (style.css .player:fullscreen)
   el.style.setProperty("--aspect", view.width / view.height);
 
-  const player = { el, frame: 0, playing: !still, speed: 1, onFrame: null };
+  const player = { el, canvas, frame: 0, playing: !still && !paused, speed: 1, onFrame: null, onClick: null };
   let scale = 1;
   // the frame's time at the last play or seek, so playback is real time whatever
   // the display's refresh rate
@@ -116,6 +120,8 @@ export function episodePlayer(view, { maxHeight = MAX_HEIGHT, below = null } = {
     playBtn.textContent = player.playing ? "❚❚" : "▶";
     if (player.playing) loop();
   }
+  player.pause = () => setPlaying(false);
+  player.redraw = () => draw();
   function setSpeed(s) {
     player.speed = s;
     anchor = { time: performance.now(), frame: player.frame };
@@ -187,7 +193,9 @@ export function episodePlayer(view, { maxHeight = MAX_HEIGHT, below = null } = {
     setPlaying(false);
     player.setFrame(Number(scrub.value));
   });
-  canvas.addEventListener("click", () => setPlaying(!player.playing));
+  canvas.addEventListener("click", (ev) => {
+    if (!player.onClick?.(ev)) setPlaying(!player.playing);
+  });
   player.key = (key) => {
     if (still) return false;
     if (key === " ") setPlaying(!player.playing);

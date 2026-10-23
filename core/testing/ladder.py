@@ -91,6 +91,8 @@ class LadderTester(BaseTester):
                 baseline_params=rung.params,
                 balance_first_player=True,
                 name=rung.name,
+                # the ladder packs their episodes, so they record searches for it
+                episode_fn=episode_fn,
             )
             for rung in self.rungs
         ]
@@ -192,7 +194,7 @@ class LadderTester(BaseTester):
                 metrics.update(rung_metrics)
             if self.episode_fn is not None:
                 frames, p_ids = jax.device_get((frames, p_ids))
-                episode = self.episode_fn(frames, p_ids)
+                episode = self.episode_fn(frames, p_ids, env_step_fn)
             if score < self.promote_score:
                 break
             rung += 1

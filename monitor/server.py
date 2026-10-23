@@ -301,11 +301,11 @@ def pack_arrays(arrays: dict[str, np.ndarray]) -> bytes:
     """Arrays as the dashboard reads them (static/episodes.js loadArrays): the
     length of a JSON header as a little-endian uint32, the header, {name: {"dtype",
     "shape", "offset"}}, then each array's bytes from that offset past the header,
-    4-byte aligned. Floats go as float32, other numbers as int32, bools as uint8."""
+    4-byte aligned. Floats go as float32, bools and uint8 as uint8, other numbers as int32."""
     header, chunks, offset = {}, [], 0
     for name, a in arrays.items():
         a = np.asarray(a)
-        if a.dtype == np.bool_:
+        if a.dtype in (np.bool_, np.uint8):
             a = a.astype(np.uint8)
         elif np.issubdtype(a.dtype, np.floating):
             a = a.astype("<f4")
