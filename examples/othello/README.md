@@ -10,7 +10,7 @@ Othello model and against two strong open-source Othello engines,
 | `train.py` | Trains a network by self-play, testing it on a ladder of opponents as it goes |
 | `eval_pgx.py` | Plays a checkpoint against pgx's pretrained model at several search budgets |
 | `vs_engine.py` | Plays a checkpoint against Edax or Egaroucid at several levels, from XOT openings |
-| `engines.py` | Edax and Egaroucid, each driven over GTP |
+| `engines.py` | Edax and Egaroucid, each driven over GTP, and what their searches made of each position, from their logs |
 | `setup_edax.sh`, `setup_egaroucid.sh` | Build the engines for `vs_engine.py` |
 | `game.py` | What the scripts share: the environment, board symmetries, network, evaluators |
 | `xot.py`, `xot-openings.txt` | The XOT opening list |
@@ -235,7 +235,12 @@ uv run examples/othello/watch.py runs/othello --pid $! --levels 4 6 8
 ```
 
 Results go to `runs/othello/vs_engine.jsonl`, and with `--monitor URL --run ID` (the id
-in the run's monitor link) to the run's monitor page, as `edax_level4_sims64` and so on.
+in the run's monitor link) to the run's monitor page, as `edax_level4_sims64` and so on,
+each with a game at that level, `edax_level4_sims64_game`, to step through: our agent's search
+of each position, and the engine's scores (its predicted disc margin / 64): Edax's of every
+legal move of every position, each with the line it expects after it (from its own search
+where it moved, and from a separate Edax process elsewhere, so as not to change its moves),
+Egaroucid's of the moves it played.
 Restarted, it evaluates only the levels a checkpoint has no result for yet, at these `--sims`
 and `--openings`. Our agent searches on the GPU next to training, taking only the memory it
 needs: with a 10-block network, 256 games against each of 3 levels take about 2 minutes and

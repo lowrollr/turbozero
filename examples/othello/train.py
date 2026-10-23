@@ -52,7 +52,7 @@ from game import (
     state_to_nn_input,
     step_fn,
 )
-from xot import load_xot, make_xot_init_fn
+from xot import load_xot, make_xot_init_fn, xot_episode_fn
 
 from core.evaluators.alphazero import AlphaZero
 from core.evaluators.evaluation_fns import (
@@ -365,8 +365,11 @@ def main():
     )
     greedy = make_nn_eval_fn_no_params_callable(greedy_eval, state_to_nn_input)
 
-    # with a monitor, each test sends a game for the dashboard to play
-    episode_fn = pgx_two_player_episode() if args.monitor else None
+    # with a monitor, each test sends a game for the dashboard to play, its XOT opening's
+    # moves before it
+    episode_fn = (
+        xot_episode_fn(pgx_two_player_episode(), load_xot()) if args.monitor else None
+    )
 
     # the ladder, easiest first: each test plays the lowest rung the agent hasn't
     # beaten, and moves up past every rung it scores at least 55% against. Our agent

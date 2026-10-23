@@ -68,11 +68,12 @@ document.addEventListener("keydown", (ev) => {
 // is called with every frame drawn. A view can count its frames its own way,
 // counter(frame), offer its own speeds, and stop at its last frame rather than loop
 // (loop: false). Anything in `below` goes under the canvas, full screen too. It
-// starts playing unless `paused`.
+// starts playing unless `paused`, from frame `start` (where the game's players started
+// playing, after an opening played for them), and plays again from there.
 // player.onClick(event), if set, gets clicks on the canvas first, and returns true
 // for those it took; the rest play and pause. player.canvas is the canvas, and
 // player.redraw() draws the frame again, for a view that changed.
-export function episodePlayer(view, { maxHeight = MAX_HEIGHT, below = null, paused = false } = {}) {
+export function episodePlayer(view, { maxHeight = MAX_HEIGHT, below = null, paused = false, start = 0 } = {}) {
   const canvas = h("canvas");
   canvas.style.aspectRatio = `${view.width} / ${view.height}`;
   // no taller than maxHeight on screen
@@ -93,11 +94,12 @@ export function episodePlayer(view, { maxHeight = MAX_HEIGHT, below = null, paus
   // full screen, as big as fits (style.css .player:fullscreen)
   el.style.setProperty("--aspect", view.width / view.height);
 
-  const player = { el, canvas, frame: 0, playing: !still && !paused, speed: 1, onFrame: null, onClick: null };
+  start = Math.min(Math.max(start, 0), view.frames - 1);
+  const player = { el, canvas, frame: start, playing: !still && !paused, speed: 1, onFrame: null, onClick: null };
   let scale = 1;
   // the frame's time at the last play or seek, so playback is real time whatever
   // the display's refresh rate
-  let anchor = { time: 0, frame: 0 };
+  let anchor = { time: 0, frame: start };
 
   function draw() {
     ctx.setTransform(scale, 0, 0, scale, 0, 0);
@@ -115,7 +117,7 @@ export function episodePlayer(view, { maxHeight = MAX_HEIGHT, below = null, paus
   function setPlaying(on) {
     player.playing = on && !still;
     // played again from the end of an episode that doesn't loop: from the start
-    if (player.playing && !loops && player.frame === view.frames - 1) player.setFrame(0);
+    if (player.playing && !loops && player.frame === view.frames - 1) player.setFrame(start);
     anchor = { time: performance.now(), frame: player.frame };
     playBtn.textContent = player.playing ? "❚❚" : "▶";
     if (player.playing) loop();

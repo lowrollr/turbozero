@@ -679,15 +679,17 @@ async function showEpisode(card, entry) {
     return fail(`couldn't show this episode: ${e.message}`);
   }
   if (card.shown !== entry.episode) return;
-  const caption = view.players && arrays.values ? gameCaption(view, arrays) : null;
+  const caption = view.players && arrays.values ? gameCaption(view, arrays, entry.opponent) : null;
   // the searches behind the game's moves, explored on its board, with the moves they
   // explored beside it; using the explorer pauses the game
   const explorer =
-    view.players && view.drawBoard && hasSearches(arrays) ? searchExplorer(view, arrays, { who: seat(view, arrays) }) : null;
+    view.players && view.drawBoard && hasSearches(arrays) ? searchExplorer(view, arrays, { who: seat(view, arrays, entry.opponent) }) : null;
   // the explorer's rows for the players stand in for the caption
   const below = explorer ? explorer.evals : caption?.el;
   // a game whose searches can be explored waits at its start to be explored
-  const player = episodePlayer(explorer?.view ?? view, { below, maxHeight: explorer ? EXPLORE_HEIGHT : undefined, paused: !!explorer });
+  // shown from where the players started playing, after any opening played for them
+  const start = arrays.start?.item() ?? 0;
+  const player = episodePlayer(explorer?.view ?? view, { below, maxHeight: explorer ? EXPLORE_HEIGHT : undefined, paused: !!explorer, start });
   explorer?.attach(player);
   if (caption && !explorer) player.onFrame = caption.show;
   card.el.classList.toggle("wide", !!explorer);
@@ -697,28 +699,28 @@ async function showEpisode(card, entry) {
   if (!explorer) caption?.show(player.frame);
 }
 
-// the players of a two-player game, 0 the trained agent and 1 its opponent, as
-// searchExplorer names them
-function seat(view, arrays) {
+// the players of a two-player game, 0 the trained agent and 1 its opponent (by its
+// name, if the run gave one), as searchExplorer names them
+function seat(view, arrays, opponent) {
   const agent = arrays.agent.item();
   return (p) => {
     const colorIndex = p === 0 ? agent : 1 - agent;
     const side = view.players[colorIndex];
-    return { ...side, role: p === 0 ? "agent" : "opponent", colorIndex };
+    return { ...side, role: p === 0 ? "agent" : opponent || "opponent", colorIndex };
   };
 }
 
 // who played which colour in a two-player game, each one's value estimate at the
 // frame shown, its pieces on the board if the view counts them, and the result at
 // the end
-function gameCaption(view, arrays) {
+function gameCaption(view, arrays, opponent) {
   const agent = arrays.agent.item();
   const last = view.frames - 1;
   const outcome = arrays.completed.item() ? arrays.outcome.item() : null;
   const result = (sign) => (outcome == null ? "" : outcome * sign > 0 ? "won" : outcome * sign < 0 ? "lost" : "drew");
   const rows = [
     { who: "agent", color: agent, values: 0, sign: 1 },
-    { who: "opponent", color: 1 - agent, values: 1, sign: -1 },
+    { who: opponent || "opponent", color: 1 - agent, values: 1, sign: -1 },
   ].map((p) => {
     const side = view.players[p.color];
     const swatch = sideMark(side);

@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 
 from core.testing.ladder import LadderTester, LadderTestState, Rung
+from monitor import Episode
 
 MAX_STEPS = 10
 
@@ -140,6 +141,20 @@ def test_ladder_without_climb_moves_up_at_most_one_rung_per_test(
 
     np.testing.assert_array_equal(state.rung, 1)
     assert "ladder_easy2_score" not in metrics
+
+
+def test_ladder_episode_is_named_for_the_last_rung_played(ttt, scripted, monkeypatch):
+    # it beats the first two rungs and stops at "hard"
+    tester = stub_rungs(
+        monkeypatch,
+        scripted,
+        RESULTS,
+        episode_fn=lambda frames, p_ids, env_step_fn: Episode("tic_tac_toe"),
+    )
+
+    _, _, episode = run(tester, ttt, scripted, tester.init())
+
+    assert episode.opponent == "hard"
 
 
 def test_ladder_skips_epochs_between_tests(ttt, scripted, monkeypatch):

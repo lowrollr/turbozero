@@ -15,7 +15,7 @@ import pytest
 from core.common import GameFrame
 from core.evaluators.mcts.state import SearchRecord
 from monitor import Episode, Monitor, client
-from monitor.episodes import BOARDS, pgx_two_player_episode
+from monitor.episodes import BOARDS, line_record, pgx_two_player_episode, with_opening
 
 # one compilation of each environment's init and step, whichever test steps it
 jit = functools.cache(jax.jit)
@@ -288,6 +288,80 @@ def test_pgx_episode_carries_both_players_searches(ttt):
     assert arrays["search_policy"].shape == (3, 9)
 
 
+def test_pgx_episode_carries_an_engines_lines(ttt):
+    # the trained agent moves first (X) to the centre, then an engine that only scores moves
+    # (O) to the corner. It scored two: the corner, expecting the game to go 0, 8, 2, worth 0.5
+    # to it, and the edge, 1, worth at most -0.25, from a search 3 moves deep. It scored
+    # nothing of the agent's position
+    lines = functools.partial(line_record, num_actions=9, capacity=6)
+    no_tree = search_record()
+    frames = tic_tac_toe_frames(
+        ttt,
+        [4, 0],
+        num_frames=3,
+        key=jax.random.PRNGKey(0),
+        p1_search=stacked([no_tree, search_record((-1, -1, 0.1)), no_tree]),
+        p2_search=stacked(
+            [
+                lines(None),
+                lines(None),
+                lines([([0, 8, 2], 0.5, 0), ([1], -0.25, -1)], 3),
+            ]
+        ),
+    )
+    agent = int(frames.env_state.current_player[0])
+
+    episode = pgx_two_player_episode()(
+        frames, np.array([agent, 1 - agent]), ttt.step_fn
+    )
+
+    arrays = episode.data
+    assert arrays["search_frame"].tolist() == [0, 1]
+    assert arrays["search_player"].tolist() == [0, 1]
+    # a tree's search has no depth
+    assert arrays["search_depth"].tolist() == [-1, 3]
+    assert arrays["search_offset"].tolist() == [0, 1, 6]
+    # a line per move scored, a node per move of it, each the last one's child
+    assert arrays["node_parent"][1:].tolist() == [-1, 0, 1, 2, 0]
+    assert arrays["node_action"][1:].tolist() == [-1, 0, 8, 2, 1]
+    assert arrays["node_board"][4].reshape(9).tolist() == [2, 0, 2, 0, 1, 0, 0, 0, 1]
+    assert arrays["node_board"][5].reshape(9).tolist() == [0, 2, 0, 0, 1, 0, 0, 0, 0]
+    # each node's value for the player who chose it: the root's the best line's, a line's
+    # own moves its value, the agent's the opposite
+    np.testing.assert_allclose(arrays["node_value"][1:], [0.5, 0.5, -0.5, 0.5, -0.25])
+    # the edge's value is at most that; the corner's line's, and the agent's tree's, exact
+    assert arrays["node_bound"].tolist() == [0, 0, 0, 0, 0, -1]
+    # no visits or priors
+    assert not arrays["node_visits"][1:].any() and not arrays["node_prior"][1:].any()
+
+
+def test_pgx_episode_keeps_the_opening_played_for_its_players(ttt):
+    # X's first move to the centre was played for the players, who started from the position
+    # after it: put back before their game, the opening's position is the episode's first,
+    # and the dashboard starts at theirs
+    whole = tic_tac_toe_frames(ttt, [4, 0, 8], num_frames=4, key=jax.random.PRNGKey(0))
+    played = jax.tree.map(lambda x: x[1:], whole)
+    opening = [jax.tree.map(lambda x: x[0], whole.env_state)]
+    agent = int(played.env_state.current_player[0])
+
+    episode = pgx_two_player_episode()(
+        with_opening(played, opening),
+        np.array([agent, 1 - agent]),
+        ttt.step_fn,
+        start=1,
+    )
+
+    expected = pgx_two_player_episode()(
+        whole, np.array([agent, 1 - agent]), ttt.step_fn
+    )
+    np.testing.assert_array_equal(episode.data["board"], expected.data["board"])
+    np.testing.assert_array_equal(episode.data["to_move"], expected.data["to_move"])
+    assert int(episode.data["agent"]) == int(expected.data["agent"])
+    # nobody had a value of the opening's position
+    assert episode.data["values"][0].tolist() == [0, 0]
+    assert (int(episode.data["start"]), int(expected.data["start"])) == (1, 0)
+
+
 @pytest.mark.parametrize("env_id", ["othello", "connect_four"])
 def test_pgx_boards_are_drawn_from_the_first_movers_side(env_id):
     import pgx
@@ -322,6 +396,19 @@ def test_episode_with_unknown_env_is_still_stored(monitor_server):
 
     [entry] = monitor_server.get(f"/api/runs/{monitor.run_id}/media")["rows"]
     assert entry["env"] == "nope"
+
+
+def test_episode_names_its_opponent(monitor_server):
+    monitor = Monitor(monitor_server.url)
+    monitor.start()
+
+    monitor.log(0, {"named": Episode("nope", opponent="edax level 8", x=[1])})
+    monitor.log(1, {"unnamed": Episode("nope", x=[1])})
+    monitor.flush()
+
+    named, unnamed = monitor_server.get(f"/api/runs/{monitor.run_id}/media")["rows"]
+    assert named["opponent"] == "edax level 8"
+    assert "opponent" not in unnamed
 
 
 def test_unreadable_episode_is_rejected(monitor_server, capsys):

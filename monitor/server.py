@@ -8,7 +8,8 @@ Everything lives on disk under the run directory, one folder per run:
     <dir>/<run id>/meta.json      project, name, config, timestamps, status, activity
     <dir>/<run id>/metrics.jsonl  one {"step": ..., "time": ..., <metrics>} per line
     <dir>/<run id>/media.jsonl    one {"key": ..., "step": ..., "file": ...} per line,
-                                  or {..., "env": ..., "episode": ...} for an episode
+                                  or {..., "env": ..., "episode": ...} for an episode,
+                                  with its "opponent" if the run named it
     <dir>/<run id>/media/         data runs logged as dicts (.json)
     <dir>/<run id>/episodes/      the tests' episodes, as raw arrays (.npz)
 
@@ -188,10 +189,17 @@ class RunStore:
         return entry
 
     def add_episode(
-        self, run_id: str, key: str, step: int, env: str, data: bytes
+        self,
+        run_id: str,
+        key: str,
+        step: int,
+        env: str,
+        data: bytes,
+        opponent: str | None = None,
     ) -> dict[str, Any]:
         """Store a test's episode, raw, for the dashboard to draw: an entry in the
-        run's media naming its `env`, which picks the dashboard's renderer."""
+        run's media naming its `env`, which picks the dashboard's renderer, and the
+        `opponent` the trained agent played, if given."""
         run_dir = self._dir(run_id)
         # refuse what the dashboard couldn't read, rather than store it
         pack_arrays(_load_arrays(data))
@@ -203,6 +211,8 @@ class RunStore:
             "episode": file,
             "time": time.time(),
         }
+        if opponent:
+            entry["opponent"] = opponent
         with self.lock:
             (run_dir / "episodes" / file).write_bytes(data)
             self._add_entry(run_dir, entry)
@@ -430,6 +440,7 @@ class Handler(BaseHTTPRequestHandler):
                         step=int(query["step"][0]),
                         env=_env(query),
                         data=self._body(),
+                        opponent=query.get("opponent", [None])[0],
                     )
                     self._json(entry, HTTPStatus.CREATED)
                 case ["api", "runs", run_id, "finish"]:
