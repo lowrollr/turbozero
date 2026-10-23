@@ -4,9 +4,12 @@
 // The arrays are monitor/episodes.py's _searches: one search per (position, player)
 // with a tree, search_frame (the frame of the position it's of), search_player (0 for
 // the trained agent, 1 for its opponent), search_offset (where its nodes start in the
-// node arrays, and one past the end) and search_policy (its root's policy); then per
+// node arrays, and one past the end), search_policy (its root's policy) and search_depth
+// (for a search that only gives the line it expects, an engine's, how many moves ahead it
+// looked, else -1); then per
 // node, node_parent (in its own search, -1 for the root), node_action, node_visits,
 // node_value (for the player who chose it; the root's for its player to move),
+// node_bound (0 if node_value is exact, -1 if the node is worth at most that, +1 at least),
 // node_prior, node_terminal, node_board, node_to_move and node_legal.
 //
 // The explorer shows a position's board with a player's explored moves on it, and
@@ -42,6 +45,7 @@ function index(arrays) {
   const toMove = (g) => arrays.node_to_move.get(g);
   const up = (g) => (parent[g] < 0 ? -1 : offset[searchOf[g]] + parent[g]);
   const searched = [0, 1].map((p) => arrays.search_player.data.some((x) => x === p));
+  const depth = (s) => arrays.search_depth?.get(s) ?? -1;
   return {
     byFrame,
     children,
@@ -50,6 +54,10 @@ function index(arrays) {
     root: (s) => offset[s],
     size: (s) => offset[s + 1] - offset[s],
     player: (s) => arrays.search_player.get(s),
+    // how many moves ahead a search that only gives its line looked, else -1
+    depth,
+    // whether node g is in such a search: no visits or priors to show
+    inLine: (g) => depth(searchOf[g]) >= 0,
     policy: (s, a) => arrays.search_policy.get(s, a),
     searchOf: (g) => searchOf[g],
     up,
@@ -67,6 +75,13 @@ function index(arrays) {
       const chooser = p < 0 ? toMove(g) : toMove(p);
       const v = arrays.node_value.get(g);
       return chooser === color ? v : -v;
+    },
+    // whether that value is exact (0), at most (-1) or at least (+1) the node's
+    boundFor(g, color) {
+      const p = up(g);
+      const chooser = p < 0 ? toMove(g) : toMove(p);
+      const b = arrays.node_bound?.get(g) ?? 0;
+      return chooser === color ? b : -b;
     },
     // the nodes from the root down to g
     path(g) {
@@ -95,11 +110,13 @@ export function sideMark(side) {
 
 // a value for the first player (renderers.js players[0]): + favours it and − the
 // other, whoever's value it is, then the mark of the side it favours (an even one, none)
-export function advantage(v, players) {
+// A bound on the value (-1 at most, +1 at least) goes before it
+export function advantage(v, players, bound = 0) {
   const size = Math.abs(v).toFixed(3);
+  const sign = bound < 0 ? "≤ " : bound > 0 ? "≥ " : "";
   return Number(size)
-    ? h("span", { class: "adv" }, `${v > 0 ? "+" : "−"}${size}`, sideMark(players[v > 0 ? 0 : 1]))
-    : h("span", { class: "adv" }, size);
+    ? h("span", { class: "adv" }, `${sign}${v > 0 ? "+" : "−"}${size}`, sideMark(players[v > 0 ? 0 : 1]))
+    : h("span", { class: "adv" }, `${sign}${size}`);
 }
 
 // how far apart two players' values of a position can be before it's flagged
@@ -155,13 +172,14 @@ export function searchExplorer(view, arrays, { who }) {
   // values are all for the first player, whoever's tree they're from, so they compare
   // directly
   const value = (g) => tree.valueFor(g, 0);
-  const shown = (g) => advantage(value(g), view.players);
+  const shown = (g) => advantage(value(g), view.players, tree.boundFor(g, 0));
   // the game's result once it's over, as a value for the first player (outcome is the
   // agent's): the value of its final position, which nobody searches; else null
   const terminal = arrays.completed?.item() ? (who(0).colorIndex === 0 ? 1 : -1) * arrays.outcome.item() : null;
   const isEnd = (t) => terminal != null && t === view.frames - 1;
-  // two values of a position too far apart
-  const disagree = (a, b) => a >= 0 && b >= 0 && Math.abs(value(a) - value(b)) > DISAGREE;
+  // two trees' values of a position too far apart (a line's value, an engine's disc margin,
+  // isn't an expected result)
+  const disagree = (a, b) => a >= 0 && b >= 0 && !tree.inLine(a) && !tree.inLine(b) && Math.abs(value(a) - value(b)) > DISAGREE;
   // each player's search of the frame's position, [agent's, opponent's], null for none
   const searchesAt = (t) => [0, 1].map((p) => (tree.byFrame.get(t) ?? []).find((s) => tree.player(s) === p) ?? null);
   const childFor = (n, a) => (n < 0 ? -1 : (tree.children[n].find((c) => tree.action(c) === a) ?? -1));
@@ -199,14 +217,15 @@ export function searchExplorer(view, arrays, { who }) {
     // by their value for the player choosing; the moves it never explored, faintly
     const n = nodesAt(path)[st.shown] >= 0 ? nodesAt(path)[st.shown] : g;
     const kids = tree.children[n];
-    const total = kids.reduce((k, c) => k + tree.visits(c), 0) || 1;
+    const total = kids.reduce((k, c) => k + tree.visits(c), 0);
     const explored = new Set();
     for (const c of kids) {
       explored.add(tree.action(c));
       const cell = view.actionCell(tree.action(c), tree.board(n));
       if (!cell) continue;
       const [x, y] = view.at(...cell);
-      const share = tree.visits(c) / total;
+      // a line's one move is all its search's
+      const share = total ? tree.visits(c) / total : 1;
       const r = view.cellSize * (0.16 + 0.26 * Math.sqrt(share));
       ctx.beginPath();
       ctx.arc(x, y, r, 0, 2 * Math.PI);
@@ -221,9 +240,9 @@ export function searchExplorer(view, arrays, { who }) {
       ctx.font = `600 ${Math.round(view.cellSize * 0.27)}px ui-monospace, Menlo, monospace`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText(String(tree.visits(c)), x, y + 0.5);
+      if (!tree.inLine(c)) ctx.fillText(String(tree.visits(c)), x, y + 0.5);
     }
-    for (let a = 0; a < tree.numActions; a++) {
+    for (let a = 0; a < tree.numActions && !tree.inLine(n); a++) {
       if (explored.has(a) || !tree.legal(n, a)) continue;
       const cell = view.actionCell(a, tree.board(n));
       if (!cell) continue;
@@ -321,13 +340,11 @@ export function searchExplorer(view, arrays, { who }) {
     );
     for (const p of [0, 1]) {
       if (!tree.searched(p)) continue;
+      // across the positions it has no value of (an engine's, where it didn't move)
       let d = "", on = false;
       for (let f = 0; f <= t; f++) {
         const v = rootValues[p][f];
-        if (v == null) {
-          on = false;
-          continue;
-        }
+        if (v == null) continue;
         d += `${on ? "L" : "M"}${plotX(f).toFixed(1)},${plotY(v).toFixed(1)}`;
         on = true;
       }
@@ -433,16 +450,16 @@ export function searchExplorer(view, arrays, { who }) {
     );
   }
 
-  // the labels of a section's columns
-  const columns = () =>
+  // the labels of a section's columns: a line's moves have only values
+  const columns = (isLine = false) =>
     h(
       "div",
       { class: "explore-cols" },
       h("span"),
-      h("span", { class: "col", text: "visits" }),
+      h("span", { class: "col", text: isLine ? "" : "visits" }),
       h("span", { class: "col", text: "value" }),
       h("span"),
-      h("span", { class: "col", text: "prior" }),
+      h("span", { class: "col", text: isLine ? "" : "prior" }),
     );
 
   // a player's tree at the position: its visits and value of it, then a row per move
@@ -453,9 +470,11 @@ export function searchExplorer(view, arrays, { who }) {
   function section(p, nodes) {
     const n = nodes[p];
     const other = nodes[1 - p];
-    const header = sectionHeader(p, n < 0 ? "" : `${tree.visits(n)} visits`, n < 0 ? h("span", { class: "unknown", text: "???" }) : shown(n));
+    const isLine = n >= 0 && tree.inLine(n);
+    const counted = n < 0 ? "" : isLine ? `depth ${tree.depth(tree.searchOf(n))}` : `${tree.visits(n)} visits`;
+    const header = sectionHeader(p, counted, n < 0 ? h("span", { class: "unknown", text: "???" }) : shown(n));
     if (n < 0) return h("div", { class: "explore-sec" }, header);
-    const cols = columns();
+    const cols = columns(isLine);
     const kids = tree.children[n];
     const total = kids.reduce((k, c) => k + tree.visits(c), 0);
     const rows = kids.map((c) => {
@@ -482,17 +501,17 @@ export function searchExplorer(view, arrays, { who }) {
           { class: "stats", onpointerenter: () => preview(to(0)), onclick: () => go(to(0)) },
           bar,
           h("b", { class: "mv", text: view.moveName(tree.action(c)) }),
-          h("span", { class: "num" }, `${tree.visits(c)} `, h("span", { class: "dim", text: `(${pct(share)})` })),
+          isLine ? h("span") : h("span", { class: "num" }, `${tree.visits(c)} `, h("span", { class: "dim", text: `(${pct(share)})` })),
           h("span", { class: "num val" }, shown(c)),
           h("span", { class: "disagree", text: disagree(c, childFor(other, tree.action(c))) ? "!" : "" }),
-          h("span", { class: "prior", text: tree.prior(c).toFixed(2) }),
+          h("span", { class: "prior", text: isLine ? "" : tree.prior(c).toFixed(2) }),
         ),
         h("div", { class: "pv" }, tokens),
       );
     });
     const explored = new Set(kids.map((c) => tree.action(c)));
     const rest = [];
-    for (let a = 0; a < tree.numActions && !tree.terminal(n); a++) {
+    for (let a = 0; a < tree.numActions && !tree.terminal(n) && !isLine; a++) {
       if (!explored.has(a) && tree.legal(n, a)) rest.push({ a, prior: st.path.length ? null : tree.policy(searchesAt(st.frame)[p], a) });
     }
     rest.sort((x, y) => (y.prior ?? 0) - (x.prior ?? 0));

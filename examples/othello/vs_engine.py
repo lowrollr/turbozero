@@ -17,6 +17,14 @@ Games are played in batches: our agent's moves are searched together on the
 accelerator, and each game has its own engine process (see `engines.py`): as many at a
 time as fit in a quarter of the available memory, up to 128, since the machine may be
 shared. Each game's result is checked against the engine's own board.
+
+With --episodes, the first game at each level is also saved for the monitor (see `watch.py`),
+as `{engine}_level{L}_sims{S}.npz`: its positions, what our agent's search made of each, and
+what the engine's made of those it moved from (see `engines.GTPEngine.analysis`), read from
+its logs as it plays: Edax's scores of every legal move, each with the line it expects after
+it, Egaroucid's of the move it plays. Edax's analyst (`engines.EdaxAnalyst`), a process of
+its own, then scores every legal move of the positions it didn't move from, after the games
+at the level, so that searching them doesn't change the moves Edax plays.
 """
 
 import argparse
@@ -30,7 +38,7 @@ from pathlib import Path
 import jax
 import jax.numpy as jnp
 import numpy as np
-from engines import ENGINES, GTPEngine
+from engines import ANALYSTS, ENGINES, Analysis, EdaxAnalyst, GTPEngine
 from game import (
     PASS,
     env,
@@ -42,7 +50,13 @@ from game import (
 )
 from xot import XOT_PATH, load_xot
 
+from core.common import GameFrame
 from core.evaluators.evaluation_fns import make_nn_eval_fn
+from monitor.client import Episode
+from monitor.episodes import BOARDS, line_record, pgx_two_player_episode
+
+# the most discs a game can be won by: an engine's score, a disc margin, over this is a value
+MAX_MARGIN = 64
 
 
 def select(which, on_true, on_false):
@@ -60,9 +74,118 @@ def color(ply: int) -> str:
     return "b" if ply % 2 == 0 else "w"
 
 
-def play_games(engines, openings, we_black, search, advance, evaluator, pool, key):
+def stack(trees):
+    """Trees stacked along a new leading axis."""
+    return jax.tree.map(lambda *x: np.stack(x), *trees)
+
+
+class GameRecorder:
+    """One game of a batch, recorded for the monitor: each position, what our agent's search
+    made of it (its search, if it moved, else the tree it kept from its last one) and what
+    the engine's made of those it moved from. Its engine has to be analysing (`analyse`)."""
+
+    def __init__(self, game: int, evaluator):
+        self.game = game
+        self.search_record = jax.jit(evaluator.search_record)
+        self.states = []
+        # what each made of each position played from, None for nothing
+        self.trees, self.analyses = [], []
+
+    def take(self, batch):
+        return jax.device_get(jax.tree.map(lambda x: x[self.game], batch))
+
+    def start(self, states, our_id: int, opening: int) -> None:
+        """The game's first position, in `states`, where our agent is player `our_id`, and
+        the players start playing after `opening` moves played for them."""
+        self.our_id = our_id
+        self.opening = opening
+        self.states.append(self.take(states))
+
+    def moved(self, states, trees=None, analysis: list[Analysis] | None = None) -> None:
+        """The game's next position, in `states`, after a move from the last, which our
+        agent had `trees` of and the engine made `analysis` of."""
+        tree = None if trees is None else self.search_record(self.take(trees))
+        self.trees.append(None if tree is None else jax.device_get(tree))
+        self.analyses.append(analysis)
+        self.states.append(self.take(states))
+
+    def episode(self, analyst: EdaxAnalyst | None = None) -> Episode:
+        """The game, for the monitor, with `analyst`'s analysis of the positions the engine
+        didn't move from, if there is one."""
+        num_actions = env.num_actions
+        for t, state in enumerate(self.states[:-1]):
+            # a position with only a pass has nothing to score
+            if (
+                analyst is None
+                or self.analyses[t]
+                or not state.legal_action_mask[:PASS].any()
+            ):
+                continue
+            board, to_move = BOARDS["othello"](
+                jax.tree.map(lambda x: x[None], state._x)
+            )
+            color = "b" if int(to_move[0]) == 0 else "w"
+            self.analyses[t] = analyst.analyse(board.reshape(-1), color)
+        capacity = 1 + max(
+            (sum(len(a.line) for a in moves) for moves in self.analyses if moves),
+            default=0,
+        )
+        records = [
+            line_record(
+                moves
+                and [
+                    (a.line, float(np.clip(a.score / MAX_MARGIN, -1, 1)), a.bound)
+                    for a in moves
+                ],
+                max((a.depth for a in moves), default=0) if moves else 0,
+                num_actions=num_actions,
+                capacity=capacity,
+            )
+            for moves in self.analyses
+        ]
+        # each one's value of each position, from its own side, as of its last look; a
+        # root's q is for the player to move
+        values = np.zeros((len(self.states), 2), dtype=np.float32)
+        for t, state in enumerate(self.states):
+            values[t] = values[t - 1] if t else 0
+            ours = int(state.current_player) == self.our_id
+            if t < len(self.trees) and self.trees[t] is not None:
+                q = float(self.trees[t].q[0])
+                values[t, 0] = q if ours else -q
+            if t < len(records) and self.analyses[t]:
+                q = float(records[t].q[0])
+                values[t, 1] = -q if ours else q
+        empty = jax.tree.map(
+            np.zeros_like, next(t for t in self.trees if t is not None)
+        )
+        # frame t + 1 holds what each made of position t
+        frames = GameFrame(
+            env_state=stack(self.states),
+            p1_value_estimate=jnp.asarray(values[:, 0]),
+            p2_value_estimate=jnp.asarray(values[:, 1]),
+            completed=jnp.array([bool(s.terminated) for s in self.states]),
+            outcomes=jnp.stack([s.rewards for s in self.states]),
+            p1_search=stack(
+                [empty] + [t if t is not None else empty for t in self.trees]
+            ),
+            p2_search=stack(
+                [line_record(None, num_actions=num_actions, capacity=capacity)]
+                + records
+            ),
+        )
+        return pgx_two_player_episode()(
+            frames,
+            np.array([self.our_id, 1 - self.our_id]),
+            step_fn,
+            start=self.opening,
+        )
+
+
+def play_games(
+    engines, openings, we_black, search, advance, evaluator, pool, key, recorder=None
+):
     """Plays one game per engine process, from `openings` (one per game), with our agent
-    as black in the games marked `we_black`.
+    as black in the games marked `we_black`, recording one of them with `recorder`.
 
     Returns:
         our result in each game: +1 win, 0 draw, -1 loss
@@ -74,6 +197,8 @@ def play_games(engines, openings, we_black, search, advance, evaluator, pool, ke
     # pgx picks which player id moves first (black) at random
     black_id = np.asarray(states.current_player)
     our_id = np.where(we_black, black_id, 1 - black_id)
+    if recorder is not None:
+        recorder.start(states, int(our_id[recorder.game]), openings.shape[1])
 
     # play the openings
     for ply in range(openings.shape[1]):
@@ -81,6 +206,8 @@ def play_games(engines, openings, we_black, search, advance, evaluator, pool, ke
         assert np.asarray(states.legal_action_mask)[np.arange(num_games), moves].all()
         list(pool.map(GTPEngine.play, engines, [color(ply)] * num_games, moves))
         trees, states = advance(trees, states, jnp.asarray(moves))
+        if recorder is not None:
+            recorder.moved(states)
 
     ply = openings.shape[1]
     while not np.asarray(states.terminated).all():
@@ -116,11 +243,20 @@ def play_games(engines, openings, we_black, search, advance, evaluator, pool, ke
             )
         )
         # keep the search trees of the games we just moved in, then step everything
+        kept = trees
         trees = select(ours, out.eval_state, trees)
         new_trees, new_states = advance(trees, states, jnp.asarray(moves))
         # finished games stay as they are
         trees = select(done, trees, new_trees)
         states = select(done, states, new_states)
+        if recorder is not None and not done[recorder.game]:
+            g = recorder.game
+            # our agent's tree of the position: its search, or the one it kept
+            recorder.moved(
+                states,
+                out.eval_state if ours[g] else kept,
+                engines[g].analysis if g in asking else None,
+            )
         ply += 1
 
     results = np.asarray(states.rewards)[np.arange(num_games), our_id]
@@ -214,6 +350,12 @@ def main():
         default=None,
         help="also append each level's result to this file, as a line of JSON",
     )
+    parser.add_argument(
+        "--episodes",
+        type=Path,
+        default=None,
+        help="also save the first game at each level here, for the monitor",
+    )
     parser.add_argument("--seed", type=int, default=0)
     args = parser.parse_args()
 
@@ -264,10 +406,23 @@ def main():
                 continue
             we_black = np.arange(num_games) % 2 == 0
             results = np.zeros(num_games, dtype=np.int32)
+            # the first game of the first batch, its engine analysing
+            recorder = GameRecorder(0, evaluator) if args.episodes else None
             for begin in range(0, num_games, parallel):
                 games = slice(begin, min(begin + parallel, num_games))
                 count = games.stop - games.start
-                engines = list(pool.map(engine, [engine_dir] * count, [level] * count))
+                recording = recorder if begin == 0 else None
+                engines = list(
+                    pool.map(
+                        engine,
+                        [engine_dir] * count,
+                        [level] * count,
+                        [
+                            recording is not None and g == recording.game
+                            for g in range(count)
+                        ],
+                    )
+                )
                 try:
                     results[games] = play_games(
                         engines,
@@ -278,10 +433,22 @@ def main():
                         evaluator,
                         pool,
                         jax.random.PRNGKey(args.seed * 100_000 + level * 1000 + begin),
+                        recorder=recording,
                     )
                 finally:
                     for e in engines:
                         e.close()
+            if recorder is not None:
+                analyst = ANALYSTS.get(engine.name)
+                analyst = analyst and analyst(engine_dir, level)
+                try:
+                    episode = recorder.episode(analyst)
+                finally:
+                    if analyst is not None:
+                        analyst.close()
+                args.episodes.mkdir(parents=True, exist_ok=True)
+                name = f"{engine.name}_level{level}_sims{args.sims}.npz"
+                (args.episodes / name).write_bytes(episode.to_bytes())
             mean, se = score(results)
             seconds = time.perf_counter() - start
             if args.results is not None:

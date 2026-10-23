@@ -38,10 +38,12 @@ HEARTBEAT_S = 30.0
 class Episode:
     """The raw data of one episode, e.g. Episode("othello", board=boards, ...). The
     dashboard draws it with its renderer for `env` (monitor/static/renderers.js),
-    so the training run never draws anything."""
+    so the training run never draws anything. `opponent`, if given, names who the
+    trained agent played, e.g. "edax level 8"."""
 
-    def __init__(self, env: str, **data: Any):
+    def __init__(self, env: str, opponent: str | None = None, **data: Any):
         self.env = env
+        self.opponent = opponent
         self.data = data
 
     def to_bytes(self) -> bytes:
@@ -204,7 +206,8 @@ class Monitor:
             if isinstance(value, Episode):
                 self._request(
                     f"/api/runs/{run_id}/episodes"
-                    f"?key={quote(key)}&step={step}&env={quote(value.env)}",
+                    f"?key={quote(key)}&step={step}&env={quote(value.env)}"
+                    + (f"&opponent={quote(value.opponent)}" if value.opponent else ""),
                     value.to_bytes(),
                     content_type="application/x-npz",
                     timeout=60,

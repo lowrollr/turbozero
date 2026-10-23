@@ -62,9 +62,9 @@ def square(action: int) -> str:
 
 
 def action(name: str) -> int:
-    """The action for a square's name, e.g. "d3" (or "D3") -> 19; "pass" -> 64."""
+    """The action for a square's name, e.g. "d3" (or "D3") -> 19; "pass" (or "ps", "pa") -> 64."""
     name = name.strip().lower()
-    if name in ("pass", "ps"):
+    if name in ("pass", "ps", "pa"):
         return PASS
     return (int(name[1]) - 1) * 8 + "abcdefgh".index(name[0])
 

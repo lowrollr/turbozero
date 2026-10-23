@@ -9,7 +9,10 @@ with train.py's --keep-every, since it deletes all but the newest 2), and on the
 one once the training process --pid has exited. `N.eqx` is the network after N + 1 epochs.
 Results are appended to `vs_engine.jsonl` in the checkpoint directory, a line per level,
 and with --monitor logged to the training run's page as `edax_level4_sims64` and so on
-(`{engine}_level{L}_sims{S}`). Without --pid it evaluates the checkpoints already there and
+(`{engine}_level{L}_sims{S}`), each with a game at that level, `edax_level4_sims64_game`, to
+explore move by move: our agent's searches, and the engine's scores: Edax's of every legal
+move of every position, each with the line it expects after it, Egaroucid's of the moves it
+played (see vs_engine.py). Without --pid it evaluates the checkpoints already there and
 exits.
 
 A checkpoint is done once `vs_engine.jsonl` has a result for each of --levels at --sims
@@ -26,12 +29,16 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import time
 from collections import defaultdict
 from pathlib import Path
 
+import numpy as np
+
 from core.training.train import checkpoint_epochs, checkpoint_path
 from monitor import DEFAULT_URL, Monitor
+from monitor.client import Episode
 
 VS_ENGINE = Path(__file__).with_name("vs_engine.py")
 
@@ -119,8 +126,10 @@ def main():
             flush=True,
         )
         start = time.perf_counter()
-        # vs_engine.py appends its results to `results`; read back the new lines
+        # vs_engine.py appends its results to `results`; read back the new lines. With a
+        # monitor, it saves a game per level to show there
         seen = results.stat().st_size if results.exists() else 0
+        episodes = tempfile.TemporaryDirectory(prefix="watch-")
         subprocess.run(
             [sys.executable, str(VS_ENGINE), path]
             + ["--engine", args.engine, "--blocks", str(args.blocks)]
@@ -128,7 +137,8 @@ def main():
             + ["--openings", str(args.openings), "--stop-below", "-1"]
             + ["--results", str(results), "--levels"]
             + [str(level) for level in args.levels]
-            + (["--skip-levels"] + [str(level) for level in skip] if skip else []),
+            + (["--skip-levels"] + [str(level) for level in skip] if skip else [])
+            + (["--episodes", episodes.name] if monitor is not None else []),
             env=env,
             check=True,
         )
@@ -137,14 +147,21 @@ def main():
             with open(results) as f:
                 f.seek(seen)
                 records = [json.loads(line) for line in f if line.strip()]
-            monitor.log(
-                epoch,
-                {
-                    f"{args.engine}_level{r['level']}_sims{r['sims']}": r["score"]
-                    for r in records
-                },
-            )
+            logged = {}
+            for r in records:
+                key = f"{args.engine}_level{r['level']}_sims{r['sims']}"
+                logged[key] = r["score"]
+                game = Path(episodes.name) / f"{key}.npz"
+                if game.exists():
+                    with np.load(game) as arrays:
+                        logged[f"{key}_game"] = Episode(
+                            "othello",
+                            opponent=f"{args.engine} level {r['level']}",
+                            **arrays,
+                        )
+            monitor.log(epoch, logged)
             monitor.flush()
+        episodes.cleanup()
 
     while True:
         # read the process's state before the directory, so a checkpoint saved

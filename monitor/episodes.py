@@ -7,10 +7,13 @@ neither the training run nor the server draws anything.
 
 When the test recorded its searches (`two_player_game`'s `record_search`), the episode also
 carries what each player's search explored at each position, for the dashboard's search
-explorer: every node's statistics and, replayed through the environment here, its board.
+explorer: every node's statistics and, replayed through the environment here, its board. A
+player that only scores moves, each with the line it expects after it (an engine's analysis),
+records them as a `LineRecord`, a tree of those lines.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from functools import partial
 from typing import Any
 
@@ -18,9 +21,81 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
+from core.common import GameFrame
+from core.evaluators.mcts.state import SearchRecord
 from core.trees.tree import Tree
 from core.types import EnvStepFn
 from monitor.client import Episode
+
+
+@jax.tree_util.register_dataclass
+@dataclass(frozen=True)
+class LineRecord(SearchRecord):
+    """A `SearchRecord` of a search that only says what it expects after each move it scored
+    (an engine's analysis): a line per move, its nodes each the child of the one before,
+    without visits or priors.
+
+    Attributes:
+        depth: () how many moves ahead the search looked
+        bound: (N) for the player to move at each node, as q: 0 if the node's value is
+            exact, -1 if its value is at most q, +1 at least (a search can stop on a move
+            once it knows the move is no better than another)
+    """
+
+    depth: jax.Array
+    bound: jax.Array
+
+
+def line_record(
+    lines: Sequence[tuple[Sequence[int], float, int]] | None,
+    depth: int = 0,
+    *,
+    num_actions: int,
+    capacity: int,
+) -> LineRecord:
+    """The `LineRecord` of a search that scored the moves its `lines` start with, or of no
+    search with `lines` None. Players alternate along a line, each move (a pass too) handing
+    the turn to the other, so every node of a line has its value for the player to move at
+    the root; the root's is the best line's.
+
+    Args:
+        lines: (line, value, bound) for each move: the moves it expects, that one first,
+            their value in [-1, 1] for the player to move at the root, and whether that's
+            exact (0), at most (-1) or at least (+1) their value
+        depth: how many moves ahead the search looked
+        num_actions: the environment's number of actions
+        capacity: the record's nodes, at least the lines' moves plus the root
+    """
+    num_nodes = 0 if lines is None else 1 + sum(len(line) for line, _, _ in lines)
+    assert num_nodes <= capacity, f"{num_nodes} nodes in a record of {capacity}"
+    parents = np.full(capacity, Tree.NULL_INDEX, dtype=np.int32)
+    actions = np.full(capacity, Tree.NULL_INDEX, dtype=np.int32)
+    q = np.zeros(capacity, dtype=np.float32)
+    bounds = np.zeros(capacity, dtype=np.int32)
+    if lines:
+        # the best line, an exact value before a bound on the same value
+        _, q[0], bounds[0] = max(lines, key=lambda x: (x[1], x[2] == 0))
+        node = 1
+        for line, value, bound in lines:
+            for k, a in enumerate(line):
+                parents[node] = 0 if k == 0 else node - 1
+                actions[node] = a
+                # for the player to move at each node: the root's every other move
+                sign = (-1) ** (k + 1)
+                q[node], bounds[node] = value * sign, bound * sign
+                node += 1
+    return LineRecord(
+        parents=jnp.asarray(parents),
+        actions=jnp.asarray(actions),
+        n=jnp.zeros(capacity, dtype=jnp.int32),
+        q=jnp.asarray(q),
+        prior=jnp.zeros(capacity, dtype=jnp.float32),
+        terminated=jnp.zeros(capacity, dtype=bool),
+        policy=jnp.zeros(num_actions, dtype=jnp.float32),
+        num_nodes=jnp.asarray(num_nodes, dtype=jnp.int32),
+        depth=jnp.asarray(depth, dtype=jnp.int32),
+        bound=jnp.asarray(bounds),
+    )
 
 
 def _othello(x: Any) -> tuple[np.ndarray, np.ndarray]:
@@ -150,6 +225,14 @@ def _searches(
     parent = stats["parents"] + np.repeat(offsets[:-1], sizes)
     chooser = np.where(stats["parents"] < 0, player, player[np.maximum(parent, 0)])
     value = np.where(chooser == player, stats["q"], -stats["q"])
+    # a `LineRecord`'s bounds on those values, the same way round; a tree's are exact
+    bound = np.concatenate(
+        [
+            getattr(record, "bound", np.zeros(k, dtype=np.int32))[:k]
+            for (_, _, record), k in zip(found, sizes)
+        ]
+    )
+    bound = np.where(chooser == player, bound, -bound)
     return {
         "search_frame": np.array([t for t, _, _ in found]),
         # 0 for the trained agent's, 1 for its opponent's
@@ -157,11 +240,17 @@ def _searches(
         "search_offset": np.array(offsets),
         # the root's policy, over every action
         "search_policy": np.stack([record.policy for _, _, record in found]),
+        # how many moves ahead a `LineRecord`'s search looked; -1 for a tree's
+        "search_depth": np.array(
+            [int(getattr(record, "depth", -1)) for _, _, record in found]
+        ),
         # local to the node's search: -1 for the root
         "node_parent": stats["parents"],
         "node_action": stats["actions"],
         "node_visits": stats["n"],
         "node_value": value,
+        # 0 if node_value is exact, -1 if it's at most that, +1 at least
+        "node_bound": bound,
         "node_prior": stats["prior"],
         "node_terminal": stats["terminated"],
         "node_board": board.astype(np.uint8),
@@ -170,15 +259,49 @@ def _searches(
     }
 
 
-def pgx_two_player_episode() -> Callable[[Any, Any, EnvStepFn], Episode]:
+def with_opening(frames: GameFrame, states: Sequence[Any]) -> GameFrame:
+    """`frames` (`GameFrame`s stacked along a leading time axis) after the positions of an
+    opening that led to their first: `states`, each the one before the next, the last one
+    move before `frames`' first. Nobody searched the opening's positions.
+    """
+    num = len(states)
+    opening = jax.tree.map(lambda *xs: np.stack(xs), *states)
+
+    def before(x, opening_x=None):
+        x = np.asarray(x)
+        head = (
+            np.zeros((num, *x.shape[1:]), x.dtype) if opening_x is None else opening_x
+        )
+        return np.concatenate([head, x])
+
+    return GameFrame(
+        env_state=jax.tree.map(before, frames.env_state, opening),
+        p1_value_estimate=jnp.asarray(before(frames.p1_value_estimate)),
+        p2_value_estimate=jnp.asarray(before(frames.p2_value_estimate)),
+        completed=jnp.asarray(before(frames.completed)),
+        outcomes=jnp.asarray(before(frames.outcomes)),
+        # frame t + 1 holds the record of position t; no records hold zeros
+        p1_search=None
+        if frames.p1_search is None
+        else jax.tree.map(before, frames.p1_search),
+        p2_search=None
+        if frames.p2_search is None
+        else jax.tree.map(before, frames.p2_search),
+    )
+
+
+def pgx_two_player_episode() -> Callable[..., Episode]:
     """An `episode_fn` for testers of two-player pgx board games (those in `BOARDS`):
     packs the first test episode for the dashboard to play, its env named by the game.
 
     Returns:
-        Callable: `episode_fn(frames, p_ids, env_step_fn) -> Episode`, see `BaseTester`
+        Callable: `episode_fn(frames, p_ids, env_step_fn, start=0) -> Episode`, see
+        `BaseTester`; `start` is the frame the players started playing from, after an
+        opening played for them (see `with_opening`), where the dashboard shows the game
+        from
     """
 
-    def episode_fn(frames, p_ids, env_step_fn) -> Episode:
+    def episode_fn(frames, p_ids, env_step_fn, start: int = 0) -> Episode:
         env_state = frames.env_state
         env_id = str(env_state.env_id)
         if env_id not in BOARDS:
@@ -195,7 +318,7 @@ def pgx_two_player_episode() -> Callable[[Any, Any, EnvStepFn], Episode]:
         first = int(to_move[0])
         moves_first = int(np.asarray(env_state.current_player)[0]) == agent
         outcomes = np.asarray(frames.outcomes)[num_frames - 1]
-        searches = _searches(
+        searches: dict[str, Any] = _searches(
             env_id,
             env_state,
             (frames.p1_search, frames.p2_search),
@@ -215,6 +338,7 @@ def pgx_two_player_episode() -> Callable[[Any, Any, EnvStepFn], Episode]:
             # the trained agent's result once the game is over (or cut off): 1 for a
             # win, -1 for a loss, 0 for a draw
             outcome=np.sign(outcomes[agent] - outcomes[opponent]),
+            start=np.int32(start),
             **searches,
         )
 
