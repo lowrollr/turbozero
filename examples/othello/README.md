@@ -47,21 +47,14 @@ keep changes few; games in progress carry on, searching from new, empty trees. T
 games, `eval_pgx.py`, `vs_engine.py` and `watch.py` keep their own budgets. The
 monitor plots the budget as `search_iterations`.
 
-So can the replay window, how far back in replay memory training samples:
-`--buffer-schedule 0:1000,20:3000,35:6000` samples from each environment's newest 1000
-samples from epoch 0, 3000 from epoch 20 and 6000 from epoch 35, instead of `--buffer`'s
-throughout. Self-play adds 1024 an epoch (128 moves, each with its 7 symmetric copies),
-so that's about the last epoch, then the last 3, then the last 6. Early on the network
-changes quickly and older data is stale; later it's nearly as good as new, and the
-extra variety steadies training. OLIVAW widened its window from the last 2 generations
-to the last 5, and KataGo grows its window with the total amount of data. Replay memory
-holds the largest window throughout, and changing the window doesn't compile anything
-again. The monitor plots it as `replay_window`, and the samples in it as
-`buffer_samples`.
+`--buffer` sets replay memory, the samples kept per environment, which training samples
+from. Self-play adds 1024 an epoch (128 moves, each with its 7 symmetric copies), so the
+default 3000 is about the last 3 epochs. The monitor plots the samples training can
+sample as `buffer_samples`.
 
-The window sets how old the data training samples is, not how often each sample is
-trained on: on average, that's the samples training takes each epoch over the samples
-self-play adds, whatever the window. With the defaults, 128 steps of 4096 samples
+The buffer's size sets how old the data training samples is, not how often each sample
+is trained on: on average, that's the samples training takes each epoch over the samples
+self-play adds, whatever the size. With the defaults, 128 steps of 4096 samples
 against 1024 environments adding 1024 samples each, it's 0.5. `--train-steps` changes
 it (or `--train-batch`).
 
@@ -131,21 +124,20 @@ OLIVAW (Norelli & Panconesi, section IV-B) and "Lessons from implementing AlphaZ
   after; `--tree-discarded-only` only stores nodes outside that subtree, so each position
   is stored at most once, by the last search it's in.
 
-Tree positions follow the replay window (`--buffer`, or `--buffer-schedule`): training
-samples those stored in the moves the window's played positions come from (a window of
-3000 is the last 375 moves, at 8 samples a move), however many positions each move
-stored. They're kept in a replay buffer of their own, by default K times the largest
-window, which holds that span even when every move stores K; `--tree-buffer` sets its
-size instead (a move stores fewer than K when too few nodes qualify, and about 1.3 of 2
+Tree positions follow replay memory (`--buffer`): training samples those stored in the
+moves its played positions come from (3000 samples is the last 375 moves, at 8 samples a
+move), however many positions each move stored. They're kept in a replay buffer of their
+own, by default K times `--buffer`, which holds that span even when every move stores K;
+`--tree-buffer` sets its size instead (a move stores fewer than K when too few nodes qualify, and about 1.3 of 2
 with `--tree-discarded-only`, so a smaller buffer can still hold the whole span).
 
-Each K adds to GPU memory what raising `--buffer` by the window would: 1.45 GB per K at a
-window of 3000. Training holds two copies of the replay memory (the epoch's, and the one
+Each K adds to GPU memory what raising `--buffer` by as much again would: 1.45 GB per K at
+`--buffer 3000`. Training holds two copies of the replay memory (the epoch's, and the one
 before it, for the self-play metrics), and preallocates 75% of the GPU, 12 GB of a 16 GB
-card. With a window of 3000, K = 1 fits (it's the memory of `--buffer 6000`, which runs);
+card. At `--buffer 3000`, K = 1 fits (it's the memory of `--buffer 6000`, which runs);
 K = 2 is that of `--buffer 9000`, which hasn't been tried. Keeping the buffer in host
 memory would make every training step copy its minibatch over; for a larger K, give
-`--tree-buffer` less than K times the window instead.
+`--tree-buffer` less than K times `--buffer` instead.
 
 The monitor shows, each epoch, the tree positions stored (`tree_positions`, and
 `tree_positions_per_move` out of K), their mean visit count (`tree_mean_visits`), how many
@@ -175,8 +167,8 @@ uv run examples/othello/train.py --epochs 200 --save-state-every 10 --ckpt-dir r
 
 `--init-from` forks a new run from a state (a `state-<epoch>.npz`, or a directory to take
 the newest from). The fork is a run of its own: it starts at epoch 0, with its own
-`--epochs`, seed and schedules (`--lr` to `--lr-final`, `--sims-schedule`,
-`--buffer-schedule`, all counted from its epoch 0), new games and search trees, and its
+`--epochs`, seed and schedules (`--lr` to `--lr-final` and `--sims-schedule`, both
+counted from its epoch 0), new games and search trees, and its
 own `--ckpt-dir`. It starts from the saved network, Adam's moments, and the replay
 buffers, so its first epochs train on as much data as the run it was forked from did
 (the entries of the games in progress are dropped). `--init-without-buffers` starts with
