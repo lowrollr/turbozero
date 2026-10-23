@@ -85,16 +85,16 @@ def line_record(
                 q[node], bounds[node] = value * sign, bound * sign
                 node += 1
     return LineRecord(
-        parents=parents,
-        actions=actions,
-        n=np.zeros(capacity, dtype=np.int32),
-        q=q,
-        prior=np.zeros(capacity, dtype=np.float32),
-        terminated=np.zeros(capacity, dtype=bool),
-        policy=np.zeros(num_actions, dtype=np.float32),
-        num_nodes=np.asarray(num_nodes, dtype=np.int32),
-        depth=np.asarray(depth, dtype=np.int32),
-        bound=bounds,
+        parents=jnp.asarray(parents),
+        actions=jnp.asarray(actions),
+        n=jnp.zeros(capacity, dtype=jnp.int32),
+        q=jnp.asarray(q),
+        prior=jnp.zeros(capacity, dtype=jnp.float32),
+        terminated=jnp.zeros(capacity, dtype=bool),
+        policy=jnp.zeros(num_actions, dtype=jnp.float32),
+        num_nodes=jnp.asarray(num_nodes, dtype=jnp.int32),
+        depth=jnp.asarray(depth, dtype=jnp.int32),
+        bound=jnp.asarray(bounds),
     )
 
 
@@ -276,10 +276,10 @@ def with_opening(frames: GameFrame, states: Sequence[Any]) -> GameFrame:
 
     return GameFrame(
         env_state=jax.tree.map(before, frames.env_state, opening),
-        p1_value_estimate=before(frames.p1_value_estimate),
-        p2_value_estimate=before(frames.p2_value_estimate),
-        completed=before(frames.completed),
-        outcomes=before(frames.outcomes),
+        p1_value_estimate=jnp.asarray(before(frames.p1_value_estimate)),
+        p2_value_estimate=jnp.asarray(before(frames.p2_value_estimate)),
+        completed=jnp.asarray(before(frames.completed)),
+        outcomes=jnp.asarray(before(frames.outcomes)),
         # frame t + 1 holds the record of position t; no records hold zeros
         p1_search=None
         if frames.p1_search is None
@@ -318,7 +318,7 @@ def pgx_two_player_episode() -> Callable[..., Episode]:
         first = int(to_move[0])
         moves_first = int(np.asarray(env_state.current_player)[0]) == agent
         outcomes = np.asarray(frames.outcomes)[num_frames - 1]
-        searches = _searches(
+        searches: dict[str, Any] = _searches(
             env_id,
             env_state,
             (frames.p1_search, frames.p2_search),

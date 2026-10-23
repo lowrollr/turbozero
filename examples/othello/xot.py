@@ -10,7 +10,9 @@ The list, `xot-openings.txt`, is Matthias Berg's "large" XOT list
 (https://berg.earthlingz.de/xot/), as used by Egaroucid, NBoard and others.
 """
 
+import dataclasses
 from pathlib import Path
+from typing import Any
 
 import jax
 import jax.numpy as jnp
@@ -95,8 +97,9 @@ def xot_episode_fn(episode_fn, openings: np.ndarray):
             return episode_fn(frames, p_ids, env_step_fn)
         # replayed from the standard start with the game's player ids: black, who moves
         # first and again after the opening, is the one to move in its first position
-        state = env.init(jax.random.PRNGKey(0))
-        state = state.replace(current_player=first.current_player)
+        state: Any = dataclasses.replace(
+            env.init(jax.random.PRNGKey(0)), current_player=first.current_player
+        )
         states = []
         for move in openings[found]:
             states.append(jax.device_get(state))

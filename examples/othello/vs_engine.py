@@ -161,10 +161,10 @@ class GameRecorder:
         # frame t + 1 holds what each made of position t
         frames = GameFrame(
             env_state=stack(self.states),
-            p1_value_estimate=values[:, 0],
-            p2_value_estimate=values[:, 1],
-            completed=np.array([bool(s.terminated) for s in self.states]),
-            outcomes=np.stack([np.asarray(s.rewards) for s in self.states]),
+            p1_value_estimate=jnp.asarray(values[:, 0]),
+            p2_value_estimate=jnp.asarray(values[:, 1]),
+            completed=jnp.array([bool(s.terminated) for s in self.states]),
+            outcomes=jnp.stack([s.rewards for s in self.states]),
             p1_search=stack(
                 [empty] + [t if t is not None else empty for t in self.trees]
             ),
@@ -243,19 +243,20 @@ def play_games(
             )
         )
         # keep the search trees of the games we just moved in, then step everything
-        recording = recorder is not None and not done[recorder.game]
-        if recording:
-            # our agent's tree of the position: its search, or the one it kept
-            seen = out.eval_state if ours[recorder.game] else trees
-            engine = engines[recorder.game]
-            analysis = engine.analysis if recorder.game in asking else None
+        kept = trees
         trees = select(ours, out.eval_state, trees)
         new_trees, new_states = advance(trees, states, jnp.asarray(moves))
         # finished games stay as they are
         trees = select(done, trees, new_trees)
         states = select(done, states, new_states)
-        if recording:
-            recorder.moved(states, seen, analysis)
+        if recorder is not None and not done[recorder.game]:
+            g = recorder.game
+            # our agent's tree of the position: its search, or the one it kept
+            recorder.moved(
+                states,
+                out.eval_state if ours[g] else kept,
+                engines[g].analysis if g in asking else None,
+            )
         ply += 1
 
     results = np.asarray(states.rewards)[np.arange(num_games), our_id]
@@ -410,13 +411,16 @@ def main():
             for begin in range(0, num_games, parallel):
                 games = slice(begin, min(begin + parallel, num_games))
                 count = games.stop - games.start
-                recording = recorder is not None and begin == 0
+                recording = recorder if begin == 0 else None
                 engines = list(
                     pool.map(
                         engine,
                         [engine_dir] * count,
                         [level] * count,
-                        [recording and g == recorder.game for g in range(count)],
+                        [
+                            recording is not None and g == recording.game
+                            for g in range(count)
+                        ],
                     )
                 )
                 try:
@@ -429,7 +433,7 @@ def main():
                         evaluator,
                         pool,
                         jax.random.PRNGKey(args.seed * 100_000 + level * 1000 + begin),
-                        recorder=recorder if recording else None,
+                        recorder=recording,
                     )
                 finally:
                     for e in engines:
