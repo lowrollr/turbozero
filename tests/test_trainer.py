@@ -43,6 +43,9 @@ from core.training.train import (
 )
 from core.training.tree_positions import TreePositions
 
+# slow (every test compiles its own Trainer): deselected by default, run with `pytest -m slow`
+pytestmark = pytest.mark.slow
+
 # warmup is longer than a tic-tac-toe game, so the buffer holds finished episodes before training starts
 STEPS_PER_EPOCH = 10
 
