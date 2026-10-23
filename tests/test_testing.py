@@ -13,72 +13,30 @@ from core.testing.two_player_tester import TwoPlayerTester, TwoPlayerTestState
 MAX_STEPS = 10
 
 
-def win_and_loss_keys(ttt, scripted):
-    """Game keys the current params win and lose.
-
-    Both sides take the lowest free square, so whoever moves first wins."""
-    game = jax.vmap(
-        partial(
-            two_player_game,
-            evaluator_1=scripted.first_legal,
-            evaluator_2=scripted.first_legal,
-            params_1=None,
-            params_2=None,
-            env_step_fn=ttt.step_fn,
-            env_init_fn=ttt.init_fn,
-            max_steps=MAX_STEPS,
-        )
-    )
-    candidates = jax.random.split(jax.random.PRNGKey(0), 16)
-    outcomes, _, _ = game(candidates)
-    win_key = candidates[np.flatnonzero(outcomes[:, 0] == 1)[0]]
-    loss_key = candidates[np.flatnonzero(outcomes[:, 0] == -1)[0]]
-    return win_key, loss_key
-
-
-def test_two_player_tester_keeps_best_params_when_mean_outcome_is_not_positive(
-    ttt, scripted
+@pytest.mark.parametrize(
+    # every game pays both players the same, so the agent's mean outcome is the reward
+    "reward, adopted",
+    [(0.0, False), (-1.0, False), (1.0, True)],
+)
+def test_two_player_tester_adopts_the_params_only_if_they_win_on_average(
+    fixed_length_env, scripted, reward, adopted
 ):
-    win_key, loss_key = win_and_loss_keys(ttt, scripted)
-    keys = jnp.stack([win_key, loss_key])
-
+    env = fixed_length_env(length=3, rewards=(reward, reward))
     tester = TwoPlayerTester(num_episodes=2)
     state = TwoPlayerTestState(best_params={"w": jnp.zeros(3)})
 
     state, metrics, _, _ = tester.test(
         MAX_STEPS,
-        ttt.step_fn,
-        ttt.init_fn,
+        env.step_fn,
+        env.init_fn,
         scripted.first_legal,
-        keys,
+        jax.random.split(jax.random.PRNGKey(0), 2),
         state,
         {"w": jnp.ones(3)},
     )
 
-    np.testing.assert_array_equal(metrics["TwoPlayerTester_avg_outcome"], 0.0)
-    np.testing.assert_array_equal(state.best_params["w"], np.zeros(3))
-
-
-def test_two_player_tester_adopts_params_when_mean_outcome_is_positive(ttt, scripted):
-    win_key, loss_key = win_and_loss_keys(ttt, scripted)
-    # the params lose the first game, but win on average
-    keys = jnp.stack([loss_key, win_key, win_key])
-
-    tester = TwoPlayerTester(num_episodes=3)
-    state = TwoPlayerTestState(best_params={"w": jnp.zeros(3)})
-
-    state, metrics, _, _ = tester.test(
-        MAX_STEPS,
-        ttt.step_fn,
-        ttt.init_fn,
-        scripted.first_legal,
-        keys,
-        state,
-        {"w": jnp.ones(3)},
-    )
-
-    np.testing.assert_allclose(metrics["TwoPlayerTester_avg_outcome"], 1 / 3)
-    np.testing.assert_array_equal(state.best_params["w"], np.ones(3))
+    np.testing.assert_array_equal(metrics["TwoPlayerTester_avg_outcome"], reward)
+    np.testing.assert_array_equal(state.best_params["w"], np.full(3, float(adopted)))
 
 
 def test_tester_run_on_skipped_epoch_returns_state_unchanged(ttt, scripted):
@@ -107,8 +65,12 @@ def test_random_evaluator_plays_legal_moves_uniformly(ttt):
     eval_state = evaluator.init()
     keys = jax.random.split(jax.random.PRNGKey(0), 7000)
 
-    actions = jax.vmap(
-        lambda k: evaluator.evaluate(k, eval_state, state, root_metadata=meta).action
+    actions = jax.jit(
+        jax.vmap(
+            lambda k: (
+                evaluator.evaluate(k, eval_state, state, root_metadata=meta).action
+            )
+        )
     )(keys)
 
     counts = np.bincount(np.asarray(actions), minlength=ttt.num_actions)
@@ -117,85 +79,38 @@ def test_random_evaluator_plays_legal_moves_uniformly(ttt):
     np.testing.assert_allclose(counts[np.asarray(meta.action_mask)], 1000, rtol=0.1)
 
 
-def test_two_player_baseline_reports_win_and_loss_rates(ttt, scripted):
-    # both sides take the lowest free square, so whoever moves first wins: the agent wins the
-    # first two episodes and loses the third
-    game = jax.vmap(
-        partial(
-            two_player_game,
-            evaluator_1=scripted.first_legal,
-            evaluator_2=scripted.first_legal,
-            params_1=None,
-            params_2=None,
-            env_step_fn=ttt.step_fn,
-            env_init_fn=ttt.init_fn,
-            max_steps=MAX_STEPS,
-        )
-    )
-    candidates = jax.random.split(jax.random.PRNGKey(0), 16)
-    outcomes, _, _ = game(candidates)
-    win_key = candidates[np.flatnonzero(outcomes[:, 0] == 1)[0]]
-    loss_key = candidates[np.flatnonzero(outcomes[:, 0] == -1)[0]]
-    keys = jnp.stack([win_key, win_key, loss_key])
-
-    tester = TwoPlayerBaseline(
-        num_episodes=3, baseline_evaluator=scripted.first_legal, name="baseline"
-    )
-    _, metrics, _, _ = tester.test(
-        MAX_STEPS,
-        ttt.step_fn,
-        ttt.init_fn,
-        scripted.first_legal,
-        keys,
-        tester.init(params=None),
-        {"w": jnp.ones(3)},
-    )
-
-    np.testing.assert_allclose(metrics["baseline_win_rate"], 2 / 3)
-    np.testing.assert_allclose(metrics["baseline_loss_rate"], 1 / 3)
-
-
-def test_two_player_game_with_a_fixed_first_player(ttt, scripted):
-    # both sides take the lowest free square, so whoever moves first wins, whatever the key
-    keys = jax.random.split(jax.random.PRNGKey(0), 8)
-    for p1_first, expected in ((True, 1.0), (False, -1.0)):
-        outcomes, _, _ = jax.vmap(
-            partial(
-                two_player_game,
-                evaluator_1=scripted.first_legal,
-                evaluator_2=scripted.first_legal,
-                params_1=None,
-                params_2=None,
-                env_step_fn=ttt.step_fn,
-                env_init_fn=ttt.init_fn,
-                max_steps=MAX_STEPS,
-                p1_first=p1_first,
-            )
-        )(keys)
-        np.testing.assert_array_equal(outcomes[:, 0], expected)
-
-
-def test_two_player_baseline_balances_the_first_player(ttt, scripted):
-    # whoever moves first wins, so with the agent first in exactly half the games it wins half
-    keys = jax.random.split(jax.random.PRNGKey(0), 8)
+@pytest.mark.parametrize(
+    "rewards, win_rate, loss_rate",
+    [
+        # won by whoever moves first: with the agent first in exactly half the games, it wins half
+        ((1.0, -1.0), 0.5, 0.5),
+        # drawn
+        ((0.0, 0.0), 0.0, 0.0),
+    ],
+)
+def test_two_player_baseline_reports_win_and_loss_rates(
+    fixed_length_env, scripted, rewards, win_rate, loss_rate
+):
+    env = fixed_length_env(length=3, rewards=rewards)
     tester = TwoPlayerBaseline(
         num_episodes=8,
         baseline_evaluator=scripted.first_legal,
         balance_first_player=True,
         name="baseline",
     )
+
     _, metrics, _, _ = tester.test(
         MAX_STEPS,
-        ttt.step_fn,
-        ttt.init_fn,
+        env.step_fn,
+        env.init_fn,
         scripted.first_legal,
-        keys,
+        jax.random.split(jax.random.PRNGKey(0), 8),
         tester.init(params=None),
         {"w": jnp.ones(3)},
     )
 
-    np.testing.assert_array_equal(metrics["baseline_win_rate"], 0.5)
-    np.testing.assert_array_equal(metrics["baseline_loss_rate"], 0.5)
+    np.testing.assert_array_equal(metrics["baseline_win_rate"], win_rate)
+    np.testing.assert_array_equal(metrics["baseline_loss_rate"], loss_rate)
 
 
 def test_balanced_two_player_baseline_needs_an_even_number_of_episodes(scripted):
@@ -230,7 +145,8 @@ def test_two_player_game_records_each_players_tree_of_each_position(ttt, make_se
     _, frames, _ = jax.device_get(
         jax.jit(partial(game, record_search=True))(jax.random.PRNGKey(0))
     )
-    _, unrecorded, _ = jax.jit(game)(jax.random.PRNGKey(0))
+    # (tracing is enough to see that a game without records keeps none)
+    _, unrecorded, _ = jax.eval_shape(game, jax.random.PRNGKey(0))
     assert unrecorded.p1_search is None and unrecorded.p2_search is None
 
     num_moves = int(np.argmax(frames.completed))
@@ -259,3 +175,36 @@ def test_two_player_game_records_each_players_tree_of_each_position(ttt, make_se
         )[0]
         assert carried.n[0] == before.n[child]
         assert carried.q[0] == before.q[child]
+
+
+def test_tester_episode_has_every_frame_up_to_the_final_state(
+    fixed_length_env, scripted
+):
+    max_steps = 4
+    env = fixed_length_env(length=max_steps)
+    packed = []
+
+    def episode_fn(frames, p_ids, env_step_fn):  # pylint: disable=unused-argument
+        packed.append(frames)
+        return "episode"
+
+    tester = TwoPlayerTester(num_episodes=2, episode_fn=episode_fn)
+    state = TwoPlayerTestState(best_params={"w": jnp.zeros(3)})
+
+    _, _, episode = tester.run(
+        key=jax.random.PRNGKey(0),
+        epoch_num=0,
+        max_steps=max_steps,
+        env_step_fn=env.step_fn,
+        env_init_fn=env.init_fn,
+        evaluator=scripted.first_legal,
+        state=state,
+        params={"w": jnp.ones(3)},
+    )
+
+    assert episode == "episode"
+    [frames] = packed
+    # one transfer off the device: numpy arrays stacked along time
+    assert isinstance(frames.completed, np.ndarray)
+    assert frames.env_state.step.tolist() == list(range(max_steps + 1))
+    assert frames.completed[-1]

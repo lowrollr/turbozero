@@ -30,10 +30,9 @@ packages = ["core", "monitor"]
 include = ["core", "monitor", "tests", "examples"]
 venvPath = "."
 venv = ".venv"
-# the Othello example's scripts import their sibling modules, and so do its tests
+# the Othello example's scripts import their sibling modules
 executionEnvironments = [
     { root = "examples/othello", extraPaths = ["examples/othello"] },
-    { root = "tests", extraPaths = ["examples/othello"] },
 ]
 
 [tool.ruff]
