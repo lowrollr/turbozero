@@ -84,6 +84,7 @@ class TwoPlayerBaseline(BaseTester):
             env_step_fn=env_step_fn,
             env_init_fn=env_init_fn,
             max_steps=max_steps,
+            record_search=self.record_search,
         )
 
         if self.balance_first_player:

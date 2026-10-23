@@ -11,9 +11,21 @@
 //     draw(ctx, frame),    // draw a frame
 //     counter(frame),      // optional: the frame, as the player's counter says it
 //     speeds, loop,        // optional: the speeds offered, and false to stop at the end
-//     players,             // optional: for a two-player game, [{name, color, ring}]
-//                          // by colour, the first to move in its usual opening first
+//     players,             // optional: for a two-player game, [{name, color, ring,
+//                          // symbol}] by colour, the first to move in its usual
+//                          // opening first; a side's mark is its symbol if it has
+//                          // one, else a disc of its colour (a ring with `ring`)
 //     pieces(frame, colour),  // optional: how many pieces of a colour are on the board
+//   }
+//
+// The board games' views also draw any position, for the search explorer (search.js):
+//
+//   {
+//     drawBoard(ctx, cell, move),   // the board cell(r, c) gives, move [r, c] marked
+//     actionCell(action, cell),     // the cell an action fills on that board, or null
+//     actionAt(x, y),               // the action played at a point on the board, or null
+//     moveName(action),             // an action as players write it
+//     at(r, c), cellSize,           // a cell's centre, and its size
 //   }
 //
 // Arrays are NdArrays (episodes.js), floats as float32. A view should do any
@@ -63,7 +75,9 @@ const MOVE_FPS = 1 / 0.9;
 const MOVE_SPEEDS = [0.5, 1, 2, 4];
 
 // What's common to the board games: the board at each frame, the cell each move
-// filled, lines of `connect` in a row, and the view's counter and speeds.
+// filled, lines of `connect` in a row, and the view's counter and speeds. A game's
+// view draws a position with drawBoard(ctx, cell, move), and a frame as the board
+// at that frame with the move into it.
 function boardGame({ board }, { connect = null, passes = false } = {}) {
   const [frames, rows, cols] = board.shape;
   const cell = (t, r, c) => board.get(t, r, c);
@@ -82,38 +96,42 @@ function boardGame({ board }, { connect = null, passes = false } = {}) {
     }
     moves.push(move);
   }
-  // the cells of `connect` in a row through the last move, if it made one
-  const win = connect && winningLine(cell, frames - 1, moves.at(-1), connect, rows, cols);
   return {
     frames,
     rows,
     cols,
     cell,
     moves,
-    // the line shows from the move that made it on
-    win: (t) => (t === frames - 1 ? win : null),
+    // the cells of `connect` in a row through a move, if it made one
+    win: (at, move) => connect && winningLine(at, move, connect, rows, cols),
+    // a frame's board, for drawBoard
+    board: (t) => (r, c) => cell(t, r, c),
     fps: MOVE_FPS,
     speeds: MOVE_SPEEDS,
     loop: false,
     counter(t) {
-      return `move ${t}/${frames - 1}${passes && !moves[t] ? " pass" : ""}`;
+      // the start isn't a pass
+      return `move ${t}/${frames - 1}${passes && t > 0 && !moves[t] ? " pass" : ""}`;
     },
   };
 }
 
-function winningLine(cell, t, move, n, rows, cols) {
+// a board's cells as players name them: files a-h left to right, ranks 1-8 down
+const cellName = (r, c) => `${String.fromCharCode(97 + c)}${r + 1}`;
+
+function winningLine(cell, move, n, rows, cols) {
   if (!move) return null;
   const [r0, c0] = move;
-  const color = cell(t, r0, c0);
+  const color = cell(r0, c0);
   for (const [dr, dc] of [[0, 1], [1, 0], [1, 1], [1, -1]]) {
     // from the far end of the run through the move
     let r = r0, c = c0;
-    while (r - dr >= 0 && r - dr < rows && c - dc >= 0 && c - dc < cols && cell(t, r - dr, c - dc) === color) {
+    while (r - dr >= 0 && r - dr < rows && c - dc >= 0 && c - dc < cols && cell(r - dr, c - dc) === color) {
       r -= dr;
       c -= dc;
     }
     const run = [];
-    while (r >= 0 && r < rows && c >= 0 && c < cols && cell(t, r, c) === color) {
+    while (r >= 0 && r < rows && c >= 0 && c < cols && cell(r, c) === color) {
       run.push([r, c]);
       r += dr;
       c += dc;
@@ -148,6 +166,8 @@ function othello(arrays) {
     ...game,
     width: W,
     height: H,
+    at,
+    cellSize: OTHELLO_CELL,
     players: [
       { name: "Black", color: INK_STRONG },
       { name: "White", color: WELL },
@@ -158,7 +178,18 @@ function othello(arrays) {
       for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) n += game.cell(t, r, c) === color + 1;
       return n;
     },
+    // actions are the 64 cells, row by row, then a pass
+    actionCell: (a) => (a < 64 ? [Math.floor(a / 8), a % 8] : null),
+    actionAt(x, y) {
+      const c = Math.floor((x - OTHELLO_PAD) / OTHELLO_CELL), r = Math.floor((y - OTHELLO_PAD) / OTHELLO_CELL);
+      return r >= 0 && r < 8 && c >= 0 && c < 8 ? r * 8 + c : null;
+    },
+    // two characters, like the squares: "ps" for a pass
+    moveName: (a) => (a < 64 ? cellName(Math.floor(a / 8), a % 8) : "ps"),
     draw(ctx, t) {
+      this.drawBoard(ctx, game.board(t), game.moves[t]);
+    },
+    drawBoard(ctx, cell, move) {
       ctx.fillStyle = SUNKEN;
       ctx.fillRect(0, 0, W, H);
       labels(ctx, game, at, size, OTHELLO_PAD);
@@ -176,11 +207,10 @@ function othello(arrays) {
       const r = OTHELLO_CELL * 0.4;
       for (let row = 0; row < 8; row++) {
         for (let col = 0; col < 8; col++) {
-          const v = game.cell(t, row, col);
+          const v = cell(row, col);
           if (v) disc(ctx, ...at(row, col), r, fills[v - 1], INK_STRONG, 1);
         }
       }
-      const move = game.moves[t];
       if (move) disc(ctx, ...at(...move), 4, RED);
     },
   };
@@ -200,24 +230,38 @@ function connectFour(arrays) {
     ...game,
     width: W,
     height: H,
+    at,
+    cellSize: C4_CELL,
     players: [
       { name: "Red", color: RED },
       { name: "Yellow", color: GOLD },
     ],
+    // actions are the columns; a piece drops to the lowest empty cell
+    actionCell(a, cell) {
+      for (let r = 5; r >= 0; r--) if (!cell(r, a)) return [r, a];
+      return null;
+    },
+    actionAt(x) {
+      const c = Math.floor((x - C4_PAD) / C4_CELL);
+      return c >= 0 && c < 7 ? c : null;
+    },
+    moveName: (a) => String(a + 1),
     draw(ctx, t) {
+      this.drawBoard(ctx, game.board(t), game.moves[t]);
+    },
+    drawBoard(ctx, cell, move) {
       ctx.fillStyle = BLUE;
       ctx.beginPath();
       ctx.roundRect(0, 0, W, H, 10);
       ctx.fill();
       for (let r = 0; r < 6; r++) {
         for (let c = 0; c < 7; c++) {
-          const v = game.cell(t, r, c);
+          const v = cell(r, c);
           disc(ctx, ...at(r, c), R, v ? fills[v - 1] : WELL);
         }
       }
-      const move = game.moves[t];
       if (move) disc(ctx, ...at(...move), 5, WELL);
-      const win = game.win(t);
+      const win = game.win(cell, move);
       if (win) for (const rc of win) disc(ctx, ...at(...rc), R, null, INK, 4);
     },
   };
@@ -237,14 +281,25 @@ function ticTacToe(arrays) {
     ...game,
     width: W,
     height: H,
+    at,
+    cellSize: TTT_CELL,
     players: [
-      { name: "X", color: BLUE },
-      { name: "O", color: ORANGE, ring: true },
+      { name: "X", color: BLUE, symbol: "X" },
+      { name: "O", color: ORANGE, ring: true, symbol: "O" },
     ],
+    // actions are the cells, row by row
+    actionCell: (a) => [Math.floor(a / 3), a % 3],
+    actionAt(x, y) {
+      const c = Math.floor((x - TTT_PAD) / TTT_CELL), r = Math.floor((y - TTT_PAD) / TTT_CELL);
+      return r >= 0 && r < 3 && c >= 0 && c < 3 ? r * 3 + c : null;
+    },
+    moveName: (a) => cellName(Math.floor(a / 3), a % 3),
     draw(ctx, t) {
+      this.drawBoard(ctx, game.board(t), game.moves[t]);
+    },
+    drawBoard(ctx, cell, move) {
       ctx.fillStyle = WELL;
       ctx.fillRect(0, 0, W, H);
-      const move = game.moves[t];
       if (move) {
         ctx.fillStyle = SUNKEN;
         ctx.fillRect(TTT_PAD + move[1] * TTT_CELL, TTT_PAD + move[0] * TTT_CELL, TTT_CELL, TTT_CELL);
@@ -257,7 +312,7 @@ function ticTacToe(arrays) {
       }
       for (let r = 0; r < 3; r++) {
         for (let c = 0; c < 3; c++) {
-          const v = game.cell(t, r, c);
+          const v = cell(r, c);
           const [x, y] = at(r, c);
           if (v === 1) {
             line(ctx, [x - mark, y - mark], [x + mark, y + mark], BLUE, 7);
@@ -271,7 +326,7 @@ function ticTacToe(arrays) {
           }
         }
       }
-      const win = game.win(t);
+      const win = game.win(cell, move);
       if (win) {
         const [a, b] = [at(...win[0]), at(...win.at(-1))];
         // a little past the end cells' marks

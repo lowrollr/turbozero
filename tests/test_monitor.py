@@ -154,7 +154,7 @@ def test_pgx_episode_is_served_for_the_dashboard(monitor_server, ttt, scripted):
     monitor = Monitor(monitor_server.url)
     monitor.start()
 
-    monitor.log(2, {"game": pgx_two_player_episode()(frames, p_ids)})
+    monitor.log(2, {"game": pgx_two_player_episode()(frames, p_ids, ttt.step_fn)})
     monitor.flush()
 
     [entry] = monitor_server.get(f"/api/runs/{monitor.run_id}/media")["rows"]
@@ -174,6 +174,69 @@ def test_pgx_episode_is_served_for_the_dashboard(monitor_server, ttt, scripted):
     # the trained agent moved second, so played O, and lost
     assert (int(arrays["agent"]), int(arrays["completed"])) == (1, 1)
     assert float(arrays["outcome"]) == -1
+    # the game didn't record its searches
+    assert "search_offset" not in arrays
+
+
+def test_pgx_episode_carries_both_players_searches(monitor_server, ttt, make_search):
+    big = make_search().evaluator
+    small = make_search(num_iterations=16, max_nodes=40).evaluator
+    game = jax.jit(
+        partial(
+            two_player_game,
+            evaluator_1=big,
+            evaluator_2=small,
+            params_1=None,
+            params_2=None,
+            env_step_fn=ttt.step_fn,
+            env_init_fn=ttt.init_fn,
+            max_steps=9,
+            p1_first=True,
+            record_search=True,
+        )
+    )
+    _, frames, p_ids = jax.device_get(game(jax.random.PRNGKey(0)))
+    monitor = Monitor(monitor_server.url)
+    monitor.start()
+    monitor.log(0, {"game": pgx_two_player_episode()(frames, p_ids, ttt.step_fn)})
+    monitor.flush()
+    [entry] = monitor_server.get(f"/api/runs/{monitor.run_id}/media")["rows"]
+    with urllib.request.urlopen(
+        f"{monitor_server.url}/api/runs/{monitor.run_id}/episodes/{entry['episode']}"
+    ) as resp:
+        arrays = load_arrays(resp.read())
+
+    num_moves = len(arrays["board"]) - 1
+    found = list(zip(arrays["search_frame"], arrays["search_player"]))
+    # the mover's search of each position, and from the second move on the other's tree of
+    # it too: the agent moved first, and its opponent had no tree before its first search
+    assert found[0] == (0, 0)
+    assert found[1:] == [(t, p) for t in range(1, num_moves) for p in (0, 1)]
+    offset = arrays["search_offset"]
+    assert offset[-1] == len(arrays["node_visits"])
+    assert arrays["node_board"].dtype == np.uint8
+    parent = arrays["node_parent"]
+    for s, (t, _) in enumerate(found):
+        start, end = offset[s], offset[s + 1]
+        # the root is the position played from
+        assert parent[start] == -1
+        np.testing.assert_array_equal(arrays["node_board"][start], arrays["board"][t])
+        for i in range(start + 1, end):
+            p = start + parent[i]
+            # each node's board is its parent's with the move's mark added, by the player
+            # to move at the parent
+            action = arrays["node_action"][i]
+            expected = arrays["node_board"][p].copy()
+            expected.reshape(-1)[action] = arrays["node_to_move"][p] + 1
+            np.testing.assert_array_equal(arrays["node_board"][i], expected)
+            assert arrays["node_legal"][p][action]
+    # a move that ends the game is worth its result to the player who chose it: in
+    # tic-tac-toe a win, or a draw if it fills the board without one
+    terminal = np.flatnonzero(arrays["node_terminal"])
+    assert len(terminal)
+    for i in terminal:
+        full = (arrays["node_board"][i] != 0).all()
+        assert arrays["node_value"][i] in ((1.0, 0.0) if full else (1.0,))
 
 
 @pytest.mark.parametrize("env_id", ["othello", "connect_four"])

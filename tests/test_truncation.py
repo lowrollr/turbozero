@@ -186,7 +186,7 @@ def test_tester_episode_has_every_frame_up_to_the_final_state(
     env = fixed_length_env(length=max_steps)
     packed = []
 
-    def episode_fn(frames, p_ids):  # pylint: disable=unused-argument
+    def episode_fn(frames, p_ids, env_step_fn):  # pylint: disable=unused-argument
         packed.append(frames)
         return "episode"
 

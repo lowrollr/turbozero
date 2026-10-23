@@ -92,6 +92,18 @@ class Evaluator:
         """
         raise NotImplementedError()
 
+    def search_record(self, state: Any) -> Any:  # pylint: disable=unused-argument
+        """What the evaluation that left `state` explored, for the monitor to show (see
+        `core.evaluators.mcts.state.SearchRecord`), or None for an evaluator that doesn't search.
+
+        Args:
+            state: The internal state of the Evaluator, as an evaluation left it (before `step`).
+
+        Returns:
+            pytree: The record, or None.
+        """
+        return None
+
     def get_config(self) -> dict:
         """Returns the configuration of the Evaluator. Used for logging."""
         return {"discount": self.discount}

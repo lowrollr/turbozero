@@ -5,6 +5,7 @@
 import { h } from "./dom.js";
 import { RENDERERS } from "./renderers.js";
 import { episodePlayer, loadArrays } from "./episodes.js";
+import { advantage, hasSearches, searchExplorer, sideMark } from "./search.js";
 
 const SERIES = ["--s1", "--s2", "--s3", "--s4", "--s5", "--s6"].map((v) => `var(${v})`);
 const POLL_MS = 2000;
@@ -19,6 +20,8 @@ const OUTCOME = /^(.+)_avg_outcome$/;
 const CHART_ORDER = ["avg_outcome", "loss", "policy_loss", "value_loss"];
 // the windows offered over the metric charts, in epochs
 const CHART_WINDOWS = [50, 200, 1000];
+// how tall an episode's board can be when its searches are explored on it
+const EXPLORE_HEIGHT = 520;
 
 const state = {
   runs: [],
@@ -677,11 +680,32 @@ async function showEpisode(card, entry) {
   }
   if (card.shown !== entry.episode) return;
   const caption = view.players && arrays.values ? gameCaption(view, arrays) : null;
-  const player = episodePlayer(view, { below: caption?.el });
-  if (caption) player.onFrame = caption.show;
-  card.body.replaceChildren(player.el);
+  // the searches behind the game's moves, explored on its board, with the moves they
+  // explored beside it; using the explorer pauses the game
+  const explorer =
+    view.players && view.drawBoard && hasSearches(arrays) ? searchExplorer(view, arrays, { who: seat(view, arrays) }) : null;
+  // the explorer's rows for the players stand in for the caption
+  const below = explorer ? explorer.evals : caption?.el;
+  // a game whose searches can be explored waits at its start to be explored
+  const player = episodePlayer(explorer?.view ?? view, { below, maxHeight: explorer ? EXPLORE_HEIGHT : undefined, paused: !!explorer });
+  explorer?.attach(player);
+  if (caption && !explorer) player.onFrame = caption.show;
+  card.el.classList.toggle("wide", !!explorer);
+  card.body.classList.toggle("exploring", !!explorer);
+  card.body.replaceChildren(...[player.el, explorer?.side].filter(Boolean));
   // drawn once the canvas has a size; the caption needn't wait
-  caption?.show(player.frame);
+  if (!explorer) caption?.show(player.frame);
+}
+
+// the players of a two-player game, 0 the trained agent and 1 its opponent, as
+// searchExplorer names them
+function seat(view, arrays) {
+  const agent = arrays.agent.item();
+  return (p) => {
+    const colorIndex = p === 0 ? agent : 1 - agent;
+    const side = view.players[colorIndex];
+    return { ...side, role: p === 0 ? "agent" : "opponent", colorIndex };
+  };
 }
 
 // who played which colour in a two-player game, each one's value estimate at the
@@ -693,12 +717,11 @@ function gameCaption(view, arrays) {
   const outcome = arrays.completed.item() ? arrays.outcome.item() : null;
   const result = (sign) => (outcome == null ? "" : outcome * sign > 0 ? "won" : outcome * sign < 0 ? "lost" : "drew");
   const rows = [
-    { who: "trained agent", color: agent, values: 0, sign: 1 },
+    { who: "agent", color: agent, values: 0, sign: 1 },
     { who: "opponent", color: 1 - agent, values: 1, sign: -1 },
   ].map((p) => {
     const side = view.players[p.color];
-    const swatch = h("i", { class: `swatch${side.ring ? " ring" : ""}` });
-    swatch.style.setProperty("--c", side.color);
+    const swatch = sideMark(side);
     const value = h("b", { class: "num" });
     const pieces = view.pieces && h("span", { class: "num dim" });
     const tag = h("span", { class: "result" });
@@ -711,7 +734,8 @@ function gameCaption(view, arrays) {
     show(t) {
       for (const r of rows) {
         const v = arrays.values.get(t, r.values);
-        r.value.textContent = `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(3)}`;
+        // each one's estimate is from its own side; shown for the first player
+        r.value.replaceChildren(advantage(r.color === 0 ? v : -v, view.players));
         if (r.pieces) r.pieces.textContent = `${view.pieces(t, r.color)} discs`;
         const over = t === last && outcome != null;
         r.tag.textContent = over ? result(r.sign) : "";

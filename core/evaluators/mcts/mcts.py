@@ -12,8 +12,10 @@ from core.evaluators.mcts.state import (
     MCTSNode,
     MCTSOutput,
     MCTSTree,
+    SearchRecord,
     TraversalState,
     backprop_stats,
+    search_record,
     with_backprop_stats,
 )
 from core.trees.tree import init_tree
@@ -137,6 +139,10 @@ class MCTS(Evaluator):
             jax.Array: value estimate of the environment state stored in the root node of the tree
         """
         return state.data_at(state.ROOT_INDEX).q
+
+    def search_record(self, state: MCTSTree) -> SearchRecord:
+        """The record of what the search in `state` explored, see `SearchRecord`."""
+        return search_record(state)
 
     def update_root(
         self,
