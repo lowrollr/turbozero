@@ -60,7 +60,11 @@ from core.evaluators.evaluation_fns import (
     make_nn_eval_fn,
     make_nn_eval_fn_no_params_callable,
 )
-from core.evaluators.mcts.action_selection import PUCTSelector
+from core.evaluators.mcts.action_selection import (
+    MuZeroPUCTSelector,
+    PUCTSelector,
+    bounded_q_values,
+)
 from core.evaluators.mcts.mcts import MCTS
 from core.evaluators.random_evaluator import RandomEvaluator
 from core.memory.replay_memory import EpisodeReplayBuffer
@@ -123,6 +127,16 @@ def main():
         default=2.0,
         help="self-play search tree capacity, in nodes per MCTS iteration (the tree is "
         "kept between moves, so it needs room for the reused subtree too)",
+    )
+    parser.add_argument(
+        "--puct",
+        choices=("min-max", "alphazero"),
+        default="min-max",
+        help="how self-play's search scores moves: min-max is PUCT with c=1 on the "
+        "children's values min-max normalized, as mctx does by default; alphazero is AlphaZero's "
+        "and MuZero's board-game PUCT, with c from 1.25 growing with visits and values on "
+        "the fixed range [-1, 1], which explores more where moves are close or the "
+        "position is lost. Test games always use min-max",
     )
     parser.add_argument(
         "--sampling-moves",
@@ -347,6 +361,11 @@ def main():
     # With --sims-schedule, a search for each stage: each takes over at its epoch,
     # starting from empty trees sized for it (see core.training.schedule)
     selfplay_eval_fn = make_nn_eval_fn(resnet, state_to_nn_input)
+    action_selector = (
+        MuZeroPUCTSelector(q_transform=bounded_q_values)
+        if args.puct == "alphazero"
+        else PUCTSelector()
+    )
     evaluator = EvaluatorSchedule(
         [
             (
@@ -356,7 +375,7 @@ def main():
                     num_iterations=sims,
                     max_nodes=int(args.tree_factor * sims),
                     branching_factor=env.num_actions,
-                    action_selector=PUCTSelector(),
+                    action_selector=action_selector,
                     temperature=1.0,
                 ),
             )

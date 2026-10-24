@@ -48,6 +48,31 @@ def tie_break_noise(key: jax.Array, shape: tuple[int, ...]) -> jax.Array:
     return 1e-7 * jax.random.uniform(key, shape)
 
 
+def bounded_q_values(
+    q_values: jax.Array,
+    child_n_values: jax.Array,
+    parent_q_value: ArrayLike,
+    epsilon: ArrayLike,
+) -> jax.Array:
+    """Map Q-values from the fixed range [-1, 1] to [0, 1], unvisited children to 0.
+
+    AlphaZero's and MuZero's board-game normalization (MuZero's `KnownBounds(-1, 1)`):
+    unlike `normalize_q_values`, how far apart the children's values are matters, so
+    the search explores more where they're close or the position is lost.
+
+    Args:
+        q_values: Q-values to normalize, in [-1, 1]
+        child_n_values: visit counts of child nodes
+        parent_q_value: unused, for the `q_transform` signature
+        epsilon: unused, for the `q_transform` signature
+
+    Returns:
+        jax.Array: normalized Q-values
+    """
+    del parent_q_value, epsilon
+    return jnp.where(child_n_values > 0, (q_values + 1) / 2, 0.0)
+
+
 class MCTSActionSelector:
     """Base class for action selection in MCTS.
 
