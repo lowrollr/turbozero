@@ -8,6 +8,7 @@ import pytest
 from core.evaluators.mcts.action_selection import (
     MuZeroPUCTSelector,
     PUCTSelector,
+    bounded_q_values,
     normalize_q_values,
 )
 from core.evaluators.mcts.mcts import MCTS
@@ -59,6 +60,24 @@ def test_normalize_q_values_ignores_unvisited_children():
             mctx_qtransform(q, n, parent_q, EPS),
             atol=1e-6,
         )
+
+
+def test_bounded_q_values_maps_fixed_range_and_unvisited_to_zero():
+    q = jnp.array([-1.0, 0.0, 1.0, 0.5, 0.0])
+    n = jnp.array([1, 2, 3, 4, 0])
+    np.testing.assert_allclose(
+        bounded_q_values(q, n, 0.9, EPS), [0.0, 0.5, 1.0, 0.75, 0.0], atol=1e-6
+    )
+
+
+def test_bounded_q_values_keeps_how_far_apart_values_are():
+    # min-max stretches any two values to 0 and 1; fixed bounds keep their gap
+    n = jnp.array([1, 1])
+    for q in (jnp.array([0.5, 0.6]), jnp.array([-0.9, 0.9])):
+        np.testing.assert_allclose(normalize_q_values(q, n, q[0], EPS), [0.0, 1.0])
+    np.testing.assert_allclose(
+        bounded_q_values(jnp.array([0.5, 0.6]), n, 0.5, EPS), [0.75, 0.8], atol=1e-6
+    )
 
 
 def root_only_tree(prior):
@@ -166,3 +185,23 @@ def test_muzero_selector_matches_paper_ucb_score(c1, c2, expected):
         MuZeroPUCTSelector(c1=c1, c2=c2)(KEY, tree, tree.ROOT_INDEX, discount)
         == expected
     )
+
+
+def test_muzero_selector_with_bounds_matches_paper_board_game_ucb_score():
+    """MuZero pseudocode `ucb_score` for board games, whose values are normalized by
+    `KnownBounds(-1, 1)`: here it picks a different action than min-max normalization."""
+    prior = np.array([0.1, 0.5, 0.15, 0.25])
+    child_n = np.array([4, 10, 1, 3])
+    child_q = np.array([-0.5, 0.2, 0.3, -0.1])
+    root_q, discount, c1, c2 = 0.1, -1.0, 1.25, 19652
+    tree = visited_tree(prior, root_q, child_n, child_q)
+
+    parent_n = 1 + child_n.sum()
+    value_score = (discount * child_q + 1) / 2
+    pb_c = (np.log((parent_n + c2 + 1) / c2) + c1) * np.sqrt(parent_n) / (child_n + 1)
+    ucb = value_score + pb_c * prior
+    assert np.argmax(ucb) == 3
+
+    selector = MuZeroPUCTSelector(q_transform=bounded_q_values)
+    assert selector(KEY, tree, tree.ROOT_INDEX, discount) == 3
+    assert MuZeroPUCTSelector()(KEY, tree, tree.ROOT_INDEX, discount) == 0
