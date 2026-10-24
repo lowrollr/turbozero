@@ -188,6 +188,7 @@ class MCTS(Evaluator):
         4. Backpropagate
 
         Args:
+            key: rng
             tree: MCTSTree to evaluate
             params: parameters to pass to the the leaf evaluation function
             env_step_fn: env step fn: (env_state, action) -> (new_env_state, metadata)
@@ -195,15 +196,15 @@ class MCTS(Evaluator):
         Returns:
             MCTSTree: updated MCTSTree
         """
+        traverse_key, eval_key, key = jax.random.split(key, 3)
         # traverse from root -> leaf
-        traversal_state = self.traverse(tree)
+        traversal_state = self.traverse(traverse_key, tree)
         parent, action = traversal_state.parent, traversal_state.action
         # get env state (embedding) for leaf node
         embedding = tree.data_at(parent).embedding
         new_embedding, metadata = env_step_fn(embedding, action)
         player_reward = metadata.rewards[metadata.cur_player_id]
         # evaluate leaf node
-        eval_key, key = jax.random.split(key)
         policy_logits, value = self.eval_fn(new_embedding, params, eval_key)
         policy_logits = jnp.where(
             metadata.action_mask, policy_logits, jnp.finfo(policy_logits).min
@@ -270,10 +271,11 @@ class MCTS(Evaluator):
         leaf = jnp.argmin(jnp.where(n == n.min(), parent_n, most))
         return jnp.where(candidates.any(), leaf, tree.NULL_INDEX)
 
-    def traverse(self, tree: MCTSTree) -> TraversalState:
+    def traverse(self, key: jax.Array, tree: MCTSTree) -> TraversalState:
         """Traverse from the root node until an unvisited leaf node is reached.
 
         Args:
+            key: rng, for the action selector
             tree: MCTSTree to evaluate
 
         Returns:
@@ -292,16 +294,21 @@ class MCTS(Evaluator):
                 # TODO: maximum depth
             )
 
+        # a traversal visits each node at most once, so each selection gets its own key
+        def select(node_idx: ArrayLike) -> jax.Array:
+            node_key = jax.random.fold_in(key, node_idx)
+            return self.action_selector(node_key, tree, node_idx, self.discount)
+
         # each iterration:
         # - get the index of the child node connected to the chosen action
         # - choose the action to take from the child node
         def body_fn(state: TraversalState) -> TraversalState:
             node_idx = tree.edge_map[state.parent, state.action]
-            action = self.action_selector(tree, node_idx, self.discount)
+            action = select(node_idx)
             return TraversalState(parent=node_idx, action=action)
 
         # choose the action to take from the root
-        root_action = self.action_selector(tree, tree.ROOT_INDEX, self.discount)
+        root_action = select(tree.ROOT_INDEX)
         # traverse from root to leaf
         return jax.lax.while_loop(
             cond_fn, body_fn, TraversalState(parent=tree.ROOT_INDEX, action=root_action)
