@@ -1,5 +1,6 @@
 from dataclasses import replace
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
@@ -13,6 +14,7 @@ from core.evaluators.mcts.mcts import MCTS
 from core.trees.tree import init_tree
 
 EPS = 1e-8
+KEY = jax.random.PRNGKey(0)
 
 
 def mctx_qtransform(q, n, parent_q, eps):
@@ -72,7 +74,7 @@ def root_only_tree(prior):
 def test_puct_with_no_visits_picks_highest_prior():
     for prior in ([0.1, 0.2, 0.6, 0.1], [0.7, 0.1, 0.1, 0.1], [0.05, 0.05, 0.1, 0.8]):
         tree = root_only_tree(prior)
-        assert PUCTSelector()(tree, tree.ROOT_INDEX, -1.0) == np.argmax(prior)
+        assert PUCTSelector()(KEY, tree, tree.ROOT_INDEX, -1.0) == np.argmax(prior)
 
 
 def visited_tree(prior, root_q, child_n, child_q):
@@ -115,7 +117,30 @@ def test_selectors_never_choose_a_move_without_prior(selector):
         child_q=[1, 0, 1, 0],
     )
 
-    assert int(selector(tree, tree.ROOT_INDEX, -1.0)) in (0, 2)
+    assert int(selector(KEY, tree, tree.ROOT_INDEX, -1.0)) in (0, 2)
+
+
+@pytest.mark.parametrize("selector", [PUCTSelector(), MuZeroPUCTSelector()])
+def test_selectors_break_exact_ties_at_random(selector):
+    # every child has the same prior, visits and value: only the key decides
+    tree = visited_tree(
+        prior=[0.25] * 4, root_q=0.0, child_n=[3] * 4, child_q=[0.2] * 4
+    )
+    select = jax.jit(lambda key: selector(key, tree, tree.ROOT_INDEX, -1.0))
+
+    assert {int(select(jax.random.PRNGKey(seed))) for seed in range(32)} == {0, 1, 2, 3}
+    assert int(select(KEY)) == int(select(KEY))
+
+
+@pytest.mark.parametrize("selector", [PUCTSelector(), MuZeroPUCTSelector()])
+def test_tie_breaking_never_overturns_a_strict_preference(selector):
+    # child 2 is ahead by 5e-5 of the value range: far more than the noise
+    tree = visited_tree(
+        prior=[0.25] * 4, root_q=0.0, child_n=[3] * 4, child_q=[0.2, 0.2, 0.19999, 0.2]
+    )
+    select = jax.jit(lambda key: selector(key, tree, tree.ROOT_INDEX, -1.0))
+
+    assert {int(select(jax.random.PRNGKey(seed))) for seed in range(32)} == {2}
 
 
 @pytest.mark.parametrize(
@@ -137,4 +162,7 @@ def test_muzero_selector_matches_paper_ucb_score(c1, c2, expected):
     ucb = value_score + pb_c * prior
     assert np.argmax(ucb) == expected
 
-    assert MuZeroPUCTSelector(c1=c1, c2=c2)(tree, tree.ROOT_INDEX, discount) == expected
+    assert (
+        MuZeroPUCTSelector(c1=c1, c2=c2)(KEY, tree, tree.ROOT_INDEX, discount)
+        == expected
+    )

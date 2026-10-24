@@ -33,6 +33,21 @@ def normalize_q_values(
     return normalized
 
 
+def tie_break_noise(key: jax.Array, shape: tuple[int, ...]) -> jax.Array:
+    """Noise to add to selection scores so that exact ties go to a random action rather than the
+    lowest index (as in mctx): small enough to change nothing else, normalized Q-values being in
+    [0, 1].
+
+    Args:
+        key: rng
+        shape: shape of the scores
+
+    Returns:
+        jax.Array: noise in [0, 1e-7)
+    """
+    return 1e-7 * jax.random.uniform(key, shape)
+
+
 class MCTSActionSelector:
     """Base class for action selection in MCTS.
 
@@ -47,7 +62,9 @@ class MCTSActionSelector:
         """
         self.epsilon = epsilon
 
-    def __call__(self, tree: MCTSTree, index: ArrayLike, discount: float) -> jax.Array:
+    def __call__(
+        self, key: jax.Array, tree: MCTSTree, index: ArrayLike, discount: float
+    ) -> jax.Array:
         """Selects an action given a search tree state. Implemented by subclasses."""
         raise NotImplementedError()
 
@@ -84,10 +101,13 @@ class PUCTSelector(MCTSActionSelector):
             **super().get_config(),
         }
 
-    def __call__(self, tree: MCTSTree, index: ArrayLike, discount: float) -> jax.Array:
+    def __call__(
+        self, key: jax.Array, tree: MCTSTree, index: ArrayLike, discount: float
+    ) -> jax.Array:
         """Selects an action given a search tree state.
 
         Args:
+            key: rng, to break ties
             tree: search tree
             index: index of the node in the search tree to select an action to take from
             discount: discount factor
@@ -108,8 +128,8 @@ class PUCTSelector(MCTSActionSelector):
         u_values = self.c * node.p * jnp.sqrt(node.n) / (n_values + 1)
         # PUCT = Q-value + U-value
         puct_values = q_values + u_values
-        # select action with highest PUCT value
-        return puct_values.argmax()
+        # select action with highest PUCT value, ties broken at random
+        return (puct_values + tie_break_noise(key, puct_values.shape)).argmax()
 
 
 class MuZeroPUCTSelector(MCTSActionSelector):
@@ -144,10 +164,13 @@ class MuZeroPUCTSelector(MCTSActionSelector):
             **super().get_config(),
         }
 
-    def __call__(self, tree: MCTSTree, index: ArrayLike, discount: float) -> jax.Array:
+    def __call__(
+        self, key: jax.Array, tree: MCTSTree, index: ArrayLike, discount: float
+    ) -> jax.Array:
         """Selects an action given a search tree state.
 
         Args:
+            key: rng, to break ties
             tree: search tree
             index: index of the node in the search tree to select an action to take from
             discount: discount factor
@@ -170,5 +193,5 @@ class MuZeroPUCTSelector(MCTSActionSelector):
         u_values = base_term * log_term
         # PUCT = Q-value + U-value
         puct_values = q_values + u_values
-        # select action with highest PUCT value
-        return puct_values.argmax()
+        # select action with highest PUCT value, ties broken at random
+        return (puct_values + tie_break_noise(key, puct_values.shape)).argmax()

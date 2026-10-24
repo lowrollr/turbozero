@@ -48,7 +48,7 @@ def varying_eval_fn(state, params, key):  # pylint: disable=unused-argument
 class FirstAction(MCTSActionSelector):
     """Always chooses action 0, so that a test decides where a traversal goes."""
 
-    def __call__(self, tree, index, discount):
+    def __call__(self, key, tree, index, discount):
         return jnp.array(0, dtype=jnp.int32)
 
 
@@ -296,9 +296,22 @@ def test_traversal_follows_the_selector_to_an_unexpanded_edge(env):
     search = make_mcts(selector=FirstAction())
     tree = build_tree(search, env, CHAIN[:3])
 
-    traversal = search.traverse(tree)
+    traversal = search.traverse(jax.random.PRNGKey(0), tree)
 
     assert np.asarray([traversal.parent, traversal.action]).tolist() == [2, 0]
+
+
+def test_traversal_breaks_ties_with_its_key(env):
+    # a root with no visited children and a uniform prior: every action scores the same
+    search = make_mcts()
+    tree = build_tree(search, env, CHAIN[:1])
+    traverse = jax.jit(search.traverse)
+
+    actions = {
+        int(traverse(jax.random.PRNGKey(seed), tree).action) for seed in range(16)
+    }
+
+    assert actions == {0, 1, 2}
 
 
 def test_traversal_stops_at_a_terminal_child(fixed_length_env):
@@ -308,7 +321,7 @@ def test_traversal_stops_at_a_terminal_child(fixed_length_env):
     tree = build_tree(search, env, CHAIN[:3])
     assert bool(tree.data_at(2).terminated)
 
-    traversal = search.traverse(tree)
+    traversal = search.traverse(jax.random.PRNGKey(0), tree)
 
     assert np.asarray([traversal.parent, traversal.action]).tolist() == [1, 0]
 
